@@ -1,4 +1,5 @@
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
+import CloseIcon from '@mui/icons-material/Close'
 import DeleteIcon from '@mui/icons-material/DeleteOutlined'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import HistoryIcon from '@mui/icons-material/History'
@@ -97,6 +98,7 @@ function TxnForm({ book, txn: initial, defaults, onClose, minorOf, carry, onSwit
   const categories = useCategories(book.id, true)
   const invalidate = useInvalidateBook()
   const id = useRef(initial?.id ?? newId()) // made once, reused on retry
+  const amountRef = useRef<HTMLInputElement>(null)
   const [txn, setTxn] = useState(initial)
   const [form, setForm] = useState<Form>(() => ({ ...toForm(initial, book, minorOf, defaults), ...carry }))
   const [error, setError] = useState<unknown>(null)
@@ -278,6 +280,8 @@ function TxnForm({ book, txn: initial, defaults, onClose, minorOf, carry, onSwit
   const two = { display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' } } as const
   const typeSx = { whiteSpace: 'nowrap', minWidth: 0, px: { xs: 0.5, sm: 1.5 }, fontSize: { xs: 13, sm: 14 } } as const
   const ready = !!entries && !!form.date && !!form.time && planReady
+  // The dialog takes focus as it opens, so the amount is focused once it has.
+  const focusAmount = () => { if (!txn) amountRef.current?.focus() }
   const other = otherTypes.includes(form.type) ? form.type : null
   const extras = (
     <>
@@ -320,7 +324,7 @@ function TxnForm({ book, txn: initial, defaults, onClose, minorOf, carry, onSwit
     )
     const editable = (books.data ?? []).filter((b) => b.role !== 'viewer' && !b.archived_at)
     return (
-      <Dialog open onClose={onClose} fullScreen slotProps={{ paper: { component: 'form', onSubmit: submit } }}>
+      <Dialog open onClose={onClose} fullScreen slotProps={{ paper: { component: 'form', onSubmit: submit }, transition: { onEntered: focusAmount } }}>
         <Stack direction="row" sx={{ alignItems: 'center', minHeight: 56, px: 0.5, gap: 0.5 }}>
           <IconButton aria-label={t('common.close')} onClick={onClose} sx={{ color: 'text.primary' }}><ArrowBackIcon /></IconButton>
           {onSwitchBook ? (
@@ -341,7 +345,7 @@ function TxnForm({ book, txn: initial, defaults, onClose, minorOf, carry, onSwit
         <DialogContent sx={{ px: 2, pt: 1 }}>
           <Stack spacing={2.5}>
             {openingBalance || form.type === 'adjustment' ? (
-              <Typography color="text.secondary">{t(`txn.types.${form.type}`)}</Typography>
+              <Typography color="textSecondary">{t(`txn.types.${form.type}`)}</Typography>
             ) : (
               <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 1.25 }}>
                 {mainTypes.map((ty) => {
@@ -359,7 +363,7 @@ function TxnForm({ book, txn: initial, defaults, onClose, minorOf, carry, onSwit
               {sign && <Typography aria-hidden sx={{ fontSize: 40, lineHeight: '48px', fontWeight: 500, color: tone }}>{sign}</Typography>}
               <AmountField
                 ariaLabel={t('txn.amount')}
-                autoFocus={!txn}
+                inputRef={amountRef}
                 value={form.amount}
                 onChange={(v) => set({ amount: v })}
                 minorUnit={minor(account)}
@@ -369,7 +373,7 @@ function TxnForm({ book, txn: initial, defaults, onClose, minorOf, carry, onSwit
                   '& .MuiOutlinedInput-input': { p: 0, fontSize: 40, lineHeight: '48px', height: 48, fontWeight: 500, color: tone,
                     fontVariantNumeric: 'tabular-nums' } }}
               />
-              {from && <Typography color="text.disabled" sx={{ fontWeight: 500 }}>{from.currency}</Typography>}
+              {from && <Typography color="textDisabled" sx={{ fontWeight: 500 }}>{from.currency}</Typography>}
             </Stack>
             {kind && (
               <CategoryPills rows={options} value={form.category} onChange={(id) => choose('category', id)} disabled={readOnly}
@@ -414,7 +418,7 @@ function TxnForm({ book, txn: initial, defaults, onClose, minorOf, carry, onSwit
             )}
             {losesPlan && !readOnly && <Alert severity="warning">{t('plan.removedOnSave')}</Alert>}
             {txn?.created_by && (
-              <Typography variant="body2" color="text.secondary">
+              <Typography variant="body2" color="textSecondary">
                 {t('txn.createdBy', { name: personName(txn.created_by, t), editor: personName(txn.modified_by, t) })}
               </Typography>
             )}
@@ -470,12 +474,18 @@ function TxnForm({ book, txn: initial, defaults, onClose, minorOf, carry, onSwit
   }
 
   return (
-    <Dialog open onClose={onClose} fullWidth maxWidth="sm" slotProps={{ paper: { component: 'form', onSubmit: submit } }}>
-      <DialogTitle>{t(txn ? 'txn.edit' : 'txn.add')}</DialogTitle>
+    <Dialog open onClose={onClose} fullWidth maxWidth="sm"
+      slotProps={{ paper: { component: 'form', onSubmit: submit, sx: { maxWidth: 520 } }, transition: { onEntered: focusAmount } }}>
+      <DialogTitle sx={{ pr: 7 }}>
+        {t(txn ? 'txn.edit' : 'txn.add')}
+        <IconButton size="small" aria-label={t('common.close')} onClick={onClose} sx={{ position: 'absolute', right: 16, top: 18 }}>
+          <CloseIcon fontSize="small" />
+        </IconButton>
+      </DialogTitle>
       <DialogContent>
         <Stack spacing={2} sx={{ pt: 1 }}>
           {openingBalance ? (
-            <Typography color="text.secondary">{t('txn.types.opening_balance')}</Typography>
+            <Typography color="textSecondary">{t('txn.types.opening_balance')}</Typography>
           ) : (
             <ToggleButtonGroup
               exclusive
@@ -508,11 +518,11 @@ function TxnForm({ book, txn: initial, defaults, onClose, minorOf, carry, onSwit
             big
             label={t('txn.amount')}
             required
-            autoFocus={!txn}
+            inputRef={amountRef}
             value={form.amount}
             onChange={(v) => set({ amount: v })}
             minorUnit={minor(account)}
-            unit={from?.currency}
+            unit={from?.currency ?? book.base_currency}
             helperText={form.type === 'adjustment' ? t('txn.adjustmentHint') : undefined}
           />
           <Box sx={two}>
@@ -570,7 +580,7 @@ function TxnForm({ book, txn: initial, defaults, onClose, minorOf, carry, onSwit
           <TextField label={t('txn.note')} value={form.note} onChange={(e) => set({ note: e.target.value })} multiline minRows={1} maxRows={4}
             placeholder={t('common.optional')} />
           {txn?.created_by && (
-            <Typography variant="body2" color="text.secondary">
+            <Typography variant="body2" color="textSecondary">
               {t('txn.createdBy', { name: personName(txn.created_by, t), editor: personName(txn.modified_by, t) })}
             </Typography>
           )}

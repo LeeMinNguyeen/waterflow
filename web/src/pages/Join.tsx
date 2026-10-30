@@ -51,7 +51,7 @@ export function Join() {
     <Centered key="code">
       <Stack component="form" spacing={2} onSubmit={next}>
         <PublicHeader title={t('join.title')} languageSwitch={false} />
-        <Typography color="text.secondary">{t(open ? 'join.introOpen' : 'join.intro')}</Typography>
+        <Typography color="textSecondary">{t(open ? 'join.introOpen' : 'join.intro')}</Typography>
         <TextField label={t('join.code')} value={code} onChange={(e) => setCode(e.target.value)} required={!open}
           helperText={t('join.codeHint')} slotProps={{ htmlInput: { autoCapitalize: 'characters', autoComplete: 'off' } }} />
         <LanguagePicker helperText={t('join.languageHint')} />
@@ -67,7 +67,7 @@ export function Join() {
       <Stack component="form" spacing={2} onSubmit={(e) => submit(e, (form) =>
         send<Token>('POST', '/v1/auth/sign-up', { ...newAccountBody(form), invite_code: code.trim() || null }))}>
         <PublicHeader title={t('join.title')} languageSwitch={false} />
-        <Typography color="text.secondary">{t('join.accountIntro')}</Typography>
+        <Typography color="textSecondary">{t('join.accountIntro')}</Typography>
         <NewAccountFields />
         <FormError error={error} />
         <Button type="submit" variant="contained" size="large" loading={busy}>{t('join.submit')}</Button>
@@ -93,7 +93,7 @@ export function Setup() {
         })
       })}>
         <PublicHeader title={t('setup.title')} />
-        <Typography color="text.secondary">{t('setup.intro')}</Typography>
+        <Typography color="textSecondary">{t('setup.intro')}</Typography>
         <TextField name="setup_code" label={t('setup.code')} required helperText={t('setup.codeHint')}
           slotProps={{ htmlInput: { autoCapitalize: 'characters', autoComplete: 'off' } }} />
         <TextField name="server_name" label={t('setup.serverName')} helperText={t('setup.serverNameHint')}
@@ -141,12 +141,12 @@ function SetupRestore({ onBack }: { onBack: () => void }) {
         <PublicHeader title={t('restore.title')} />
         {state.restarting ? <Alert severity="info">{t('restore.setupRestarting')}</Alert> : (
           <>
-            <Typography color="text.secondary">{t('restore.setupIntro')}</Typography>
+            <Typography color="textSecondary">{t('restore.setupIntro')}</Typography>
             <TextField label={t('setup.code')} required value={code} onChange={(e) => setCode(e.target.value)} helperText={t('setup.codeHint')}
               slotProps={{ htmlInput: { autoCapitalize: 'characters', autoComplete: 'off' } }} />
             <FileField label={t('restore.file')} button={t('restore.choose')} file={file} onChange={setFile} accept=".dump" />
             <FileField label={t('restore.purged')} button={t('restore.choose')} file={purged} onChange={setPurged} accept=".jsonl" />
-            <Typography variant="body2" color="text.secondary">{t('restore.purgedHint')}</Typography>
+            <Typography variant="body2" color="textSecondary">{t('restore.purgedHint')}</Typography>
             <FormError error={state.error} />
             <Button type="submit" variant="contained" size="large" loading={state.busy} disabled={!file || !code.trim()}>{t('restore.submit')}</Button>
             <Button onClick={onBack}>{t('restore.back')}</Button>
@@ -169,7 +169,7 @@ export function Reset() {
         return send<Token>('POST', '/v1/auth/reset', { token: params.get('token') ?? '', new_password: password })
       })}>
         <PublicHeader title={t('reset.title')} />
-        <Typography color="text.secondary">{t('reset.intro')}</Typography>
+        <Typography color="textSecondary">{t('reset.intro')}</Typography>
         <PasswordFields label={t('reset.newPassword')} />
         <FormError error={error} />
         <Button type="submit" variant="contained" size="large" loading={busy}>{t('reset.submit')}</Button>

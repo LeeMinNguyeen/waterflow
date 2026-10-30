@@ -82,6 +82,8 @@ layout until the mobile app ships.
 
 - i18next's `<Trans>` drops tags named like HTML void elements (`<link>`, `<br>`, `<img>`...): use names like `<policy>`.
 - Queries that need a session pass `enabled`; the cache is cleared on sign-out (`main.tsx`).
+- MUI 9's `Typography` takes its `color` prop by name (`textSecondary`, `textDisabled`, `error`), not as a palette path:
+  `color="text.secondary"` is silently ignored. A path works in `sx` (`sx={{ color: 'text.secondary' }}`).
 - Fast refresh: files under `pages/` and `components/` export components only; shared functions go in `auth/` or `lib/`.
 - jsdom can't stand in for a browser everywhere: it lays nothing out, and MUI X's date field behaves differently
   there. Test such logic directly (`lib/dates.ts`) and check the screen in Chromium (Playwright).

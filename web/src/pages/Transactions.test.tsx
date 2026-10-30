@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { Account, Book, Transaction } from '../lib/api'
 import { currencies, fakeApi } from '../test/fakeApi'
+import { todayIn } from '../lib/labels'
 import { desktop, renderApp } from '../test/render'
 import { Transactions } from './Transactions'
 
@@ -45,7 +46,8 @@ describe('Transactions by day (waterflow#143)', () => {
     const day = await screen.findByRole('region', { name: /29 Oct 2025/ })
     expect(within(day).getByText('Phở Thìn')).toBeInTheDocument()
     expect(within(day).getByText('Highlands Coffee')).toBeInTheDocument()
-    expect(await within(day).findByText('-₫140,000')).toHaveStyle({ color: '#C9372C' })
+    expect(within(day).getAllByText('09:00')[0]).toHaveStyle({ color: '#8F8F97' })
+    expect(await within(day).findByText('−₫140,000')).toHaveStyle({ color: '#C9372C' })
     const payday = screen.getByRole('region', { name: /25 Oct 2025/ })
     expect(within(payday).getAllByText('+₫32,000,000')[0]).toHaveStyle({ color: '#18803E' })
   })
@@ -65,5 +67,20 @@ describe('Transactions by day (waterflow#143)', () => {
     await userEvent.click(await screen.findByRole('menuitem', { name: 'Vietcombank' }))
     expect(screen.getByTestId('where')).toHaveTextContent('/books/b1/transactions?account_id=bank')
     expect(screen.getByRole('button', { name: 'Account: Vietcombank' })).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Clear Account' }))
+    expect(screen.getByTestId('where')).toHaveTextContent(/^\/books\/b1\/transactions$/)
+  })
+
+  it("names today's group Today, and leaves this year out of the dates", async () => {
+    const today = todayIn(book.timezone)
+    fakeApi({
+      'GET /v1/currencies': currencies,
+      'GET /v1/books/b1/transactions': { items: [txn(today, 'expense', [['cash', -85_000]], 'Phở Thìn')], next: null },
+      'GET /v1/books/b1/accounts': accounts,
+      'GET /v1/books/b1/categories': [],
+    })
+    await renderApp(<Transactions book={book} />)
+    const day = await screen.findByRole('region', { name: /^Today/ })
+    expect(day).not.toHaveTextContent(today.slice(0, 4))
   })
 })

@@ -13,7 +13,7 @@ export function BudgetBar({ spent, budget, percent, label, color, format }: Prop
     <Stack spacing={1}>
       <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'baseline', gap: 1 }}>
         <Typography noWrap>{label}</Typography>
-        <Typography variant="body2" color={over ? 'error' : 'text.secondary'} sx={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
+        <Typography variant="body2" color={over ? 'error' : 'textSecondary'} sx={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
           {over ? t('budget.over', { amount: format(spent - budget) }) : t('budget.progress', { spent: format(spent), budget: format(budget) })}
         </Typography>
       </Stack>

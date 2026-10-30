@@ -72,7 +72,7 @@ export function CreateBook() {
       <BookInvites />
       <Stack component="form" spacing={2} onSubmit={submit}>
         <Typography variant="h5">{t('book.createTitle')}</Typography>
-        <Typography color="text.secondary">{t('book.createIntro')}</Typography>
+        <Typography color="textSecondary">{t('book.createIntro')}</Typography>
         <TextField label={t('book.name')} required value={name} onChange={(e) => setName(e.target.value)} />
         <CurrencyPicker label={t('book.currency')} value={currency} onChange={setCurrency} helperText={t('book.currencyHint')} />
         <TimezonePicker label={t('book.timezone')} value={timezone} onChange={setTimezone} />

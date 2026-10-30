@@ -55,6 +55,7 @@ function BookSwitcher({ book }: { book: Book }) {
     <Select
       size="small"
       fullWidth
+      sx={{ fontWeight: 500 }}
       value={book.id}
       aria-label={t('book.switch')}
       onChange={(e) => (e.target.value === 'new' ? navigate('/books/new', { state: { fromApp: true } }) : navigate(`/books/${e.target.value}`))}
@@ -129,7 +130,7 @@ function Frame({ book, children, onAdd }: { book: Book; children: ReactNode; onA
         <Typography sx={{ fontWeight: 600, fontSize: 15, letterSpacing: '-0.01em', px: 1, mb: 2.5 }}>
           {t('app.name')}
           {version && (
-            <Typography component="span" variant="caption" color="text.disabled" title={t('admin.version', { version })} sx={{ ml: 0.75 }}>
+            <Typography component="span" variant="caption" color="textDisabled" title={t('admin.version', { version })} sx={{ ml: 0.75 }}>
               {/^\d/.test(version) ? `v${version}` : version}
             </Typography>
           )}
@@ -174,7 +175,7 @@ function Frame({ book, children, onAdd }: { book: Book; children: ReactNode; onA
 }
 
 type Page = { to: string; label: string; icon: ReactNode; phoneMore?: boolean }
-const NAV_HEIGHT = 56
+const NAV_HEIGHT = 64
 
 // Phones: the book's name on top opens a list of books; the main pages sit in
 // a bar at the bottom, within reach of a thumb, with the rest under More.
@@ -211,7 +212,7 @@ function PhoneFrame({ book, pages, canAdd, onAdd, admin, children }: {
           </Button>
         </Toolbar>
       </AppBar>
-      <Box component="main" sx={{ p: 2, pb: `calc(${NAV_HEIGHT + 88}px + env(safe-area-inset-bottom))` }}>
+      <Box component="main" sx={{ p: 2, pt: 2.5, pb: `calc(${NAV_HEIGHT + 88}px + env(safe-area-inset-bottom))` }}>
         <UpdatingNotice />
         <BookInvites />
         {children}

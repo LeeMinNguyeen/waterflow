@@ -279,7 +279,8 @@
     "dates": "Ngày",
     "since": "Từ {{date}}",
     "until": "Đến {{date}}",
-    "clearDates": "Xóa ngày"
+    "clearDates": "Xóa ngày",
+    "clearOne": "Bỏ lọc {{name}}"
   },
   "cat": {
     "title": "Danh mục",
@@ -339,7 +340,7 @@
     "netWorth": "Tài sản ròng",
     "spentThisMonth": "Chi tiêu tháng này",
     "incomeThisMonth": "Thu nhập tháng này",
-    "vsLastMonth": "Tháng trước: {{amount}}",
+    "vsLastMonth": "Tháng trước {{amount}}",
     "cashflow": "Chi tiêu và thu nhập",
     "spent": "Chi tiêu",
     "income": "Thu nhập",

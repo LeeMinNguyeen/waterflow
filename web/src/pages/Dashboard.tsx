@@ -6,19 +6,22 @@ import ListItemButton from '@mui/material/ListItemButton'
 import ListItemText from '@mui/material/ListItemText'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
+import useMediaQuery from '@mui/material/useMediaQuery'
+import { useTheme } from '@mui/material/styles'
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router'
 import { Bar } from '../components/Bar'
 import { BudgetBar } from '../components/BudgetBar'
 import { CashflowChart } from '../components/charts/CashflowChart'
+import { useChartColors } from '../components/charts/palette'
 import { useErrorText } from '../components/errors'
 import { Money } from '../components/Money'
 import { PageHeader, Section, SeeAll } from '../components/Page'
 import { useOpenTxn } from '../components/txnContext'
 import { currentLanguage } from '../i18n'
 import { api, type Book, type Transaction } from '../lib/api'
-import { todayIn } from '../lib/labels'
+import { shiftDay, todayIn } from '../lib/labels'
 import { formatMoney } from '../lib/money'
 import { useCategories, useCurrencies, useDashboard } from '../lib/queries'
 
@@ -30,15 +33,18 @@ const RATE_CREDITS: Record<string, { label: string; href: string }> = {
 function Stat({ label, value, note, big = false }: { label: string; value: ReactNode; note?: ReactNode; big?: boolean }) {
   return (
     <Box sx={{ minWidth: 0 }}>
-      <Typography variant="body2" color="text.secondary">{label}</Typography>
-      <Typography variant={big ? 'display' : 'h1'} component="p" sx={{ mt: 0.75, fontVariantNumeric: 'tabular-nums' }}>{value}</Typography>
-      {note && <Typography variant="caption" color="text.disabled" component="p" sx={{ mt: 0.5 }}>{note}</Typography>}
+      <Typography variant="body2" color="textSecondary">{label}</Typography>
+      <Typography variant={big ? 'display' : 'h1'} component="p"
+        sx={{ mt: 0.75, fontVariantNumeric: 'tabular-nums', ...(!big && { fontSize: { xs: 18, md: 24 }, lineHeight: { xs: '24px', md: '32px' } }) }}>
+        {value}
+      </Typography>
+      {note && <Typography variant="caption" color="textDisabled" component="p" sx={{ mt: 0.5 }}>{note}</Typography>}
     </Box>
   )
 }
 
 const rowSx = {
-  px: 0, minHeight: 52, gap: 1.5,
+  px: 0, py: 0.75, minHeight: 52, gap: 1.5, '& .MuiListItemText-root': { my: 0 },
   '&:not(:first-of-type)': { borderTop: 1, borderColor: 'divider' },
 } as const
 
@@ -62,6 +68,8 @@ export function Dashboard({ book }: { book: Book }) {
   const lang = currentLanguage()
   const navigate = useNavigate()
   const openTxn = useOpenTxn()
+  const desktop = useMediaQuery(useTheme().breakpoints.up('md'))
+  const chartColors = useChartColors()
   const dash = useDashboard(book.id)
   const categories = useCategories(book.id, true)
   const currencies = useCurrencies()
@@ -96,7 +104,7 @@ export function Dashboard({ book }: { book: Book }) {
     const key = id ?? 'none'
     rolled.set(key, { id, spent: (rolled.get(key)?.spent ?? 0) + c.spent })
   }
-  const bars = [...rolled.values()].sort((a, b) => b.spent - a.spent).slice(0, 6)
+  const bars = [...rolled.values()].sort((a, b) => b.spent - a.spent).slice(0, desktop ? 6 : 3)
   const barMax = Math.max(1, ...bars.map((b) => b.spent))
 
   async function openRecent(id: string) {
@@ -120,15 +128,30 @@ export function Dashboard({ book }: { book: Book }) {
   const credit = converts ? RATE_CREDITS[d.rates_source ?? ''] : undefined
   const thisMonth = new Intl.DateTimeFormat(locale, { month: 'long', year: 'numeric' }).format(new Date(`${months[5]}T00:00:00`))
   const seeAll = (to: string) => <SeeAll to={`/books/${book.id}${to}`}>{t('dash.seeAll')}</SeeAll>
+  const today = todayIn(book.timezone)
+  const when = (on: string) =>
+    on === today ? t('txn.today') : on === shiftDay(today, -1) ? t('txn.yesterday') : dayFmt.format(new Date(`${on}T00:00:00`))
+  const legend = (
+    <Stack direction="row" spacing={2}>
+      {(['spent', 'income'] as const).map((k) => (
+        <Stack key={k} direction="row" spacing={0.75} sx={{ alignItems: 'center' }}>
+          <Box sx={{ width: 8, height: 8, borderRadius: '2px', bgcolor: chartColors[k] }} />
+          <Typography variant="caption" color="textSecondary">{t(k === 'spent' ? 'dash.spent' : 'dash.income')}</Typography>
+        </Stack>
+      ))}
+    </Stack>
+  )
 
   return (
     <Box>
-      <PageHeader title={t('dash.title')} bookId={book.id}>
-        <Typography variant="body2" color="text.secondary">{thisMonth}</Typography>
-      </PageHeader>
+      {desktop && (
+        <PageHeader title={t('dash.title')} bookId={book.id}>
+          <Typography variant="body2" color="textSecondary">{thisMonth}</Typography>
+        </PageHeader>
+      )}
       {empty && <Alert severity="info" sx={{ mt: 2 }}>{t(book.role === 'viewer' ? 'dash.emptyViewer' : 'dash.empty')}</Alert>}
       <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr 1fr', md: 'auto auto auto' }, justifyContent: { md: 'start' }, columnGap: { xs: 2, md: 8 },
-        rowGap: 2.5, mt: { xs: 2.5, md: 3.5 }, pb: { xs: 2.5, md: 4 }, borderBottom: 1, borderColor: 'divider' }}>
+        rowGap: 2.5, mt: { xs: 0, md: 3.5 }, pb: { xs: 2.5, md: 4 }, borderBottom: 1, borderColor: 'divider' }}>
         <Box sx={{ gridColumn: { xs: '1 / -1', md: 'auto' } }}>
           <Stat big label={t('dash.netWorth')} value={<Money amount={d.net_worth} currency={book.base_currency} kind="balance" />}
             note={d.net_worth_missing_rates ? t('dash.missingRates', { count: d.net_worth_missing_rates }) : undefined} />
@@ -139,7 +162,7 @@ export function Dashboard({ book }: { book: Book }) {
 
       <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'minmax(0, 1fr)', md: 'minmax(0, 2fr) minmax(0, 1fr)' }, columnGap: 8,
         rowGap: { xs: 3, md: 5 }, mt: { xs: 3, md: 4 }, alignItems: 'start' }}>
-        <Section title={t('dash.cashflow')}>
+        <Section title={t('dash.cashflow')} action={legend}>
           <CashflowChart
             data={cashflow}
             labels={{ spent: t('dash.spent'), income: t('dash.income'), month: t('dash.month') }}
@@ -147,11 +170,11 @@ export function Dashboard({ book }: { book: Book }) {
             formatAxis={(v) => axis.format(v / 10 ** minor(book.base_currency))}
             formatMonth={(iso) => monthFmt.format(new Date(`${iso}T00:00:00`))}
           />
-          {notConverted > 0 && <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>{t('dash.notConverted', { count: notConverted })}</Typography>}
+          {notConverted > 0 && <Typography variant="body2" color="textSecondary" sx={{ mt: 1 }}>{t('dash.notConverted', { count: notConverted })}</Typography>}
         </Section>
 
         <Section title={t('dash.topCategories')}>
-          {bars.length === 0 && <Typography color="text.secondary">{t('dash.noSpending')}</Typography>}
+          {bars.length === 0 && <Typography color="textSecondary">{t('dash.noSpending')}</Typography>}
           {bars.map((b) => {
             const name = b.id ? nameOf.get(b.id) ?? '' : t('dash.uncategorized')
             const color = b.id ? colorOf.get(b.id) : null
@@ -174,8 +197,8 @@ export function Dashboard({ book }: { book: Book }) {
             {d.recent_transactions.slice(0, 5).map((r) => (
               <ListItemButton key={r.id} onClick={() => openRecent(r.id)} sx={rowSx}>
                 <Dot color={colorNamed(r.category)} />
-                <ListItemText primary={r.payee || t(`txn.types.${r.type}`)} sx={{ my: 0.75 }}
-                  secondary={[dayFmt.format(new Date(`${r.occurred_on}T00:00:00`)), r.category].filter(Boolean).join(' · ')}
+                <ListItemText primary={r.payee || t(`txn.types.${r.type}`)}
+                  secondary={[when(r.occurred_on), r.category].filter(Boolean).join(' · ')}
                   slotProps={{ primary: { noWrap: true }, secondary: { noWrap: true } }} />
                 {r.amount !== null && r.currency && (
                   <Money amount={r.amount} currency={r.currency} kind={r.type === 'transfer' ? 'transfer' : 'flow'} sign />
@@ -191,12 +214,12 @@ export function Dashboard({ book }: { book: Book }) {
               {shownAccounts.map((a) => (
                 <ListItemButton key={a.account_id} onClick={() => navigate(`/books/${book.id}/transactions?account_id=${a.account_id}`)}
                   sx={{ ...rowSx, opacity: a.in_net_worth ? 1 : 0.55 }}>
-                  <ListItemText primary={a.name} secondary={t(`accounts.kinds.${a.kind}`)} sx={{ my: 0.75 }}
+                  <ListItemText primary={a.name} secondary={t(`accounts.kinds.${a.kind}`)}
                     slotProps={{ primary: { noWrap: true } }} />
                   <Box sx={{ textAlign: 'right' }}>
                     <Money amount={a.balance} currency={a.currency} kind="balance" sx={{ display: 'block' }} />
                     {a.currency !== book.base_currency && (
-                      <Typography variant="caption" color="text.disabled" sx={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
+                      <Typography variant="caption" color="textDisabled" sx={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
                         {a.converted_balance === null ? t('dash.noRate') : `≈ ${money(a.converted_balance)}`}
                       </Typography>
                     )}
@@ -205,7 +228,7 @@ export function Dashboard({ book }: { book: Book }) {
               ))}
             </List>
             {!pinned.length && d.accounts.length > 0 && (
-              <Typography variant="caption" color="text.disabled" component="p" sx={{ mt: 1 }}>{t('dash.pinHint')}</Typography>
+              <Typography variant="caption" color="textDisabled" component="p" sx={{ mt: 1 }}>{t('dash.pinHint')}</Typography>
             )}
           </Section>
 
@@ -238,7 +261,7 @@ export function Dashboard({ book }: { book: Book }) {
         </Stack>
       </Box>
       {credit && (
-        <Typography variant="caption" color="text.disabled" component="p" sx={{ mt: 4 }}>
+        <Typography variant="caption" color="textDisabled" component="p" sx={{ mt: 4 }}>
           {t('dash.ratesBy')}{' '}
           <Link href={credit.href} target="_blank" rel="noopener" color="inherit">{credit.label}</Link>
         </Typography>

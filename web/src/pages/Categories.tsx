@@ -88,7 +88,7 @@ export function Categories({ book }: { book: Book }) {
       </PageHeader>
       {notice.error ? <Alert severity="error">{errorText(notice.error)}</Alert> : null}
       {notice.info && <Alert severity="info">{notice.info}</Alert>}
-      {categories.data?.length === 0 && <Typography color="text.secondary">{t('cat.empty')}</Typography>}
+      {categories.data?.length === 0 && <Typography color="textSecondary">{t('cat.empty')}</Typography>}
       <Box sx={{ display: 'grid', columnGap: 5, rowGap: 3, gridTemplateColumns: { xs: '1fr', md: 'repeat(3, minmax(0, 1fr))' }, alignItems: 'start' }}>
         {KINDS.map((kind) => {
           const rows = categoryTree(categories.data ?? [], kind)

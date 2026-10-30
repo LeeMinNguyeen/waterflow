@@ -79,6 +79,7 @@ export function Transactions({ book }: { book: Book }) {
   const filtered = Object.keys(filters).length > 0
   const locale = lang === 'vi' ? 'vi-VN' : 'en-GB'
   const fullDay = new Intl.DateTimeFormat(locale, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
+  const dayThisYear = new Intl.DateTimeFormat(locale, { weekday: 'short', day: 'numeric', month: 'short' })
   const shortDate = new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short', year: 'numeric' })
   const date = (iso: string) => new Date(`${iso}T00:00:00`)
   const today = todayIn(book.timezone)
@@ -126,7 +127,7 @@ export function Transactions({ book }: { book: Book }) {
   return (
     <Box>
       <PageHeader title={filteredAccount ? `${t('txn.title')} · ${filteredAccount.name}` : t('txn.title')} bookId={book.id} />
-      <Stack direction={{ xs: 'column', md: 'row' }} spacing={1} sx={{ mt: { xs: 2, md: 3 }, alignItems: { md: 'center' } }}>
+      <Stack direction={{ xs: 'column', md: 'row' }} spacing={{ xs: 1.5, md: 1 }} sx={{ mt: { xs: 2, md: 3 }, alignItems: { md: 'center' } }}>
         <TextField
           size="small"
           placeholder={t('filters.search')}
@@ -136,10 +137,15 @@ export function Transactions({ book }: { book: Book }) {
           slotProps={{ htmlInput: { 'aria-label': t('filters.search') }, input: { startAdornment: <InputAdornment position="start"><SearchIcon sx={{ fontSize: 18 }} /></InputAdornment> } }}
         />
         <Stack direction="row" spacing={1} sx={{ overflowX: 'auto', pb: { xs: 0.5, md: 0 }, alignItems: 'center' }}>
-          <FilterChip label={t('txn.account')} value={accountName} onClick={open('account')} />
-          <FilterChip label={t('txn.category')} value={categoryName} onClick={open('category')} />
-          <FilterChip label={t('filters.type')} value={filters.type ? t(`txn.types.${filters.type}`) : undefined} onClick={open('type')} />
-          <FilterChip label={t('filters.dates')} value={datesValue} onClick={open('dates')} />
+          <FilterChip label={t('txn.account')} value={accountName} onClick={open('account')}
+            onClear={() => setFilter('account_id', '')} clearLabel={t('filters.clearOne', { name: t('txn.account') })} />
+          <FilterChip label={t('txn.category')} value={categoryName} onClick={open('category')}
+            onClear={() => setFilter('category_id', '')} clearLabel={t('filters.clearOne', { name: t('txn.category') })} />
+          <FilterChip label={t('filters.type')} value={filters.type ? t(`txn.types.${filters.type}`) : undefined} onClick={open('type')}
+            onClear={() => setFilter('type', '')} clearLabel={t('filters.clearOne', { name: t('filters.type') })} />
+          <FilterChip label={t('filters.dates')} value={datesValue} onClick={open('dates')}
+            onClear={() => { setCleared((n) => n + 1); setFilter('from', ''); setFilter('to', '') }}
+            clearLabel={t('filters.clearOne', { name: t('filters.dates') })} />
           {filtered && (
             <Button size="small" sx={{ flexShrink: 0 }} onClick={() => { setSearch(''); setCleared((n) => n + 1); setParams({}, { replace: true }) }}>
               {t('filters.clear')}
@@ -188,7 +194,7 @@ export function Transactions({ book }: { book: Book }) {
 
       {txns.isError && !txns.data && <Alert severity="error" sx={{ mt: 3 }}>{errorText(txns.error)}</Alert>}
       {txns.isSuccess && items.length === 0 && (
-        <Typography color="text.secondary" sx={{ mt: 3 }}>{t(filtered ? 'txn.noMatch' : 'txn.empty')}</Typography>
+        <Typography color="textSecondary" sx={{ mt: 3 }}>{t(filtered ? 'txn.noMatch' : 'txn.empty')}</Typography>
       )}
 
       {items.length > 0 && desktop && (
@@ -203,7 +209,8 @@ export function Transactions({ book }: { book: Book }) {
       )}
 
       {days.map((day) => (
-        <Day key={day.on} label={dayName(day.on)} date={fullDay.format(date(day.on))} total={total(day.txns)} desktop={desktop}>
+        <Day key={day.on} label={dayName(day.on)} total={total(day.txns)} desktop={desktop}
+          date={(day.on.slice(0, 4) === today.slice(0, 4) ? dayThisYear : fullDay).format(date(day.on))}>
           {day.txns.map((txn) => {
             const money = shown(txn)
             const cat = txn.category_id ? categoryById.get(txn.category_id) : undefined
@@ -211,11 +218,11 @@ export function Transactions({ book }: { book: Book }) {
             if (!desktop) {
               return (
                 <ListItemButton key={txn.id} onClick={() => openTxn(txn)}
-                  sx={{ px: 0, minHeight: 56, gap: 1.5, '&:not(:first-of-type)': { borderTop: 1, borderColor: 'divider' } }}>
+                  sx={{ px: 0, py: 0.75, minHeight: 56, gap: 1.5, '&:not(:first-of-type)': { borderTop: 1, borderColor: 'divider' } }}>
                   <Box sx={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0, bgcolor: cat?.color || 'text.disabled' }} />
-                  <Box sx={{ flex: 1, minWidth: 0, py: 0.75 }}>
+                  <Box sx={{ flex: 1, minWidth: 0 }}>
                     <Typography noWrap>{title(txn)}</Typography>
-                    <Typography variant="body2" color="text.secondary" noWrap>
+                    <Typography variant="body2" color="textSecondary" noWrap>
                       {[txn.occurred_time.slice(0, 5), cat?.name, accountsOf(txn)].filter(Boolean).join(' · ')}
                     </Typography>
                   </Box>
@@ -226,10 +233,10 @@ export function Transactions({ book }: { book: Book }) {
             return (
               <ListItemButton key={txn.id} onClick={() => openTxn(txn)}
                 sx={{ display: 'grid', gridTemplateColumns: columns, columnGap: 2, alignItems: 'center', minHeight: 52, px: 1.5, py: 0.75, borderRadius: 1 }}>
-                <Typography variant="body2" color="text.disabled" sx={{ fontVariantNumeric: 'tabular-nums' }}>{txn.occurred_time.slice(0, 5)}</Typography>
+                <Typography variant="body2" color="textDisabled" sx={{ fontVariantNumeric: 'tabular-nums' }}>{txn.occurred_time.slice(0, 5)}</Typography>
                 <Box sx={{ minWidth: 0 }}>
                   <Typography noWrap>{title(txn)}</Typography>
-                  {txn.note && <Typography variant="body2" color="text.secondary" noWrap>{txn.note}</Typography>}
+                  {txn.note && <Typography variant="body2" color="textSecondary" noWrap>{txn.note}</Typography>}
                 </Box>
                 <Stack direction="row" spacing={1} sx={{ alignItems: 'center', minWidth: 0, color: 'text.secondary' }}>
                   {cat ? (
@@ -237,9 +244,9 @@ export function Transactions({ book }: { book: Book }) {
                       <Box sx={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0, bgcolor: cat.color || 'text.disabled' }} />
                       <Typography noWrap>{cat.name}</Typography>
                     </>
-                  ) : <Typography color="text.disabled">—</Typography>}
+                  ) : <Typography color="textDisabled">—</Typography>}
                 </Stack>
-                <Typography color="text.secondary" noWrap>{accountsOf(txn)}</Typography>
+                <Typography color="textSecondary" noWrap>{accountsOf(txn)}</Typography>
                 <Box sx={{ textAlign: 'right' }}>{amount}</Box>
                 {filteredAccount && (
                   <Box sx={{ textAlign: 'right' }}>
@@ -273,7 +280,7 @@ function Day({ label, date, total, desktop, children }: {
         mb: desktop ? 0.5 : 0, borderBottom: 1, borderColor: 'divider' }}>
         <Typography id={id} variant="body2" sx={{ fontWeight: 600, color: 'text.secondary' }}>
           {label ?? date}
-          {label && <Box component="span" sx={{ fontWeight: 400, color: 'text.disabled' }}> · {date}</Box>}
+          {label && desktop && <Box component="span" sx={{ fontWeight: 400, color: 'text.disabled' }}> · {date}</Box>}
         </Typography>
         {total && <Money variant="body2" amount={total.amount} currency={total.currency} sign />}
       </Stack>

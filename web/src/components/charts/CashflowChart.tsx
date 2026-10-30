@@ -15,8 +15,7 @@ type Props = {
   formatMonth: (isoDate: string) => string
 }
 
-const HEIGHT = 220
-const PAD = { top: 12, right: 8, bottom: 28, left: 64 }
+const PAD = { top: 12, right: 8, bottom: 28, left: 44 }
 
 // A bar with 3px rounded top corners, anchored square to the baseline.
 function bar(x: number, y: number, w: number, h: number): string {
@@ -35,7 +34,7 @@ function niceTicks(v: number): number[] {
   return Array.from({ length: Math.round(top / step) + 1 }, (_, i) => i * step)
 }
 
-// Spending vs income per month: paired bars on one axis, a legend, a tooltip
+// Spending vs income per month: paired bars on one axis, a tooltip
 // per month, and the same numbers as a table for screen readers.
 export function CashflowChart({ data, labels, formatMoney, formatAxis, formatMonth }: Props) {
   const colors = useChartColors()
@@ -53,32 +52,28 @@ export function CashflowChart({ data, labels, formatMoney, formatAxis, formatMon
 
   const ticks = niceTicks(Math.max(0, ...data.flatMap((d) => [d.spent, d.income])))
   const max = ticks[ticks.length - 1]
-  const left = width < 520 ? 44 : PAD.left
+  const compact = width < 520
+  const height = compact ? 150 : 260
+  const left = compact ? 0 : PAD.left
   const plotW = Math.max(0, width - left - PAD.right)
-  const plotH = HEIGHT - PAD.top - PAD.bottom
+  const plotH = height - PAD.top - PAD.bottom
   const groupW = data.length ? plotW / data.length : plotW
-  const barW = Math.max(4, Math.min(14, groupW * 0.2))
+  const barW = Math.max(4, Math.min(compact ? 10 : 14, groupW * 0.2))
   const y = (v: number) => PAD.top + plotH - (Math.max(0, v) / max) * plotH
   const hovered = hover !== null ? data[hover] : null
 
   return (
     <Box>
-      <Stack direction="row" spacing={2} sx={{ mb: 1 }} aria-hidden>
-        {(['spent', 'income'] as const).map((k) => (
-          <Stack key={k} direction="row" spacing={0.75} sx={{ alignItems: 'center' }}>
-            <Box sx={{ width: 8, height: 8, borderRadius: '2px', bgcolor: colors[k] }} />
-            <Typography variant="caption" color="text.secondary">{labels[k]}</Typography>
-          </Stack>
-        ))}
-      </Stack>
       <Box ref={ref} sx={{ position: 'relative', width: '100%', minWidth: 0, overflow: 'hidden' }} onMouseLeave={() => setHover(null)}>
-        <svg width={width} height={HEIGHT} role="img" aria-hidden style={{ display: 'block' }}>
+        <svg width={width} height={height} role="img" aria-hidden style={{ display: 'block' }}>
           {ticks.map((v) => (
             <g key={v}>
               <line x1={left} x2={width - PAD.right} y1={y(v)} y2={y(v)} stroke={colors.grid} strokeWidth={1} />
-              <text x={left - 8} y={y(v)} dy="0.32em" textAnchor="end" fontSize={11} fill={palette.text.disabled}>
-                {formatAxis(v)}
-              </text>
+              {!compact && (
+                <text x={left - 8} y={y(v)} dy="0.32em" textAnchor="end" fontSize={11} fill={palette.text.disabled}>
+                  {formatAxis(v)}
+                </text>
+              )}
             </g>
           ))}
           {data.map((d, i) => {
@@ -87,7 +82,7 @@ export function CashflowChart({ data, labels, formatMoney, formatAxis, formatMon
               <g key={d.month} opacity={hover === null || hover === i ? 1 : 0.45}>
                 <path d={bar(cx - barW - 1, y(d.spent), barW, y(0) - y(d.spent))} fill={colors.spent} />
                 <path d={bar(cx + 1, y(d.income), barW, y(0) - y(d.income))} fill={colors.income} />
-                <text x={cx} y={HEIGHT - 8} textAnchor="middle" fontSize={11} fill={i === data.length - 1 ? palette.text.primary : palette.text.disabled}
+                <text x={cx} y={height - 8} textAnchor="middle" fontSize={11} fill={i === data.length - 1 ? palette.text.primary : palette.text.disabled}
                   fontWeight={i === data.length - 1 ? 600 : 400}>
                   {formatMonth(d.month)}
                 </text>
@@ -109,7 +104,7 @@ export function CashflowChart({ data, labels, formatMoney, formatAxis, formatMon
               <Stack key={k} direction="row" spacing={1} sx={{ alignItems: 'center', justifyContent: 'space-between' }}>
                 <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center' }}>
                   <Box sx={{ width: 8, height: 8, borderRadius: '2px', bgcolor: colors[k] }} />
-                  <Typography variant="caption" color="text.secondary" sx={{ whiteSpace: 'nowrap' }}>{labels[k]}</Typography>
+                  <Typography variant="caption" color="textSecondary" sx={{ whiteSpace: 'nowrap' }}>{labels[k]}</Typography>
                 </Stack>
                 <Typography variant="caption" sx={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{formatMoney(hovered[k])}</Typography>
               </Stack>

@@ -361,3 +361,13 @@ describe("adding on a phone, the owner's concept (waterflow#143)", () => {
     expect(screen.getByRole('menuitem', { name: 'Delete' })).toBeInTheDocument()
   })
 })
+
+describe('the desktop dialog, as designed (waterflow#143)', () => {
+  it('closes from the × in its title row', async () => {
+    server()
+    let closed = false
+    await renderApp(<TxnDialog book={book} txn={null} onClose={() => { closed = true }} />)
+    await userEvent.click(await screen.findByRole('button', { name: 'Close' }))
+    expect(closed).toBe(true)
+  })
+})

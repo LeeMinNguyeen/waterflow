@@ -4,6 +4,7 @@ import { beforeAll, describe, expect, it } from 'vitest'
 import type { Book, Dashboard as Dash } from '../lib/api'
 import { currencies, fakeApi } from '../test/fakeApi'
 import { renderApp } from '../test/render'
+import { todayIn } from '../lib/labels'
 import { Dashboard } from './Dashboard'
 
 const book: Book = { id: 'b1', name: 'Personal', base_currency: 'VND', timezone: 'Asia/Ho_Chi_Minh', role: 'owner', archived_at: null, version: 1 }
@@ -109,7 +110,7 @@ describe('colour for meaning (waterflow#143)', () => {
     ] })
     await renderApp(<Dashboard book={book} />)
     const recent = await cardOf('Recent')
-    expect(recent.getByText('-₫85,000')).toHaveStyle({ color: '#C9372C' })
+    expect(recent.getByText('−₫85,000')).toHaveStyle({ color: '#C9372C' })
     expect(recent.getByText('+₫32,000,000')).toHaveStyle({ color: '#18803E' })
     expect(recent.getByText('₫5,000,000')).toHaveStyle({ color: '#18181B' })
   })
@@ -117,6 +118,26 @@ describe('colour for meaning (waterflow#143)', () => {
   it('shows a card that owes money in red', async () => {
     dashServer({ accounts: [{ ...row(1), name: 'VIB card', kind: 'credit_card' as const, balance: -6_850_000, converted_balance: -6_850_000 }] })
     await renderApp(<Dashboard book={book} />)
-    expect((await cardOf('Accounts')).getByText('-₫6,850,000')).toHaveStyle({ color: '#C9372C' })
+    expect((await cardOf('Accounts')).getByText('−₫6,850,000')).toHaveStyle({ color: '#C9372C' })
+  })
+})
+
+describe('the design, line by line (waterflow#143)', () => {
+  it('says Today and Yesterday in the recent list', async () => {
+    const today = todayIn(book.timezone)
+    const yesterday = new Date(Date.parse(`${today}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10)
+    dashServer({ recent_transactions: [{ ...txn(1), occurred_on: today }, { ...txn(2), occurred_on: yesterday }] })
+    await renderApp(<Dashboard book={book} />)
+    const recent = await cardOf('Recent')
+    expect(recent.getByText(/^Today/)).toBeInTheDocument()
+    expect(recent.getByText(/^Yesterday/)).toBeInTheDocument()
+  })
+
+  it("puts the chart's legend in its section's title row", async () => {
+    dashServer({})
+    await renderApp(<Dashboard book={book} />)
+    const title = (await screen.findByRole('heading', { name: 'Spending and income' })).parentElement!
+    expect(within(title).getByText('Spending')).toBeInTheDocument()
+    expect(within(title).getByText('Income')).toBeInTheDocument()
   })
 })

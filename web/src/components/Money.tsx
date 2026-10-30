@@ -12,6 +12,7 @@ export function Money({ amount, currency, kind = 'flow', sign = false, sx, ...pr
   if (!currencies.data) return null
   const shown = kind === 'transfer' ? Math.abs(amount) : amount
   const text = formatMoney(shown, currency, currencies.data.get(currency)?.minor_unit ?? 0, currentLanguage(), { sign: sign && kind !== 'transfer' })
+    .replace('-', '−')
   return (
     <Typography component="span" variant="inherit" {...props}
       sx={[{ color: toneColor[amountTone(amount, kind)], fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }, ...(Array.isArray(sx) ? sx : [sx])]}>
