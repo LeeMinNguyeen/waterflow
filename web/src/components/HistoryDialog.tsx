@@ -55,7 +55,7 @@ export function HistoryDialog({ book, txnId, onClose }: { book: Book; txnId: str
                   {h.changed_by ? ` · ${t('txn.by', { name: personName(h.changed_by, t) })}` : ''}
                 </Typography>
                 {h.action !== 'deleted' && (
-                  <Typography variant="body2" color="text.secondary">
+                  <Typography variant="body2" color="textSecondary">
                     {[
                       t(`txn.types.${h.type}`),
                       day.format(new Date(`${h.occurred_on}T00:00:00`)) + (h.occurred_time ? ` ${h.occurred_time.slice(0, 5)}` : ''),

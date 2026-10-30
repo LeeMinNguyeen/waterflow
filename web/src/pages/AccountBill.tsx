@@ -74,7 +74,7 @@ function BillCard({ book, account, bill: b, minorUnit, canPay, alone, last }: {
         : { color: daysLeft <= 3 ? 'warning' : 'default', label: daysLeft === 0 ? t('bill.dueToday') : t('bill.daysLeft', { days: daysLeft }) }
   const row = (label: string, value: ReactNode) => (
     <Stack direction="row" spacing={2} sx={{ justifyContent: 'space-between', alignItems: 'baseline' }}>
-      <Typography variant="body2" color="text.secondary">{label}</Typography>
+      <Typography variant="body2" color="textSecondary">{label}</Typography>
       <Typography variant="body2" sx={{ textAlign: 'right' }}>{value}</Typography>
     </Stack>
   )
@@ -89,11 +89,11 @@ function BillCard({ book, account, bill: b, minorUnit, canPay, alone, last }: {
           </Typography>
           <Chip size="small" color={status.color} label={status.label} />
         </Stack>
-        {open && alone && <Typography variant="body2" color="text.secondary">{t('bill.lastSettled', { date: short(dayBefore(b.period_start)) })}</Typography>}
+        {open && alone && <Typography variant="body2" color="textSecondary">{t('bill.lastSettled', { date: short(dayBefore(b.period_start)) })}</Typography>}
         {b.kind === 'card'
           ? row(t(open ? 'bill.soFar' : 'bill.statementBalance'), money(b.amount - b.fee))
           : row(t('bill.installment'), <>{money(b.amount - b.fee)}{b.interest > 0 && <Typography component="span" variant="caption"
-            color="text.secondary" sx={{ display: 'block' }}>{t('bill.ofWhichInterest', { amount: money(b.interest) })}</Typography>}</>)}
+            color="textSecondary" sx={{ display: 'block' }}>{t('bill.ofWhichInterest', { amount: money(b.interest) })}</Typography>}</>)}
         {(b.installments ?? []).map((i) => (
           <Box key={i.plan_id}>{row(t('bill.installmentLine', { payee: i.payee ?? t('plan.purchase'), number: i.number, months: i.months }), money(i.amount))}</Box>
         ))}
@@ -102,7 +102,7 @@ function BillCard({ book, account, bill: b, minorUnit, canPay, alone, last }: {
         {row(t('bill.due'), day(b.due_on))}
         <Stack direction="row" spacing={2} sx={{ justifyContent: 'space-between', alignItems: 'center', pt: 0.5 }}>
           <div>
-            <Typography variant="body2" color="text.secondary">{t(open ? 'bill.toPaySoFar' : 'bill.remaining')}</Typography>
+            <Typography variant="body2" color="textSecondary">{t(open ? 'bill.toPaySoFar' : 'bill.remaining')}</Typography>
             <Typography variant="h6">{money(b.remaining)}</Typography>
           </div>
           {canPay && <Button variant="contained" onClick={() => setPaying(true)}>{t('bill.pay')}</Button>}

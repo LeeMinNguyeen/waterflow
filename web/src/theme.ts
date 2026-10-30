@@ -133,9 +133,10 @@ export const theme = createTheme({
           '&.Mui-error .MuiOutlinedInput-notchedOutline': { borderColor: theme.palette.error.main, borderWidth: 1.5 },
         }),
         input: { paddingBlock: 10, paddingInline: 12 },
+        adornedStart: { paddingLeft: 12, '& .MuiOutlinedInput-input': { paddingLeft: 0 } },
       },
       variants: [
-        { props: { size: 'small' }, style: { '& .MuiOutlinedInput-input': { paddingBlock: 7 } } },
+        { props: { size: 'small' }, style: { '& .MuiOutlinedInput-input': { paddingBlock: 8 } } },
         { props: { multiline: true }, style: { padding: 0 } },
       ],
     },

@@ -36,7 +36,7 @@ export function PickRow({ label, value, placeholder, onClick, disabled }: {
   return (
     <ButtonBase onClick={onClick} disabled={disabled}
       sx={{ display: 'block', width: '100%', textAlign: 'left', py: 1.25, borderBottom: 1, borderColor: 'divider' }}>
-      <Typography variant="caption" color="text.disabled" component="div">{label}</Typography>
+      <Typography variant="caption" color="textDisabled" component="div">{label}</Typography>
       <Typography component="div" sx={{ fontSize: 17, color: value ? 'text.primary' : 'text.disabled', mt: 0.25 }}>{value || placeholder}</Typography>
     </ButtonBase>
   )

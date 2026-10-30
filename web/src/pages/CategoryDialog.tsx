@@ -121,7 +121,7 @@ export function CategoryDialog({ book, all, category, parent, editing: startEdit
             </TextField>
             <CategoryPicker label={t('cat.parent')} disabled={ro} noneLabel={t('cat.topLevel')} options={parents} value={parentId} onChange={setParentId} />
             <Box>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>{t('cat.color')}</Typography>
+              <Typography variant="body2" color="textSecondary" sx={{ mb: 1 }}>{t('cat.color')}</Typography>
               <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(9, 32px)', gap: 1 }}>
                 {/* A colour from outside the grid (the starter categories have some) shows too */}
                 {['', ...COLORS, ...(category?.color && !COLORS.includes(category.color) ? [category.color] : [])].map((c) => (
@@ -135,7 +135,7 @@ export function CategoryDialog({ book, all, category, parent, editing: startEdit
             </Box>
             {category && mine.length > 0 && (
               <Box>
-                <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>{t('cat.budgets')}</Typography>
+                <Typography variant="body2" color="textSecondary" sx={{ mb: 1 }}>{t('cat.budgets')}</Typography>
                 <Stack spacing={1}>
                   {mine.map((b) => (
                     <BudgetBar key={b.id} label={t(`budget.periods.${b.period}`)} spent={b.progress!.spent} budget={b.amount}

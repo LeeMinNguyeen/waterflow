@@ -63,11 +63,11 @@ export function People({ book }: { book: Book }) {
       <PageHeader title={t('nav.people')} bookId={book.id}>
         {canEdit && <Button variant="outlined" startIcon={<AddIcon />} onClick={() => setDialog('new')}>{t('people.add')}</Button>}
       </PageHeader>
-      <Typography color="text.secondary">{t('people.title')}</Typography>
-      <Typography variant="body2" color="text.secondary">{t('people.howTo')}</Typography>
+      <Typography color="textSecondary">{t('people.title')}</Typography>
+      <Typography variant="body2" color="textSecondary">{t('people.howTo')}</Typography>
       {notice.error ? <Alert severity="error">{errorText(notice.error)}</Alert> : null}
       {notice.info && <Alert severity="info">{notice.info}</Alert>}
-      {contacts.data?.length === 0 && <Typography color="text.secondary">{t('people.empty')}</Typography>}
+      {contacts.data?.length === 0 && <Typography color="textSecondary">{t('people.empty')}</Typography>}
       {!!contacts.data?.length && (
         <Paper variant="outlined">
           <List disablePadding>

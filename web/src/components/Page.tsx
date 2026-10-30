@@ -33,7 +33,7 @@ export function Section({ title, action, children, ...props }: { title: string; 
 
 export function SeeAll({ to, children }: { to: string; children: ReactNode }) {
   return (
-    <Link component={RouterLink} to={to} variant="body2" color="text.secondary" underline="hover" sx={{ whiteSpace: 'nowrap' }}>
+    <Link component={RouterLink} to={to} variant="body2" color="textSecondary" underline="hover" sx={{ whiteSpace: 'nowrap' }}>
       {children}
     </Link>
   )

@@ -197,7 +197,7 @@ function Security() {
       </Stack>
       <Divider />
       <Typography variant="subtitle1">{t('mfa.title')}</Typography>
-      <Typography color="text.secondary">
+      <Typography color="textSecondary">
         {on ? t('mfa.enabled') : t('mfa.disabled')}
         {on && ' ' + t('mfa.codesLeft', { count: twoFactor.data?.recovery_codes_left ?? 0 })}
       </Typography>
@@ -302,7 +302,7 @@ function Devices({ profile }: { profile: ProfileT }) {
         }, t('profile.saved'))}>
         {idleChoices.map((m) => <MenuItem key={m} value={m}>{m ? t('profile.idleMinutes', { minutes: m }) : t('profile.idleOff')}</MenuItem>)}
       </TextField>
-      <Typography color="text.secondary">{t('profile.devicesHint')}</Typography>
+      <Typography color="textSecondary">{t('profile.devicesHint')}</Typography>
       {sessions.isError && <Alert severity="error">{errorText(sessions.error)}</Alert>}
       {sessions.data && (
         <List disablePadding>
@@ -362,13 +362,13 @@ function YourData({ profile }: { profile: ProfileT }) {
 
   return (
     <Section title={t('profile.yourData')}>
-      <Typography color="text.secondary">{t('profile.exportHint')}</Typography>
+      <Typography color="textSecondary">{t('profile.exportHint')}</Typography>
       <Button variant="outlined" loading={busy && !confirm} onClick={() => run(() => download('/v1/me/export'))} sx={{ alignSelf: 'start' }}>
         {t('profile.export')}
       </Button>
       <Divider />
       <Typography variant="subtitle1">{t('profile.deleteTitle')}</Typography>
-      <Typography color="text.secondary">{t('profile.deleteHint')}</Typography>
+      <Typography color="textSecondary">{t('profile.deleteHint')}</Typography>
       <Button color="error" variant="outlined" onClick={() => { setTyped(''); setConfirm(true) }} sx={{ alignSelf: 'start' }}>{t('profile.delete')}</Button>
       {error ? <Alert severity="error">{errorText(error)}</Alert> : null}
       <Dialog open={confirm} onClose={() => setConfirm(false)} fullWidth maxWidth="xs">

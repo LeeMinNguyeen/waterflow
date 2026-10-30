@@ -83,7 +83,7 @@ export function BookMembers({ book }: { book: Book }) {
   return (
     <Stack spacing={2}>
       <Typography variant="h6">{t('members.title')}</Typography>
-      <Typography color="text.secondary">{t('members.intro')}</Typography>
+      <Typography color="textSecondary">{t('members.intro')}</Typography>
       <List disablePadding>
         {(members.data ?? []).map((m) => (
           <ListItem key={m.user_id} disableGutters
@@ -106,7 +106,7 @@ export function BookMembers({ book }: { book: Book }) {
                 {ROLES.map((r) => <MenuItem key={r} value={r}>{t(`members.role.${r}`)}</MenuItem>)}
               </TextField>
             ) : (
-              <Typography color="text.secondary">{t(`members.role.${m.role}`)}</Typography>
+              <Typography color="textSecondary">{t(`members.role.${m.role}`)}</Typography>
             )}
           </ListItem>
         ))}
@@ -122,7 +122,7 @@ export function BookMembers({ book }: { book: Book }) {
           <Button type="submit" variant="contained" loading={busy} disabled={!username.trim()}>{t('members.invite')}</Button>
         </Stack>
       )}
-      {owner && <Typography variant="body2" color="text.secondary">{t('members.roles')}</Typography>}
+      {owner && <Typography variant="body2" color="textSecondary">{t('members.roles')}</Typography>}
       {status.error ? <Alert severity="error">{errorText(status.error)}</Alert> : null}
       {status.invited ? <Alert severity="success">{t('members.invited', { name: status.invited })}</Alert> : null}
       {me && (

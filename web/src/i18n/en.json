@@ -279,7 +279,8 @@
     "dates": "Dates",
     "since": "From {{date}}",
     "until": "Until {{date}}",
-    "clearDates": "Clear dates"
+    "clearDates": "Clear dates",
+    "clearOne": "Clear {{name}}"
   },
   "cat": {
     "title": "Categories",
@@ -339,7 +340,7 @@
     "netWorth": "Net worth",
     "spentThisMonth": "Spent this month",
     "incomeThisMonth": "Income this month",
-    "vsLastMonth": "Last month: {{amount}}",
+    "vsLastMonth": "Last month {{amount}}",
     "cashflow": "Spending and income",
     "spent": "Spending",
     "income": "Income",

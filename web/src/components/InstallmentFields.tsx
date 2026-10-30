@@ -36,7 +36,7 @@ export function InstallmentFields({ card, plan, onChange, purchaseDate, amount, 
         control={<Switch checked={plan.on} disabled={!card.statement_day} onChange={(e) => onChange({ on: e.target.checked })} />}
         label={t('plan.switch')}
       />
-      {!card.statement_day && <Typography variant="body2" color="text.secondary">{t('plan.needsStatementDay')}</Typography>}
+      {!card.statement_day && <Typography variant="body2" color="textSecondary">{t('plan.needsStatementDay')}</Typography>}
       {plan.on && (
         <>
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
@@ -63,7 +63,7 @@ export function InstallmentFields({ card, plan, onChange, purchaseDate, amount, 
             label={t('plan.countsTowardLimit')}
           />
           {each !== null && months && (
-            <Typography variant="body2" color="text.secondary">
+            <Typography variant="body2" color="textSecondary">
               {`${months} × ${formatMoney(each, card.currency, minorUnit, lang)}`}
             </Typography>
           )}

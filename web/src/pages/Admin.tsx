@@ -169,7 +169,7 @@ function Jobs({ timezone }: { timezone: string }) {
     setEdits((e) => ({ ...e, [name]: { ...e[name], ...change } }))
   }
   const lastRun = (job: Job) => {
-    if (!job.last_started_at) return <Typography variant="body2" color="text.secondary">{t('admin.jobNever')}</Typography>
+    if (!job.last_started_at) return <Typography variant="body2" color="textSecondary">{t('admin.jobNever')}</Typography>
     if (!job.last_finished_at || Date.parse(job.last_finished_at) < Date.parse(job.last_started_at)) {
       return <Typography variant="body2">{t('admin.jobRunning', { when: at.format(new Date(job.last_started_at)) })}</Typography>
     }
@@ -179,7 +179,7 @@ function Jobs({ timezone }: { timezone: string }) {
         <Typography variant="body2" color={failed ? 'error' : 'success.main'}>
           {t(failed ? 'admin.jobFailed' : 'admin.jobDone', { when: at.format(new Date(job.last_finished_at)) })}
         </Typography>
-        {job.last_detail && <Typography variant="caption" color="text.secondary" sx={{ wordBreak: 'break-word' }}>{job.last_detail}</Typography>}
+        {job.last_detail && <Typography variant="caption" color="textSecondary" sx={{ wordBreak: 'break-word' }}>{job.last_detail}</Typography>}
       </>
     )
   }
@@ -204,7 +204,7 @@ function Jobs({ timezone }: { timezone: string }) {
 
   return (
     <Section title={t('admin.jobs')}>
-      <Typography variant="body2" color="text.secondary">{t('admin.jobsHint', { timezone })}</Typography>
+      <Typography variant="body2" color="textSecondary">{t('admin.jobsHint', { timezone })}</Typography>
       <Box sx={{ overflowX: 'auto' }}>{/* phones: the table scrolls, not the page */}
         <Table size="small">
           <TableHead>
@@ -227,7 +227,7 @@ function Jobs({ timezone }: { timezone: string }) {
                       <Box>
                         <Switch size="small" checked={enabled} onChange={(e) => edit(job.name, { enabled: e.target.checked })}
                           slotProps={{ input: { 'aria-label': t('admin.jobRatesOn') } }} />
-                        <Typography component="span" variant="body2" color="text.secondary">
+                        <Typography component="span" variant="body2" color="textSecondary">
                           {t(enabled ? 'admin.jobOn' : 'admin.jobOff')}
                         </Typography>
                       </Box>
@@ -298,11 +298,11 @@ function Updates() {
           onClick={() => setConfirm(true)} sx={{ alignSelf: 'start' }}>{t('admin.updateNow')}</Button>
       ) : d.update_available && (
         <>
-          <Typography color="text.secondary">{t('admin.updateByHand')}</Typography>
+          <Typography color="textSecondary">{t('admin.updateByHand')}</Typography>
           <Box component="pre" sx={{ m: 0, p: 1.5, bgcolor: 'action.hover', borderRadius: 1, overflowX: 'auto' }}>
             git pull{'\n'}docker compose up -d --build
           </Box>
-          <Typography variant="body2" color="text.secondary">{t('admin.updaterHint')}</Typography>
+          <Typography variant="body2" color="textSecondary">{t('admin.updaterHint')}</Typography>
         </>
       )}
       {error ? <Alert severity="error">{errorText(error)}</Alert> : null}
@@ -362,7 +362,7 @@ function Invites() {
 
   return (
     <Section title={t('admin.invites')}>
-      <Typography color="text.secondary">{t('admin.invitesHint')}</Typography>
+      <Typography color="textSecondary">{t('admin.invitesHint')}</Typography>
       <Stack component="form" direction={{ xs: 'column', sm: 'row' }} spacing={1} onSubmit={create}>
         <TextField size="small" label={t('admin.inviteNote')} value={note} onChange={(e) => setNote(e.target.value)}
           slotProps={{ htmlInput: { maxLength: 100 } }} fullWidth />
@@ -519,7 +519,7 @@ function Restore() {
 
   return (
     <Section title={t('restore.title')}>
-      <Typography color="text.secondary">{t('restore.intro')}</Typography>
+      <Typography color="textSecondary">{t('restore.intro')}</Typography>
       {last.data && (
         <Typography variant="body2">
           {t('restore.last', { status: t(`restore.statuses.${last.data.status}`), date: when(last.data.at) })}
@@ -532,7 +532,7 @@ function Restore() {
         <Stack component="form" spacing={2} onSubmit={start}>
           <FileField label={t('restore.file')} button={t('restore.choose')} file={file} onChange={setFile} accept=".dump" />
           <FileField label={t('restore.purged')} button={t('restore.choose')} file={purged} onChange={setPurged} accept=".jsonl" />
-          <Typography variant="body2" color="text.secondary">{t('restore.purgedHint')}</Typography>
+          <Typography variant="body2" color="textSecondary">{t('restore.purgedHint')}</Typography>
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
             <TextField type="password" label={t('restore.password')} required value={password} onChange={(e) => setPassword(e.target.value)}
               autoComplete="current-password" sx={{ flex: 1 }} />

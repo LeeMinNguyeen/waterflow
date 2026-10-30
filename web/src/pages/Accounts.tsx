@@ -80,8 +80,9 @@ export function Accounts({ book }: { book: Book }) {
   const closeMenu = () => setMenu((m) => m && { ...m, el: null })
   const groupTotal = (g: AccountGroup) => (
     <>
-      <Money amount={g.total} currency={book.base_currency} kind="balance" sx={{ fontWeight: 500, display: 'block' }} />
-      {g.notIncluded > 0 && <Typography variant="caption" color="text.disabled">{t('accounts.notIncluded', { count: g.notIncluded })}</Typography>}
+      <Money amount={g.total} currency={book.base_currency} kind="balance" variant={desktop ? 'body1' : 'body2'}
+        sx={{ fontWeight: desktop ? 500 : 400, display: 'block', ...(!desktop && g.total >= 0 && { color: 'text.disabled' }) }} />
+      {g.notIncluded > 0 && <Typography variant="caption" color="textDisabled">{t('accounts.notIncluded', { count: g.notIncluded })}</Typography>}
     </>
   )
 
@@ -110,7 +111,7 @@ export function Accounts({ book }: { book: Book }) {
 
   const converted = (a: Account) =>
     a.currency !== book.base_currency && (
-      <Typography variant="caption" color="text.disabled" component="div" sx={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
+      <Typography variant="caption" color="textDisabled" component="div" sx={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
         {a.converted_balance == null ? t('dash.noRate') : `≈ ${formatMoney(a.converted_balance, book.base_currency, currencies.data?.get(book.base_currency)?.minor_unit ?? 0, currentLanguage())}`}
       </Typography>
     )
@@ -122,14 +123,14 @@ export function Accounts({ book }: { book: Book }) {
     <Box sx={{ maxWidth: 920 }}>
       <PageHeader title={t('accounts.title')} bookId={book.id}>
         {canEdit && (
-          <Button variant="outlined" startIcon={<AddIcon />} onClick={() => setDialog({ account: null, editing: true })}>
+          <Button variant="outlined" size={desktop ? 'medium' : 'small'} startIcon={<AddIcon />} onClick={() => setDialog({ account: null, editing: true })}>
             {t('accounts.add')}
           </Button>
         )}
       </PageHeader>
       {error ? <Alert severity="error" sx={{ mt: 2 }}>{errorText(error)}</Alert> : null}
       {accounts.isError && !accounts.data ? <Alert severity="error" sx={{ mt: 2 }}>{errorText(accounts.error)}</Alert> : null}
-      {mine?.length === 0 && <Typography color="text.secondary" sx={{ mt: 3 }}>{t('accounts.empty')}</Typography>}
+      {mine?.length === 0 && <Typography color="textSecondary" sx={{ mt: 3 }}>{t('accounts.empty')}</Typography>}
       {desktop && mine && mine.length > 0 && (
         <Table sx={{ mt: 1, '& td': { borderColor: 'divider' } }}>
           <TableBody>
@@ -145,8 +146,7 @@ export function Accounts({ book }: { book: Book }) {
                       </Typography>
                     </Stack>
                   </TableCell>
-                  <TableCell align="right" sx={{ pt: 3.5, pb: 1 }}>{groupTotal(g)}</TableCell>
-                  <TableCell padding="checkbox" sx={{ pt: 3.5, pb: 1 }} />
+                  <TableCell align="right" colSpan={2} sx={{ pt: 3.5, pb: 1, pr: 0 }}>{groupTotal(g)}</TableCell>
                 </TableRow>
                 {!folded.has(g.kind) && g.accounts.map((a) => (
                   <TableRow key={a.id} hover onClick={() => open(a)} sx={{ cursor: 'pointer', '& td': { py: 1.25 } }}>
@@ -155,7 +155,7 @@ export function Accounts({ book }: { book: Book }) {
                         <Typography component="span">{a.name}</Typography>
                         {a.archived_at && <Chip size="small" label={t('accounts.archived')} />}
                       </Stack>
-                      <Typography variant="body2" color="text.secondary">{meta(a)}</Typography>
+                      <Typography variant="body2" color="textSecondary">{meta(a)}</Typography>
                     </TableCell>
                     <TableCell sx={{ width: 64 }}>
                       {a.currency !== book.base_currency && (
@@ -194,7 +194,7 @@ export function Accounts({ book }: { book: Book }) {
                 <ListItem key={a.id} disablePadding secondaryAction={menuButton(a, 'end')}
                   sx={{ '&:not(:last-of-type)': { borderBottom: 1, borderColor: 'divider' } }}>
                   {/* Left out of net worth: greyed out but still clickable */}
-                  <ListItemButton onClick={() => open(a)} sx={{ px: 0, minHeight: 56, opacity: dim(a) }}>
+                  <ListItemButton onClick={() => open(a)} sx={{ px: 0, py: 0.75, minHeight: 56, opacity: dim(a), '& .MuiListItemText-root': { my: 0 } }}>
                     <ListItemText
                       primary={
                         <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
@@ -217,7 +217,7 @@ export function Accounts({ book }: { book: Book }) {
       )}
       <FormControlLabel sx={{ mt: 3 }}
         control={<Switch size="small" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />}
-        label={<Typography variant="body2" color="text.secondary">{t('accounts.showArchived')}</Typography>}
+        label={<Typography variant="body2" color="textSecondary">{t('accounts.showArchived')}</Typography>}
       />
       <Menu anchorEl={menu?.el} open={!!menu?.el && !!menuAccount} onClose={closeMenu}>
         {menuAccount && [

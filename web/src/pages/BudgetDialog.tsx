@@ -84,7 +84,7 @@ export function BudgetDialog({ book, category, onClose }: { book: Book; category
         <DialogTitle>{t('budget.title')} · {category.name}</DialogTitle>
         <DialogContent>
           <Stack spacing={2}>
-            <Typography variant="body2" color="text.secondary">{t('budget.subcategoriesCount')}</Typography>
+            <Typography variant="body2" color="textSecondary">{t('budget.subcategoriesCount')}</Typography>
             {mine.length > 0 && (
               <Stack spacing={2}>
                 <Typography variant="subtitle2">{t('budget.existing')}</Typography>
