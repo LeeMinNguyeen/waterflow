@@ -257,7 +257,15 @@
     "people": "Người",
     "today": "Hôm nay",
     "yesterday": "Hôm qua",
-    "moreTypes": "Khác"
+    "moreTypes": "Khác",
+    "subcategoriesOf": "Danh mục con của {{name}}",
+    "allCategories": "Tất cả",
+    "searchCategories": "Tìm danh mục",
+    "searchAccounts": "Tìm tài khoản",
+    "noteHint": "Chạm để thêm ghi chú",
+    "bookOf": "Sổ: {{name}}",
+    "chooseAccount": "Chọn tài khoản",
+    "moreActions": "Thao tác khác"
   },
   "filters": {
     "allAccounts": "Mọi tài khoản",

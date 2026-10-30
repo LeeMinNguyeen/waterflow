@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Account, Book, Transaction } from '../lib/api'
 import { currencies, fakeApi } from '../test/fakeApi'
-import { renderApp } from '../test/render'
+import { phone, renderApp } from '../test/render'
 import { TxnDialog } from './TxnDialog'
 
 const book: Book = { id: 'b1', name: 'Personal', base_currency: 'VND', timezone: 'Asia/Ho_Chi_Minh', role: 'owner', archived_at: null, version: 1 }
@@ -247,5 +247,117 @@ describe('the type switch (waterflow#143)', () => {
     await userEvent.type(screen.getByLabelText(/^Amount/), '189000')
     await userEvent.click(screen.getByRole('button', { name: 'Save' }))
     await waitFor(() => expect(api.writes()[0].body).toMatchObject({ type: 'refund', entries: [{ account_id: 'cash', amount: 189_000 }] }))
+  })
+})
+
+describe("adding on a phone, the owner's concept (waterflow#143)", () => {
+  const bank: Account = { ...cash, id: 'bank', name: 'Vietcombank', kind: 'checking', balance: 18_420_000 }
+  const cat = (id: string, name: string, parent_id: string | null = null, kind: 'expense' | 'income' = 'expense') =>
+    ({ id, parent_id, name, kind, color: '#D97757', archived_at: null, version: 1 })
+  const categories = [cat('fun', 'Đi chơi'), cat('party', 'Tiệc', 'fun'), cat('bar', 'Bar', 'fun'), cat('move', 'Di chuyển'), cat('pay', 'Lương', null, 'income')]
+  const books: Book[] = [book, { ...book, id: 'b2', name: 'Gia đình' }, { ...book, id: 'b3', name: 'Shared, read only', role: 'viewer' }]
+
+  function phoneServer() {
+    return fakeApi({
+      'GET /v1/currencies': currencies,
+      'GET /v1/books': books,
+      'GET /v1/books/b1/accounts': [cash, bank],
+      'GET /v1/books/b1/categories': categories,
+      'GET /v1/books/b2/accounts': [{ ...cash, id: 'home', name: 'Quỹ chung' }, { ...bank, id: 'acb', name: 'ACB' }],
+      'GET /v1/books/b2/categories': [],
+      'POST /v1/books/b1/transactions': ({ body }: { body: unknown }) => body,
+      'POST /v1/books/b2/transactions': ({ body }: { body: unknown }) => body,
+    })
+  }
+  beforeEach(() => phone(true))
+  afterEach(() => phone(false))
+
+  it('takes the amount, a category pill and an account from its sheet, and saves from the button at the bottom', async () => {
+    const api = phoneServer()
+    await renderApp(<TxnDialog book={book} txn={null} onClose={() => {}} />)
+    expect(await screen.findByRole('button', { name: 'Expense' })).toHaveAttribute('aria-pressed', 'true')
+    await userEvent.type(screen.getByLabelText('Amount'), '45000')
+    expect(screen.getByText('−')).toHaveStyle({ color: '#C9372C' })
+    await userEvent.click(screen.getByRole('button', { name: 'Di chuyển' }))
+    expect(screen.getByRole('button', { name: 'Di chuyển' })).toHaveAttribute('aria-pressed', 'true')
+    await userEvent.click(screen.getByRole('button', { name: /^Account/ }))
+    const sheet = await screen.findByRole('dialog', { name: 'Account' })
+    await userEvent.click(within(sheet).getByText('Vietcombank'))
+    expect(await screen.findByRole('button', { name: /^Account/ })).toHaveTextContent('Vietcombank')
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(api.writes()[0].body).toMatchObject({ type: 'expense', category_id: 'move', entries: [{ account_id: 'bank', amount: -45_000 }] }))
+  })
+
+  it("opens a category's sub-categories from its ••• badge, and the pill then shows the one picked", async () => {
+    const api = phoneServer()
+    await renderApp(<TxnDialog book={book} txn={null} defaults={{ account: 'cash' }} onClose={() => {}} />)
+    await userEvent.click(await screen.findByRole('button', { name: 'Đi chơi' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Sub-categories of Đi chơi' }))
+    const sheet = await screen.findByRole('dialog', { name: 'Đi chơi' })
+    await userEvent.click(within(sheet).getByText('Bar'))
+    expect(await screen.findByRole('button', { name: 'Bar' })).toHaveAttribute('aria-pressed', 'true')
+    await userEvent.type(screen.getByLabelText('Amount'), '120000')
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(api.writes()[0].body).toMatchObject({ category_id: 'bar' }))
+  })
+
+  it('finds any category under All, with a search', async () => {
+    phoneServer()
+    await renderApp(<TxnDialog book={book} txn={null} defaults={{ account: 'cash' }} onClose={() => {}} />)
+    await userEvent.click(await screen.findByRole('button', { name: 'All' }))
+    const sheet = await screen.findByRole('dialog', { name: 'Category' })
+    await userEvent.type(within(sheet).getByRole('textbox', { name: 'Search categories' }), 'tiệ')
+    expect(within(sheet).queryByText('Di chuyển')).not.toBeInTheDocument()
+    await userEvent.click(within(sheet).getByText(/Tiệc/))
+    expect(await screen.findByRole('button', { name: 'Tiệc' })).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('saves an expense as a refund with the Refund tick', async () => {
+    const api = phoneServer()
+    await renderApp(<TxnDialog book={book} txn={null} defaults={{ account: 'cash' }} onClose={() => {}} />)
+    await userEvent.type(await screen.findByLabelText('Amount'), '189000')
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Refund' }))
+    expect(screen.getByText('+')).toHaveStyle({ color: '#18803E' })
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(api.writes()[0].body).toMatchObject({ type: 'refund', entries: [{ account_id: 'cash', amount: 189_000 }] }))
+  })
+
+  it('sets the payee from its chip', async () => {
+    const api = phoneServer()
+    await renderApp(<TxnDialog book={book} txn={null} defaults={{ account: 'cash' }} onClose={() => {}} />)
+    await userEvent.type(await screen.findByLabelText('Amount'), '85000')
+    await userEvent.click(screen.getByRole('button', { name: 'Payee' }))
+    const sheet = await screen.findByRole('dialog', { name: 'Payee' })
+    await userEvent.type(within(sheet).getByRole('textbox', { name: 'Payee' }), 'Phở Thìn')
+    await userEvent.click(within(sheet).getByRole('button', { name: 'Done' }))
+    expect(await screen.findByRole('button', { name: 'Payee: Phở Thìn' })).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(api.writes()[0].body).toMatchObject({ payee: 'Phở Thìn' }))
+  })
+
+  it('adds into another book picked from the top, keeping the amount; books it can only view are left out', async () => {
+    const api = phoneServer()
+    await renderApp(<TxnDialog book={book} txn={null} defaults={{ account: 'cash' }} onClose={() => {}} />)
+    await userEvent.type(await screen.findByLabelText('Amount'), '300000')
+    await userEvent.click(screen.getByRole('button', { name: 'Book: Personal' }))
+    const sheet = await screen.findByRole('dialog', { name: 'Switch book' })
+    expect(within(sheet).queryByText('Shared, read only')).not.toBeInTheDocument()
+    await userEvent.click(within(sheet).getByText('Gia đình'))
+    expect(await screen.findByRole('button', { name: 'Book: Gia đình' })).toBeInTheDocument()
+    expect(screen.getByLabelText('Amount')).toHaveValue('300,000')
+    await userEvent.click(screen.getByRole('button', { name: /^Account/ }))
+    await userEvent.click(within(await screen.findByRole('dialog', { name: 'Account' })).getByText('ACB'))
+    await userEvent.click(await screen.findByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(api.writes()[0].path).toBe('/v1/books/b2/transactions'))
+    expect(api.writes()[0].body).toMatchObject({ entries: [{ account_id: 'acb', amount: -300_000 }] })
+  })
+
+  it('keeps edit history and delete in the ⋮ menu when editing', async () => {
+    phoneServer()
+    await renderApp(<TxnDialog book={book} txn={lunch} onClose={() => {}} />)
+    expect(screen.queryByRole('button', { name: /^Book:/ })).not.toBeInTheDocument()
+    await userEvent.click(await screen.findByRole('button', { name: 'More actions' }))
+    expect(screen.getByRole('menuitem', { name: 'Edit history' })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: 'Delete' })).toBeInTheDocument()
   })
 })

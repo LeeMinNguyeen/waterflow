@@ -170,6 +170,7 @@ export const theme = createTheme({
     MuiPaper: {
       defaultProps: { elevation: 0 },
       styleOverrides: {
+        root: { backgroundImage: 'none' },
         outlined: { border: 0, backgroundColor: 'transparent' },
       },
     },

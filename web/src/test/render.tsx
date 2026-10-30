@@ -53,3 +53,11 @@ export function desktop(on: boolean, { dark = false } = {}) {
     addListener: () => {}, removeListener: () => {}, addEventListener: () => {}, removeEventListener: () => {}, dispatchEvent: () => false,
   })) as unknown as typeof window.matchMedia
 }
+
+// A phone: the max-width queries match (MUI's breakpoints.down), the min-width ones don't.
+export function phone(on: boolean) {
+  window.matchMedia = ((query: string) => ({
+    matches: on && query.includes('max-width'), media: query, onchange: null,
+    addListener: () => {}, removeListener: () => {}, addEventListener: () => {}, removeEventListener: () => {}, dispatchEvent: () => false,
+  })) as unknown as typeof window.matchMedia
+}

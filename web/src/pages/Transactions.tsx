@@ -25,19 +25,13 @@ import { useOpenTxn } from '../components/txnContext'
 import { currentLanguage } from '../i18n'
 import { txnTypes, type Account, type Book, type Transaction } from '../lib/api'
 import { categoryTree } from '../lib/categories'
-import { todayIn } from '../lib/labels'
+import { shiftDay, todayIn } from '../lib/labels'
 import { useAccounts, useCategories, useTransactions, type TxnFilters } from '../lib/queries'
 
 const FILTERS = ['account_id', 'category_id', 'type', 'from', 'to', 'q'] as const
 type Filter = (typeof FILTERS)[number]
 // What a day's total adds up: money that came in or went out, not money moved between your own accounts.
 const COUNTED = new Set(['expense', 'income', 'refund'])
-
-const dayBefore = (iso: string) => {
-  const d = new Date(`${iso}T00:00:00Z`)
-  d.setUTCDate(d.getUTCDate() - 1)
-  return d.toISOString().slice(0, 10)
-}
 
 // Filters are kept in the URL, so an account can link to its own list.
 export function Transactions({ book }: { book: Book }) {
@@ -117,7 +111,7 @@ export function Transactions({ book }: { book: Book }) {
     return { amount: counted.reduce((sum, c) => sum + c.amount, 0), currency: counted[0].currency }
   }
   const dayName = (on: string) =>
-    on === today ? t('txn.today') : on === dayBefore(today) ? t('txn.yesterday') : null
+    on === today ? t('txn.today') : on === shiftDay(today, -1) ? t('txn.yesterday') : null
 
   const columns = `48px minmax(0, 1.6fr) minmax(0, 1fr) minmax(0, 1.2fr) 150px${filteredAccount ? ' 140px' : ''}`
   const accountName = filters.account_id ? accountById.get(filters.account_id)?.name : undefined
