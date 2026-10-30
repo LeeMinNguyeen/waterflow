@@ -73,7 +73,19 @@ layout until the mobile app ships.
   (`@fontsource-variable/inter`, no font from elsewhere). Amounts on screen go through `components/Money`: red below
   zero, green for money coming in, plain for transfers and balances, signs kept. A category's colour on its dot and
   its bars; a budget past its limit red with "over". Sections are separated by space and a hairline
-  (`components/Page`), not cards; at most one filled blue button per screen.
+  (`components/Page`), not cards; at most one filled blue button per screen. The desktop sidebar shows each page's
+  icon next to its name.
+- **Layout rules** (each one a bug found on the dev server):
+  - Controls on one row are one height, 36 px: search fields, filter chips, selects, buttons. A new control on a row
+    with others matches them.
+  - Sections of different heights never share a grid row: a short one gets stretched to its neighbour's height and
+    leaves a gap. Put each column's sections in their own `Stack` (with `divider={<Divider />}` between them), as the
+    Overview does.
+  - A bottom sheet or menu opened from a full-screen dialog sits above it: MUI's temporary `Drawer` (z-index 1200) is
+    below `Dialog` (1300), so give it `zIndex: modal + 1` (`components/PhoneForm.tsx`'s `Sheet`).
+  - A screen change is done when it's been looked at in a browser, at 1280 and 390 px, light and dark, in both
+    languages, next to the design: jsdom lays nothing out, so tests can't see gaps, misalignment or wrong colours.
+    Where the tests can, pin the computed style (`toHaveStyle`), as the colour and chip-height tests do.
 - **From the old app** (waterflow-docs, The old app, private): accounts left out of net worth are greyed out but
   clickable; category colours from a preset grid; "Add starter categories" on by default; the category picker
   on a transfer lists only transfer categories.
