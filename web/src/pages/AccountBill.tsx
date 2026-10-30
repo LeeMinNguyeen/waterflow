@@ -80,7 +80,7 @@ function BillCard({ book, account, bill: b, minorUnit, canPay, alone, last }: {
   )
 
   return (
-    <Paper variant="outlined" sx={{ p: 2 }}>
+    <Paper variant="outlined" sx={{ py: 2, borderTop: 1, borderColor: 'divider', borderRadius: 0 }}>
       <Stack spacing={1}>
         <Stack direction="row" spacing={1} sx={{ justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap' }}>
           <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
@@ -240,7 +240,7 @@ export function InstallmentsPanel({ book, account, minorUnit, canEdit }: { book:
   }
 
   return (
-    <Paper variant="outlined" sx={{ p: 2 }}>
+    <Paper variant="outlined" sx={{ py: 2, borderTop: 1, borderColor: 'divider', borderRadius: 0 }}>
       <Typography variant="subtitle1" component="h3" sx={{ fontWeight: 600 }}>{t('plan.title')}</Typography>
       <List dense disablePadding>
         {mine.map((p) => (

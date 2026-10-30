@@ -30,7 +30,7 @@ import { formatMoney } from '../lib/money'
 import { useBudgets, useCategories, useCurrencies } from '../lib/queries'
 import { BudgetDialog } from './BudgetDialog'
 import { CategoryDialog } from './CategoryDialog'
-import { RefreshButton } from '../components/RefreshButton'
+import { PageHeader } from '../components/Page'
 
 const KINDS: CategoryKind[] = ['expense', 'income', 'transfer']
 
@@ -79,40 +79,37 @@ export function Categories({ book }: { book: Book }) {
 
   return (
     <Stack spacing={2}>
-      <Stack direction="row" sx={{ alignItems: 'center', justifyContent: 'space-between' }}>
-        <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
-          <Typography variant="h5">{t('cat.title')}</Typography>
-          <RefreshButton bookId={book.id} />
-        </Stack>
+      <PageHeader title={t('cat.title')} bookId={book.id}>
         {canEdit && (
-          <Button variant="contained" startIcon={<AddIcon />} onClick={() => setDialog({ category: null })}>
+          <Button variant="outlined" startIcon={<AddIcon />} onClick={() => setDialog({ category: null })}>
             {t('cat.add')}
           </Button>
         )}
-      </Stack>
+      </PageHeader>
       {notice.error ? <Alert severity="error">{errorText(notice.error)}</Alert> : null}
       {notice.info && <Alert severity="info">{notice.info}</Alert>}
       {categories.data?.length === 0 && <Typography color="text.secondary">{t('cat.empty')}</Typography>}
-      <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', md: 'repeat(3, 1fr)' }, alignItems: 'start' }}>
+      <Box sx={{ display: 'grid', columnGap: 5, rowGap: 3, gridTemplateColumns: { xs: '1fr', md: 'repeat(3, minmax(0, 1fr))' }, alignItems: 'start' }}>
         {KINDS.map((kind) => {
           const rows = categoryTree(categories.data ?? [], kind)
           if (!rows.length) return null
           return (
             <Paper key={kind} variant="outlined">
-              <List disablePadding subheader={<ListSubheader>{t(`cat.kinds.${kind}`)}</ListSubheader>}>
+              <List disablePadding subheader={<ListSubheader disableSticky sx={{ px: 0, typography: 'h2', lineHeight: '40px', color: 'text.primary', bgcolor: 'transparent',
+                borderBottom: 1, borderColor: 'divider' }}>{t(`cat.kinds.${kind}`)}</ListSubheader>}>
                 {rows.map(({ category: c, depth }) => (
                   <ListItem key={c.id} disablePadding divider
                     secondaryAction={canEdit && (
-                      <IconButton edge="end" aria-label={t('cat.edit')} onClick={(e) => setMenu({ el: e.currentTarget, category: c })}>
-                        <MoreVertIcon />
+                      <IconButton edge="end" size="small" aria-label={t('cat.edit')} onClick={(e) => setMenu({ el: e.currentTarget, category: c })}>
+                        <MoreVertIcon fontSize="small" />
                       </IconButton>
                     )}>
-                    <ListItemButton sx={{ pl: 2 + depth * 3, opacity: c.archived_at ? 0.55 : 1 }}
+                    <ListItemButton sx={{ pl: depth * 3, opacity: c.archived_at ? 0.55 : 1 }}
                       onClick={() => setDialog({ category: c })}>
-                      <Box sx={{ width: 12, height: 12, borderRadius: '50%', bgcolor: c.color ?? 'action.disabled', mr: 1.5, flexShrink: 0 }} />
+                      <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: c.color ?? 'text.disabled', mr: 1.5, flexShrink: 0 }} />
                       <ListItemText primary={c.name} secondary={shown.get(c.id) && (
                         <BudgetBar label={t(`budget.periods.${shown.get(c.id)!.period}`)} spent={shown.get(c.id)!.progress!.spent}
-                          budget={shown.get(c.id)!.amount} percent={shown.get(c.id)!.progress!.percent_used} format={money} />
+                          budget={shown.get(c.id)!.amount} percent={shown.get(c.id)!.progress!.percent_used} color={c.color} format={money} />
                       )} slotProps={{ secondary: { component: 'div' } }} sx={{ pr: 1 }} />
                       {c.archived_at && <Chip size="small" label={t('cat.archived')} />}
                     </ListItemButton>

@@ -13,13 +13,14 @@ function separators(locale: Locale): { group: string; decimal: string } {
   }
 }
 
-// 125000000 (VND) -> "125.000.000 ₫" in Vietnamese, "₫125,000,000" in English.
-export function formatMoney(minor: number, currency: string, minorUnit: number, locale: Locale): string {
+// 125000000 (VND) -> "125.000.000 ₫" in Vietnamese, "₫125,000,000" in English; with sign, "+₫125,000,000".
+export function formatMoney(minor: number, currency: string, minorUnit: number, locale: Locale, opts: { sign?: boolean } = {}): string {
   const fmt = new Intl.NumberFormat(intlLocale[locale], {
     style: 'currency',
     currency,
     minimumFractionDigits: minorUnit,
     maximumFractionDigits: minorUnit,
+    signDisplay: opts.sign ? 'exceptZero' : 'auto',
   })
   // Split into whole and fraction as integers, then let Intl format a decimal
   // string, so no float rounding touches the value.
@@ -30,6 +31,17 @@ export function formatMoney(minor: number, currency: string, minorUnit: number, 
   const fraction = String(abs - whole * scale).padStart(minorUnit, '0')
   const text = `${negative ? '-' : ''}${whole}${minorUnit ? `.${fraction}` : ''}`
   return fmt.format(text as unknown as number) // Intl accepts decimal strings exactly
+}
+
+export type Tone = 'negative' | 'positive' | 'neutral'
+export type AmountKind = 'flow' | 'transfer' | 'balance'
+
+// Colour carries meaning: money out and what's owed are negative, money coming in is positive. A transfer only
+// moves money between your own accounts, and a balance above zero is just what you have.
+export function amountTone(minor: number, kind: AmountKind = 'flow'): Tone {
+  if (kind === 'transfer' || minor === 0) return 'neutral'
+  if (minor < 0) return 'negative'
+  return kind === 'flow' ? 'positive' : 'neutral'
 }
 
 // What the user typed -> minor units, or null if it isn't a number with at most

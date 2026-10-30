@@ -15,13 +15,11 @@ import ListItemIcon from '@mui/material/ListItemIcon'
 import ListItemText from '@mui/material/ListItemText'
 import Menu from '@mui/material/Menu'
 import MenuItem from '@mui/material/MenuItem'
-import Paper from '@mui/material/Paper'
 import Stack from '@mui/material/Stack'
 import Switch from '@mui/material/Switch'
 import Table from '@mui/material/Table'
 import TableBody from '@mui/material/TableBody'
 import TableCell from '@mui/material/TableCell'
-import TableHead from '@mui/material/TableHead'
 import TableRow from '@mui/material/TableRow'
 import useMediaQuery from '@mui/material/useMediaQuery'
 import { useTheme } from '@mui/material/styles'
@@ -38,7 +36,8 @@ import { formatMoney } from '../lib/money'
 import { currencyLabel } from '../lib/labels'
 import { useAccounts, useCurrencies } from '../lib/queries'
 import { AccountDialog } from './AccountDialog'
-import { RefreshButton } from '../components/RefreshButton'
+import { Money } from '../components/Money'
+import { PageHeader } from '../components/Page'
 
 // A table on desktop, a list on phones. An account opens its details, which
 // lead to its transactions.
@@ -59,7 +58,6 @@ export function Accounts({ book }: { book: Book }) {
   const open = (a: Account) => setDialog({ account: a, editing: false })
   const transactions = (a: Account) => navigate(`/books/${book.id}/transactions?account_id=${a.id}`)
 
-  const money = (a: Account) => formatMoney(a.balance, a.currency, currencies.data?.get(a.currency)?.minor_unit ?? 2, currentLanguage())
   const mine = accounts.data?.filter((a) => a.kind !== 'person')
   const groups = groupByKind(mine ?? [])
   const toggle = (kind: AccountKind) => setFolded((f) => {
@@ -74,18 +72,16 @@ export function Accounts({ book }: { book: Book }) {
     </IconButton>
   )
   const menuButton = (a: Account, edge?: 'end') => (
-    <IconButton edge={edge} aria-label={t('accounts.actions')} onClick={(e) => setMenu({ el: e.currentTarget, id: a.id })}>
-      <MoreVertIcon />
+    <IconButton edge={edge} size="small" aria-label={t('accounts.actions')} onClick={(e) => setMenu({ el: e.currentTarget, id: a.id })}>
+      <MoreVertIcon fontSize="small" />
     </IconButton>
   )
   const menuAccount = menu ? accounts.data?.find((a) => a.id === menu.id) : undefined
   const closeMenu = () => setMenu((m) => m && { ...m, el: null })
   const groupTotal = (g: AccountGroup) => (
     <>
-      <Typography variant="subtitle2" sx={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }} color={g.total < 0 ? 'error' : undefined}>
-        {formatMoney(g.total, book.base_currency, currencies.data?.get(book.base_currency)?.minor_unit ?? 0, currentLanguage())}
-      </Typography>
-      {g.notIncluded > 0 && <Typography variant="caption" color="text.secondary">{t('accounts.notIncluded', { count: g.notIncluded })}</Typography>}
+      <Money amount={g.total} currency={book.base_currency} kind="balance" sx={{ fontWeight: 500, display: 'block' }} />
+      {g.notIncluded > 0 && <Typography variant="caption" color="text.disabled">{t('accounts.notIncluded', { count: g.notIncluded })}</Typography>}
     </>
   )
 
@@ -112,97 +108,93 @@ export function Accounts({ book }: { book: Book }) {
     await qc.invalidateQueries({ queryKey: ['books', book.id, 'accounts'] })
   }
 
+  const converted = (a: Account) =>
+    a.currency !== book.base_currency && (
+      <Typography variant="caption" color="text.disabled" component="div" sx={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
+        {a.converted_balance == null ? t('dash.noRate') : `≈ ${formatMoney(a.converted_balance, book.base_currency, currencies.data?.get(book.base_currency)?.minor_unit ?? 0, currentLanguage())}`}
+      </Typography>
+    )
+  const meta = (a: Account) => [t(`accounts.kinds.${a.kind}`), a.last4 && `•••• ${a.last4}`, !a.in_net_worth && t('accounts.notInNetWorth')]
+    .filter(Boolean).join(' · ')
+  const dim = (a: Account) => (a.in_net_worth && !a.archived_at ? 1 : 0.55)
+
   return (
-    <Stack spacing={2}>
-      <Stack direction="row" sx={{ alignItems: 'center', justifyContent: 'space-between' }}>
-        <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
-          <Typography variant="h5">{t('accounts.title')}</Typography>
-          <RefreshButton bookId={book.id} />
-        </Stack>
+    <Box sx={{ maxWidth: 920 }}>
+      <PageHeader title={t('accounts.title')} bookId={book.id}>
         {canEdit && (
-          <Button variant="contained" startIcon={<AddIcon />} onClick={() => setDialog({ account: null, editing: true })}>
+          <Button variant="outlined" startIcon={<AddIcon />} onClick={() => setDialog({ account: null, editing: true })}>
             {t('accounts.add')}
           </Button>
         )}
-      </Stack>
-      {error ? <Alert severity="error">{errorText(error)}</Alert> : null}
-      {accounts.isError && !accounts.data ? <Alert severity="error">{errorText(accounts.error)}</Alert> : null}
-      {mine?.length === 0 && <Typography color="text.secondary">{t('accounts.empty')}</Typography>}
+      </PageHeader>
+      {error ? <Alert severity="error" sx={{ mt: 2 }}>{errorText(error)}</Alert> : null}
+      {accounts.isError && !accounts.data ? <Alert severity="error" sx={{ mt: 2 }}>{errorText(accounts.error)}</Alert> : null}
+      {mine?.length === 0 && <Typography color="text.secondary" sx={{ mt: 3 }}>{t('accounts.empty')}</Typography>}
       {desktop && mine && mine.length > 0 && (
-        <Paper variant="outlined">
-          <Table>
-            <TableHead>
-              <TableRow>
-                <TableCell>{t('accounts.name')}</TableCell>
-                <TableCell>{t('accounts.kind')}</TableCell>
-                <TableCell>{t('accounts.currency')}</TableCell>
-                <TableCell align="right">{t('accounts.balance')}</TableCell>
-                <TableCell padding="checkbox" />
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {groups.map((g) => (
-                <Fragment key={g.kind}>
-                  <TableRow data-group={g.kind} onClick={() => toggle(g.kind)} sx={{ cursor: 'pointer', bgcolor: 'action.hover' }}>
-                    <TableCell colSpan={3} sx={{ py: 0.5 }}>
-                      <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
-                        {foldButton(g.kind)}
-                        <Typography variant="subtitle2">{`${t(`accounts.kinds.${g.kind}`)} · ${g.accounts.length}`}</Typography>
-                      </Stack>
-                    </TableCell>
-                    <TableCell align="right" sx={{ py: 0.5 }}>{groupTotal(g)}</TableCell>
-                    <TableCell padding="checkbox" />
-                  </TableRow>
-                  {!folded.has(g.kind) && g.accounts.map((a) => (
-                    <TableRow
-                      key={a.id}
-                      hover
-                      onClick={() => open(a)}
-                      sx={{ cursor: 'pointer', opacity: a.in_net_worth && !a.archived_at ? 1 : 0.55 }}
-                    >
-                      <TableCell>
-                        <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
-                          <span>{a.name}</span>
-                          {a.last4 && <Typography variant="body2" color="text.secondary">•••• {a.last4}</Typography>}
-                          {a.archived_at && <Chip size="small" label={t('accounts.archived')} />}
-                          {!a.in_net_worth && <Chip size="small" variant="outlined" label={t('accounts.notInNetWorth')} />}
-                        </Stack>
-                      </TableCell>
-                      <TableCell>{t(`accounts.kinds.${a.kind}`)}</TableCell>
-                      <TableCell>{currencyLabel(a.currency, currencies.data?.get(a.currency)?.name)}</TableCell>
-                      <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', color: a.balance < 0 ? 'error.main' : undefined }}>
-                        {money(a)}
-                      </TableCell>
-                      <TableCell padding="checkbox" onClick={(e) => e.stopPropagation()}>{menuButton(a)}</TableCell>
-                    </TableRow>
-                  ))}
-                </Fragment>
-              ))}
-            </TableBody>
-          </Table>
-        </Paper>
-      )}
-      {!desktop && mine && mine.length > 0 && (
-        <Paper variant="outlined">
-          <List disablePadding>
+        <Table sx={{ mt: 1, '& td': { borderColor: 'divider' } }}>
+          <TableBody>
             {groups.map((g) => (
               <Fragment key={g.kind}>
-                <ListItem data-group={g.kind} divider disablePadding sx={{ bgcolor: 'action.hover' }}>
-                  <ListItemButton onClick={() => toggle(g.kind)} sx={{ py: 0.5 }}>
-                    <ListItemIcon sx={{ minWidth: 32 }}>{folded.has(g.kind) ? <ChevronRightIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}</ListItemIcon>
-                    <ListItemText primary={`${t(`accounts.kinds.${g.kind}`)} · ${g.accounts.length}`} slotProps={{ primary: { variant: 'subtitle2' } }} />
-                    <Box sx={{ textAlign: 'right', ml: 2 }}>{groupTotal(g)}</Box>
-                  </ListItemButton>
-                </ListItem>
+                <TableRow data-group={g.kind} onClick={() => toggle(g.kind)} sx={{ cursor: 'pointer' }}>
+                  <TableCell colSpan={3} sx={{ pt: 3.5, pb: 1, px: 0 }}>
+                    <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
+                      {foldButton(g.kind)}
+                      <Typography variant="h2">
+                        {t(`accounts.kinds.${g.kind}`)}
+                        <Box component="span" sx={{ fontWeight: 400, color: 'text.disabled' }}> · {g.accounts.length}</Box>
+                      </Typography>
+                    </Stack>
+                  </TableCell>
+                  <TableCell align="right" sx={{ pt: 3.5, pb: 1 }}>{groupTotal(g)}</TableCell>
+                  <TableCell padding="checkbox" sx={{ pt: 3.5, pb: 1 }} />
+                </TableRow>
                 {!folded.has(g.kind) && g.accounts.map((a) => (
-                <ListItem
-                  key={a.id}
-                  divider
-                  disablePadding
-                  secondaryAction={menuButton(a, 'end')}
-                >
+                  <TableRow key={a.id} hover onClick={() => open(a)} sx={{ cursor: 'pointer', '& td': { py: 1.25 } }}>
+                    <TableCell sx={{ px: 0, opacity: dim(a) }}>
+                      <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+                        <Typography component="span">{a.name}</Typography>
+                        {a.archived_at && <Chip size="small" label={t('accounts.archived')} />}
+                      </Stack>
+                      <Typography variant="body2" color="text.secondary">{meta(a)}</Typography>
+                    </TableCell>
+                    <TableCell sx={{ width: 64 }}>
+                      {a.currency !== book.base_currency && (
+                        <Box component="span" title={currencyLabel(a.currency, currencies.data?.get(a.currency)?.name)}
+                          sx={{ display: 'inline-flex', height: 20, alignItems: 'center', px: 0.75, borderRadius: '5px', bgcolor: 'background.subtle',
+                            fontSize: 11, fontWeight: 500, color: 'text.secondary', letterSpacing: '0.02em' }}>
+                          {a.currency}
+                        </Box>
+                      )}
+                    </TableCell>
+                    <TableCell sx={{ width: 24 }} />
+                    <TableCell align="right" sx={{ width: 200, opacity: dim(a) }}>
+                      <Money amount={a.balance} currency={a.currency} kind="balance" />
+                      {converted(a)}
+                    </TableCell>
+                    <TableCell padding="checkbox" onClick={(e) => e.stopPropagation()}>{menuButton(a)}</TableCell>
+                  </TableRow>
+                ))}
+              </Fragment>
+            ))}
+          </TableBody>
+        </Table>
+      )}
+      {!desktop && mine && mine.length > 0 && (
+        <List disablePadding sx={{ mt: 1 }}>
+          {groups.map((g) => (
+            <Fragment key={g.kind}>
+              <ListItem data-group={g.kind} disablePadding sx={{ borderBottom: 1, borderColor: 'divider', mt: 2 }}>
+                <ListItemButton onClick={() => toggle(g.kind)} sx={{ px: 0, py: 0.5 }}>
+                  <ListItemIcon sx={{ minWidth: 28 }}>{folded.has(g.kind) ? <ChevronRightIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}</ListItemIcon>
+                  <ListItemText primary={`${t(`accounts.kinds.${g.kind}`)} · ${g.accounts.length}`} slotProps={{ primary: { variant: 'body2', sx: { fontWeight: 600, color: 'text.secondary' } } }} />
+                  <Box sx={{ textAlign: 'right', ml: 2 }}>{groupTotal(g)}</Box>
+                </ListItemButton>
+              </ListItem>
+              {!folded.has(g.kind) && g.accounts.map((a) => (
+                <ListItem key={a.id} disablePadding secondaryAction={menuButton(a, 'end')}
+                  sx={{ '&:not(:last-of-type)': { borderBottom: 1, borderColor: 'divider' } }}>
                   {/* Left out of net worth: greyed out but still clickable */}
-                  <ListItemButton onClick={() => open(a)} sx={{ opacity: a.in_net_worth && !a.archived_at ? 1 : 0.55 }}>
+                  <ListItemButton onClick={() => open(a)} sx={{ px: 0, minHeight: 56, opacity: dim(a) }}>
                     <ListItemText
                       primary={
                         <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
@@ -210,24 +202,22 @@ export function Accounts({ book }: { book: Book }) {
                           {a.archived_at && <Chip size="small" label={t('accounts.archived')} />}
                         </Stack>
                       }
-                      secondary={[t(`accounts.kinds.${a.kind}`), a.last4 && `•••• ${a.last4}`, !a.in_net_worth && t('accounts.notInNetWorth')]
-                        .filter(Boolean)
-                        .join(' · ')}
+                      secondary={a.currency !== book.base_currency ? `${meta(a)} · ${a.currency}` : meta(a)}
                     />
-                    <Typography sx={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', ml: 2 }} color={a.balance < 0 ? 'error' : undefined}>
-                      {money(a)}
-                    </Typography>
+                    <Box sx={{ textAlign: 'right', ml: 2 }}>
+                      <Money amount={a.balance} currency={a.currency} kind="balance" />
+                      {converted(a)}
+                    </Box>
                   </ListItemButton>
                 </ListItem>
-                ))}
-              </Fragment>
-            ))}
-          </List>
-        </Paper>
+              ))}
+            </Fragment>
+          ))}
+        </List>
       )}
-      <FormControlLabel
-        control={<Switch checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />}
-        label={t('accounts.showArchived')}
+      <FormControlLabel sx={{ mt: 3 }}
+        control={<Switch size="small" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />}
+        label={<Typography variant="body2" color="text.secondary">{t('accounts.showArchived')}</Typography>}
       />
       <Menu anchorEl={menu?.el} open={!!menu?.el && !!menuAccount} onClose={closeMenu}>
         {menuAccount && [
@@ -250,6 +240,6 @@ export function Accounts({ book }: { book: Book }) {
         <AccountDialog key={dialog.account?.id ?? 'new'} book={book} account={dialog.account} editing={dialog.editing}
           onTransactions={transactions} onClose={() => setDialog(null)} />
       )}
-    </Stack>
+    </Box>
   )
 }

@@ -61,12 +61,14 @@ export function SignIn() {
         )}
         {error instanceof ApiError && error.code === 'code_required' ? null : <FormError error={error} />}
         <Button type="submit" variant="contained" size="large" loading={busy}>{t('auth.signIn')}</Button>
-        <Typography variant="body2" color="text.secondary">
-          {instance.data?.signup === 'open'
-            ? <>{t('auth.noAccount')} <Button component={RouterLink} to="/join" size="small">{t('auth.toSignUp')}</Button></>
-            : t('auth.inviteOnly')}
-        </Typography>
-        <Typography variant="body2" color="text.secondary">{t('auth.forgotPassword')}</Typography>
+        <Stack spacing={1} sx={{ borderTop: 1, borderColor: 'divider', pt: 2 }}>
+          <Typography variant="body2" color="text.secondary">
+            {instance.data?.signup === 'open'
+              ? <>{t('auth.noAccount')} <Button component={RouterLink} to="/join" size="small">{t('auth.toSignUp')}</Button></>
+              : t('auth.inviteOnly')}
+          </Typography>
+          <Typography variant="body2" color="text.secondary">{t('auth.forgotPassword')}</Typography>
+        </Stack>
       </Stack>
     </Centered>
   )

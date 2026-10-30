@@ -1,10 +1,8 @@
 import { useTheme } from '@mui/material/styles'
 
-// Chart colours (dataviz reference palette, validated for both modes): income
-// is categorical slot 1, spending slot 2; magnitudes use the blue ramp.
-const LIGHT = { income: '#2a78d6', spent: '#eb6834', magnitude: '#2a78d6', grid: '#e7e6e2' }
-const DARK = { income: '#3987e5', spent: '#d95926', magnitude: '#3987e5', grid: '#33332f' }
-
+// Spending and income differ in lightness as well as hue (dark red and light green in light mode, the other way
+// round in dark mode), so the bars can be told apart without seeing red from green.
 export function useChartColors() {
-  return useTheme().palette.mode === 'dark' ? DARK : LIGHT
+  const { palette } = useTheme()
+  return { spent: palette.chart.spending, income: palette.chart.income, grid: palette.divider }
 }

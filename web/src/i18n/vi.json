@@ -156,7 +156,8 @@
     "close": "Đóng",
     "edit": "Sửa",
     "viewTransactions": "Xem giao dịch",
-    "refresh": "Làm mới"
+    "refresh": "Làm mới",
+    "optional": "Không bắt buộc"
   },
   "errors": {
     "invalid_credentials": "Sai tên người dùng hoặc mật khẩu.",
@@ -253,7 +254,10 @@
     "sameAccount": "Chọn hai tài khoản khác nhau.",
     "createdBy": "Tạo bởi {{name}}, sửa lần cuối bởi {{editor}}",
     "otherType": "Loại khác",
-    "people": "Người"
+    "people": "Người",
+    "today": "Hôm nay",
+    "yesterday": "Hôm qua",
+    "moreTypes": "Khác"
   },
   "filters": {
     "allAccounts": "Mọi tài khoản",
@@ -262,7 +266,12 @@
     "from": "Từ ngày",
     "to": "Đến ngày",
     "search": "Tìm theo người nhận hoặc ghi chú",
-    "clear": "Xóa bộ lọc"
+    "clear": "Xóa bộ lọc",
+    "type": "Loại",
+    "dates": "Ngày",
+    "since": "Từ {{date}}",
+    "until": "Đến {{date}}",
+    "clearDates": "Xóa ngày"
   },
   "cat": {
     "title": "Danh mục",
@@ -323,14 +332,14 @@
     "spentThisMonth": "Chi tiêu tháng này",
     "incomeThisMonth": "Thu nhập tháng này",
     "vsLastMonth": "Tháng trước: {{amount}}",
-    "cashflow": "Chi tiêu và thu nhập, 6 tháng",
+    "cashflow": "Chi tiêu và thu nhập",
     "spent": "Chi tiêu",
     "income": "Thu nhập",
     "month": "Tháng",
-    "topCategories": "Chi tiêu theo danh mục tháng này",
+    "topCategories": "Theo danh mục",
     "noSpending": "Chưa có chi tiêu nào trong tháng này.",
     "accounts": "Tài khoản",
-    "recent": "Giao dịch gần đây",
+    "recent": "Gần đây",
     "seeAll": "Xem tất cả",
     "missingRates_one": "{{count}} tài khoản chưa có tỷ giá nên chưa được tính.",
     "missingRates_other": "{{count}} tài khoản chưa có tỷ giá nên chưa được tính.",

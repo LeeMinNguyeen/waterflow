@@ -48,6 +48,16 @@ describe('Accounts grouped by kind (waterflow#64)', () => {
     expect(screen.getAllByRole('row').find((r) => r.dataset.group === 'loan')).toHaveTextContent('-₫18,002,668')
   })
 
+  it('shows a debt and a group that comes out negative in red, a lent amount plain (waterflow#143)', async () => {
+    server()
+    await renderApp(<Accounts book={book} />)
+    await screen.findByText('Nợ mẹ')
+    const rows = screen.getAllByRole('row')
+    expect(within(rows.find((r) => r.dataset.group === 'loan')!).getByText('-₫18,002,668')).toHaveStyle({ color: '#C9372C' })
+    expect(within(rows.find((r) => r.textContent?.includes('Nợ mẹ'))!).getByText('-₫10,000,000')).toHaveStyle({ color: '#C9372C' })
+    expect(within(rows.find((r) => r.textContent?.includes('Lent to Lan'))!).getByText('₫100,000')).toHaveStyle({ color: '#18181B' })
+  })
+
   it('folds a group when its header is clicked', async () => {
     server()
     await renderApp(<Accounts book={book} />)

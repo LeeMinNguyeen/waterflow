@@ -234,3 +234,18 @@ describe('after saving', () => {
     expect(screen.queryByText('Transaction saved')).not.toBeInTheDocument()
   })
 })
+
+describe('the type switch (waterflow#143)', () => {
+  it('keeps refund and adjustment under More, and shows the one picked', async () => {
+    const api = server()
+    await renderApp(<TxnDialog book={book} txn={null} defaults={{ account: 'cash' }} onClose={() => {}} />)
+    expect(await screen.findByRole('button', { name: 'Expense' })).toHaveAttribute('aria-pressed', 'true')
+    await userEvent.click(screen.getByRole('button', { name: 'More' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Refund' }))
+    expect(screen.getByRole('button', { name: 'Refund' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'Expense' })).toHaveAttribute('aria-pressed', 'false')
+    await userEvent.type(screen.getByLabelText(/^Amount/), '189000')
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(api.writes()[0].body).toMatchObject({ type: 'refund', entries: [{ account_id: 'cash', amount: 189_000 }] }))
+  })
+})

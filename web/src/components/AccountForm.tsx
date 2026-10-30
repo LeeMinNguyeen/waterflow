@@ -12,12 +12,12 @@ import { LanguagePicker } from './LanguagePicker'
 export function PublicHeader({ title, languageSwitch = true }: { title: string; languageSwitch?: boolean }) {
   const instance = useInstance()
   return (
-    <Stack direction="row" spacing={2} sx={{ justifyContent: 'space-between', alignItems: 'start' }}>
-      <Stack>
-        <Typography variant="h5">{title}</Typography>
-        {instance.data && <Typography color="text.secondary">{instance.data.name}</Typography>}
+    <Stack spacing={1.5}>
+      <Stack direction="row" spacing={2} sx={{ justifyContent: 'space-between', alignItems: 'center', minHeight: 22 }}>
+        <Typography sx={{ fontWeight: 600, fontSize: 15, letterSpacing: '-0.01em' }}>{instance.data?.name}</Typography>
+        {languageSwitch && <LanguagePicker size="small" />}
       </Stack>
-      {languageSwitch && <LanguagePicker size="small" />}
+      <Typography variant="h1">{title}</Typography>
     </Stack>
   )
 }

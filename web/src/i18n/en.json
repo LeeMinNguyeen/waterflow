@@ -156,7 +156,8 @@
     "close": "Close",
     "edit": "Edit",
     "viewTransactions": "View transactions",
-    "refresh": "Refresh"
+    "refresh": "Refresh",
+    "optional": "Optional"
   },
   "errors": {
     "invalid_credentials": "Wrong username or password.",
@@ -253,7 +254,10 @@
     "sameAccount": "Pick two different accounts.",
     "createdBy": "Added by {{name}}, last edited by {{editor}}",
     "otherType": "Other type",
-    "people": "People"
+    "people": "People",
+    "today": "Today",
+    "yesterday": "Yesterday",
+    "moreTypes": "More"
   },
   "filters": {
     "allAccounts": "All accounts",
@@ -262,7 +266,12 @@
     "from": "From",
     "to": "To",
     "search": "Search payee or note",
-    "clear": "Clear filters"
+    "clear": "Clear filters",
+    "type": "Type",
+    "dates": "Dates",
+    "since": "From {{date}}",
+    "until": "Until {{date}}",
+    "clearDates": "Clear dates"
   },
   "cat": {
     "title": "Categories",
@@ -323,14 +332,14 @@
     "spentThisMonth": "Spent this month",
     "incomeThisMonth": "Income this month",
     "vsLastMonth": "Last month: {{amount}}",
-    "cashflow": "Spending and income, 6 months",
+    "cashflow": "Spending and income",
     "spent": "Spending",
     "income": "Income",
     "month": "Month",
-    "topCategories": "Spending by category this month",
+    "topCategories": "By category",
     "noSpending": "No spending this month yet.",
     "accounts": "Accounts",
-    "recent": "Recent transactions",
+    "recent": "Recent",
     "seeAll": "See all",
     "missingRates_one": "{{count}} account has no exchange rate yet, so it isn't counted.",
     "missingRates_other": "{{count}} accounts have no exchange rate yet, so they aren't counted.",

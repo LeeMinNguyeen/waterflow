@@ -3,37 +3,41 @@ import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import InputAdornment from '@mui/material/InputAdornment'
-import List from '@mui/material/List'
 import ListItemButton from '@mui/material/ListItemButton'
-import ListItemText from '@mui/material/ListItemText'
 import ListSubheader from '@mui/material/ListSubheader'
+import Menu from '@mui/material/Menu'
 import MenuItem from '@mui/material/MenuItem'
-import Paper from '@mui/material/Paper'
+import Popover from '@mui/material/Popover'
 import Stack from '@mui/material/Stack'
-import Table from '@mui/material/Table'
-import TableBody from '@mui/material/TableBody'
-import TableCell from '@mui/material/TableCell'
-import TableHead from '@mui/material/TableHead'
-import TableRow from '@mui/material/TableRow'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import useMediaQuery from '@mui/material/useMediaQuery'
 import { useTheme } from '@mui/material/styles'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useId, useMemo, useState, type MouseEvent, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useSearchParams } from 'react-router'
+import { DateField } from '../components/DateField'
 import { useErrorText } from '../components/errors'
+import { FilterChip } from '../components/FilterChip'
+import { Money } from '../components/Money'
+import { PageHeader } from '../components/Page'
 import { useOpenTxn } from '../components/txnContext'
 import { currentLanguage } from '../i18n'
 import { txnTypes, type Account, type Book, type Transaction } from '../lib/api'
 import { categoryTree } from '../lib/categories'
-import { CategoryPicker } from '../components/CategoryPicker'
-import { formatMoney } from '../lib/money'
-import { useAccounts, useCategories, useCurrencies, useTransactions, type TxnFilters } from '../lib/queries'
-import { DateField } from '../components/DateField'
-import { RefreshButton } from '../components/RefreshButton'
+import { todayIn } from '../lib/labels'
+import { useAccounts, useCategories, useTransactions, type TxnFilters } from '../lib/queries'
 
 const FILTERS = ['account_id', 'category_id', 'type', 'from', 'to', 'q'] as const
+type Filter = (typeof FILTERS)[number]
+// What a day's total adds up: money that came in or went out, not money moved between your own accounts.
+const COUNTED = new Set(['expense', 'income', 'refund'])
+
+const dayBefore = (iso: string) => {
+  const d = new Date(`${iso}T00:00:00Z`)
+  d.setUTCDate(d.getUTCDate() - 1)
+  return d.toISOString().slice(0, 10)
+}
 
 // Filters are kept in the URL, so an account can link to its own list.
 export function Transactions({ book }: { book: Book }) {
@@ -45,12 +49,12 @@ export function Transactions({ book }: { book: Book }) {
   const [params, setParams] = useSearchParams()
   const filters: TxnFilters = Object.fromEntries(FILTERS.map((k) => [k, params.get(k) ?? undefined]).filter(([, v]) => v))
   const [search, setSearch] = useState(filters.q ?? '')
+  const [menu, setMenu] = useState<{ el: HTMLElement; which: 'account' | 'category' | 'type' | 'dates' } | null>(null)
   // Clear starts the date fields afresh: a half-typed date isn't in the address, so clearing it wouldn't reach them.
   const [cleared, setCleared] = useState(0)
   const txns = useTransactions(book.id, filters)
   const accounts = useAccounts(book.id, true)
   const categories = useCategories(book.id, true)
-  const currencies = useCurrencies()
 
   // Search as the user types, a moment after they stop.
   useEffect(() => {
@@ -59,7 +63,7 @@ export function Transactions({ book }: { book: Book }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search])
 
-  function setFilter(key: (typeof FILTERS)[number], value: string) {
+  function setFilter(key: Filter, value: string) {
     setParams(
       (p) => {
         if (value) p.set(key, value)
@@ -69,15 +73,21 @@ export function Transactions({ book }: { book: Book }) {
       { replace: true },
     )
   }
+  const pick = (key: Filter, value: string) => {
+    setMenu(null)
+    setFilter(key, value)
+  }
 
   const accountById = useMemo(() => new Map((accounts.data ?? []).map((a) => [a.id, a])), [accounts.data])
   const categoryById = useMemo(() => new Map((categories.data ?? []).map((c) => [c.id, c])), [categories.data])
   const tree = useMemo(() => categoryTree(categories.data ?? []), [categories.data])
   const items = txns.data?.pages.flatMap((p) => p.items) ?? []
   const filtered = Object.keys(filters).length > 0
-  const minor = (currency: string) => currencies.data?.get(currency)?.minor_unit ?? 0
-  const fmt = (amount: number, currency: string) => formatMoney(amount, currency, minor(currency), lang)
-  const day = new Intl.DateTimeFormat(lang === 'vi' ? 'vi-VN' : 'en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
+  const locale = lang === 'vi' ? 'vi-VN' : 'en-GB'
+  const fullDay = new Intl.DateTimeFormat(locale, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
+  const shortDate = new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short', year: 'numeric' })
+  const date = (iso: string) => new Date(`${iso}T00:00:00`)
+  const today = todayIn(book.timezone)
 
   // The amount shown for a row: the filtered account's side, else the money out
   // of the first account (a transfer shows the amount moved).
@@ -86,143 +96,194 @@ export function Transactions({ book }: { book: Book }) {
       txn.entries.find((x) => x.account_id === filters.account_id) ??
       (txn.type === 'transfer' ? txn.entries.find((x) => x.amount < 0) : txn.entries[0]) ??
       txn.entries[0]
-    const amount = txn.type === 'transfer' && !filters.account_id ? Math.abs(e.amount) : e.amount
-    return { amount, text: fmt(amount, e.currency ?? '') }
+    return { amount: e.amount, currency: e.currency ?? '' }
   }
   const accountsOf = (txn: Transaction) => {
     const names = [...txn.entries].sort((a, b) => a.amount - b.amount).map((e) => accountById.get(e.account_id)?.name ?? '')
     return txn.type === 'transfer' ? names.join(' → ') : names[0]
   }
   const title = (txn: Transaction) => txn.payee || t(`txn.types.${txn.type}`)
-  const color = (amount: number) => (amount < 0 ? 'error.main' : amount > 0 ? 'success.main' : undefined)
+  const kindOf = (txn: Transaction) => (txn.type === 'transfer' && !filters.account_id ? 'transfer' : 'flow')
   const filteredAccount: Account | undefined = filters.account_id ? accountById.get(filters.account_id) : undefined
 
+  const days: { on: string; txns: Transaction[] }[] = []
+  for (const txn of items) {
+    if (days.at(-1)?.on === txn.occurred_on) days.at(-1)!.txns.push(txn)
+    else days.push({ on: txn.occurred_on, txns: [txn] })
+  }
+  function total(txns: Transaction[]) {
+    const counted = txns.filter((x) => COUNTED.has(x.type)).map(shown)
+    if (!counted.length || new Set(counted.map((c) => c.currency)).size > 1) return null
+    return { amount: counted.reduce((sum, c) => sum + c.amount, 0), currency: counted[0].currency }
+  }
+  const dayName = (on: string) =>
+    on === today ? t('txn.today') : on === dayBefore(today) ? t('txn.yesterday') : null
+
+  const columns = `48px minmax(0, 1.6fr) minmax(0, 1fr) minmax(0, 1.2fr) 150px${filteredAccount ? ' 140px' : ''}`
+  const accountName = filters.account_id ? accountById.get(filters.account_id)?.name : undefined
+  const categoryName = filters.category_id ? categoryById.get(filters.category_id)?.name : undefined
+  const datesValue =
+    filters.from && filters.to ? `${shortDate.format(date(filters.from))} – ${shortDate.format(date(filters.to))}`
+      : filters.from ? t('filters.since', { date: shortDate.format(date(filters.from)) })
+        : filters.to ? t('filters.until', { date: shortDate.format(date(filters.to)) }) : undefined
+  const open = (which: NonNullable<typeof menu>['which']) => (e: MouseEvent<HTMLElement>) => setMenu({ el: e.currentTarget, which })
+  const people = (accounts.data ?? []).filter((a) => a.kind === 'person')
+
   return (
-    <Stack spacing={2}>
-      <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
-        <Typography variant="h5">{filteredAccount ? `${t('txn.title')} · ${filteredAccount.name}` : t('txn.title')}</Typography>
-        <RefreshButton bookId={book.id} />
-      </Stack>
-      <Stack direction={{ xs: 'column', md: 'row' }} spacing={1} useFlexGap sx={{ flexWrap: 'wrap' }}>
+    <Box>
+      <PageHeader title={filteredAccount ? `${t('txn.title')} · ${filteredAccount.name}` : t('txn.title')} bookId={book.id} />
+      <Stack direction={{ xs: 'column', md: 'row' }} spacing={1} sx={{ mt: { xs: 2, md: 3 }, alignItems: { md: 'center' } }}>
         <TextField
           size="small"
           placeholder={t('filters.search')}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          sx={{ flex: 2, minWidth: 220 }}
-          slotProps={{ input: { startAdornment: <InputAdornment position="start"><SearchIcon fontSize="small" /></InputAdornment> } }}
+          sx={{ width: { md: 300 }, flexShrink: 0 }}
+          slotProps={{ htmlInput: { 'aria-label': t('filters.search') }, input: { startAdornment: <InputAdornment position="start"><SearchIcon sx={{ fontSize: 18 }} /></InputAdornment> } }}
         />
-        <TextField select size="small" value={filters.account_id ?? ''} onChange={(e) => setFilter('account_id', e.target.value)} sx={{ flex: 1, minWidth: 160 }}
-          slotProps={{ select: { displayEmpty: true } }}>
-          <MenuItem value="">{t('filters.allAccounts')}</MenuItem>
-          {(accounts.data ?? []).filter((a) => a.kind !== 'person').map((a) => <MenuItem key={a.id} value={a.id}>{a.name}</MenuItem>)}
-          {(accounts.data ?? []).some((a) => a.kind === 'person') && <ListSubheader>{t('txn.people')}</ListSubheader>}
-          {(accounts.data ?? []).filter((a) => a.kind === 'person').map((a) => <MenuItem key={a.id} value={a.id}>{a.name}</MenuItem>)}
-        </TextField>
-        <CategoryPicker key={`category-${filters.category_id ?? ''}`} size="small" ariaLabel={t('txn.category')} noneLabel={t('filters.allCategories')}
-          options={tree} value={filters.category_id ?? ''} onChange={(v) => setFilter('category_id', v)} sx={{ flex: 1, minWidth: 210 }} />
-        <TextField select size="small" value={filters.type ?? ''} onChange={(e) => setFilter('type', e.target.value)} sx={{ flex: 1, minWidth: 140 }}
-          slotProps={{ select: { displayEmpty: true } }}>
-          <MenuItem value="">{t('filters.allTypes')}</MenuItem>
-          {txnTypes.map((ty) => <MenuItem key={ty} value={ty}>{t(`txn.types.${ty}`)}</MenuItem>)}
-        </TextField>
-        <Stack direction="row" spacing={1} sx={{ width: { xs: '100%', md: 'auto' } }}>
-          <DateField key={`from-${cleared}`} size="small" label={t('filters.from')} value={filters.from ?? ''} onChange={(v) => setFilter('from', v)} sx={{ flex: 1, minWidth: 0, maxWidth: { md: 190 } }} />
-          <DateField key={`to-${cleared}`} size="small" label={t('filters.to')} value={filters.to ?? ''} onChange={(v) => setFilter('to', v)} sx={{ flex: 1, minWidth: 0, maxWidth: { md: 190 } }} />
+        <Stack direction="row" spacing={1} sx={{ overflowX: 'auto', pb: { xs: 0.5, md: 0 }, alignItems: 'center' }}>
+          <FilterChip label={t('txn.account')} value={accountName} onClick={open('account')} />
+          <FilterChip label={t('txn.category')} value={categoryName} onClick={open('category')} />
+          <FilterChip label={t('filters.type')} value={filters.type ? t(`txn.types.${filters.type}`) : undefined} onClick={open('type')} />
+          <FilterChip label={t('filters.dates')} value={datesValue} onClick={open('dates')} />
+          {filtered && (
+            <Button size="small" sx={{ flexShrink: 0 }} onClick={() => { setSearch(''); setCleared((n) => n + 1); setParams({}, { replace: true }) }}>
+              {t('filters.clear')}
+            </Button>
+          )}
         </Stack>
-        {filtered && (
-          <Button onClick={() => { setSearch(''); setCleared((n) => n + 1); setParams({}, { replace: true }) }}>{t('filters.clear')}</Button>
-        )}
       </Stack>
 
-      {txns.isError && !txns.data && <Alert severity="error">{errorText(txns.error)}</Alert>}
+      <Menu anchorEl={menu?.el} open={menu?.which === 'account'} onClose={() => setMenu(null)}>
+        <MenuItem selected={!filters.account_id} onClick={() => pick('account_id', '')}>{t('filters.allAccounts')}</MenuItem>
+        {(accounts.data ?? []).filter((a) => a.kind !== 'person').map((a) => (
+          <MenuItem key={a.id} selected={a.id === filters.account_id} onClick={() => pick('account_id', a.id)}>{a.name}</MenuItem>
+        ))}
+        {people.length > 0 && <ListSubheader>{t('txn.people')}</ListSubheader>}
+        {people.map((a) => (
+          <MenuItem key={a.id} selected={a.id === filters.account_id} onClick={() => pick('account_id', a.id)}>{a.name}</MenuItem>
+        ))}
+      </Menu>
+      <Menu anchorEl={menu?.el} open={menu?.which === 'category'} onClose={() => setMenu(null)} slotProps={{ paper: { sx: { maxHeight: 420 } } }}>
+        <MenuItem selected={!filters.category_id} onClick={() => pick('category_id', '')}>{t('filters.allCategories')}</MenuItem>
+        {tree.map(({ category: c, depth }) => (
+          <MenuItem key={c.id} selected={c.id === filters.category_id} onClick={() => pick('category_id', c.id)} sx={{ pl: 2 + depth * 2, gap: 1.25 }}>
+            <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: c.color || 'text.disabled', flexShrink: 0 }} />
+            {c.name}
+          </MenuItem>
+        ))}
+      </Menu>
+      <Menu anchorEl={menu?.el} open={menu?.which === 'type'} onClose={() => setMenu(null)}>
+        <MenuItem selected={!filters.type} onClick={() => pick('type', '')}>{t('filters.allTypes')}</MenuItem>
+        {txnTypes.map((ty) => (
+          <MenuItem key={ty} selected={ty === filters.type} onClick={() => pick('type', ty)}>{t(`txn.types.${ty}`)}</MenuItem>
+        ))}
+      </Menu>
+      <Popover anchorEl={menu?.el} open={menu?.which === 'dates'} onClose={() => setMenu(null)}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }} slotProps={{ paper: { sx: { p: 2, mt: 1, width: 300 } } }}>
+        <Stack spacing={2}>
+          <DateField key={`from-${cleared}`} label={t('filters.from')} value={filters.from ?? ''} onChange={(v) => setFilter('from', v)} />
+          <DateField key={`to-${cleared}`} label={t('filters.to')} value={filters.to ?? ''} onChange={(v) => setFilter('to', v)} />
+          {(filters.from || filters.to) && (
+            <Button sx={{ alignSelf: 'start' }} onClick={() => { setCleared((n) => n + 1); setFilter('from', ''); setFilter('to', ''); setMenu(null) }}>
+              {t('filters.clearDates')}
+            </Button>
+          )}
+        </Stack>
+      </Popover>
+
+      {txns.isError && !txns.data && <Alert severity="error" sx={{ mt: 3 }}>{errorText(txns.error)}</Alert>}
       {txns.isSuccess && items.length === 0 && (
-        <Typography color="text.secondary">{t(filtered ? 'txn.noMatch' : 'txn.empty')}</Typography>
+        <Typography color="text.secondary" sx={{ mt: 3 }}>{t(filtered ? 'txn.noMatch' : 'txn.empty')}</Typography>
       )}
 
       {items.length > 0 && desktop && (
-        <Paper variant="outlined">
-          <Table size="small">
-            <TableHead>
-              <TableRow>
-                <TableCell>{t('txn.date')}</TableCell>
-                <TableCell>{t('txn.payee')}</TableCell>
-                <TableCell>{t('txn.category')}</TableCell>
-                <TableCell>{t('txn.account')}</TableCell>
-                <TableCell align="right">{t('txn.amount')}</TableCell>
-                {filteredAccount && <TableCell align="right">{t('txn.balance')}</TableCell>}
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {items.map((txn) => {
-                const money = shown(txn)
-                const cat = txn.category_id ? categoryById.get(txn.category_id) : undefined
-                return (
-                  <TableRow key={txn.id} hover onClick={() => openTxn(txn)} sx={{ cursor: 'pointer' }}>
-                    <TableCell sx={{ whiteSpace: 'nowrap' }}>
-                      {day.format(new Date(`${txn.occurred_on}T00:00:00`))}
-                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>{txn.occurred_time.slice(0, 5)}</Typography>
-                    </TableCell>
-                    <TableCell>
-                      <Typography variant="body2">{title(txn)}</Typography>
-                      {txn.note && <Typography variant="caption" color="text.secondary">{txn.note}</Typography>}
-                    </TableCell>
-                    <TableCell>
-                      {cat && (
-                        <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
-                          <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: cat.color ?? 'action.disabled' }} />
-                          <span>{cat.name}</span>
-                        </Stack>
-                      )}
-                    </TableCell>
-                    <TableCell>{accountsOf(txn)}</TableCell>
-                    <TableCell align="right" sx={{ whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums', color: txn.type === 'transfer' && !filteredAccount ? undefined : color(money.amount) }}>
-                      {money.text}
-                    </TableCell>
-                    {filteredAccount && (
-                      <TableCell align="right" sx={{ whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
-                        {txn.running_balance !== null ? fmt(txn.running_balance, filteredAccount.currency) : ''}
-                      </TableCell>
-                    )}
-                  </TableRow>
-                )
-              })}
-            </TableBody>
-          </Table>
-        </Paper>
+        <Box sx={{ display: 'grid', gridTemplateColumns: columns, columnGap: 2, px: 1.5, pt: 2.5, typography: 'caption', color: 'text.disabled' }} aria-hidden>
+          <span>{t('txn.time')}</span>
+          <span>{t('txn.payee')}</span>
+          <span>{t('txn.category')}</span>
+          <span>{t('txn.account')}</span>
+          <Box component="span" sx={{ textAlign: 'right' }}>{t('txn.amount')}</Box>
+          {filteredAccount && <Box component="span" sx={{ textAlign: 'right' }}>{t('txn.balance')}</Box>}
+        </Box>
       )}
 
-      {items.length > 0 && !desktop && (
-        <Paper variant="outlined">
-          <List disablePadding>
-            {items.map((txn, i) => {
-              const money = shown(txn)
-              const newDay = i === 0 || items[i - 1].occurred_on !== txn.occurred_on
+      {days.map((day) => (
+        <Day key={day.on} label={dayName(day.on)} date={fullDay.format(date(day.on))} total={total(day.txns)} desktop={desktop}>
+          {day.txns.map((txn) => {
+            const money = shown(txn)
+            const cat = txn.category_id ? categoryById.get(txn.category_id) : undefined
+            const amount = <Money amount={money.amount} currency={money.currency} kind={kindOf(txn)} sign />
+            if (!desktop) {
               return (
-                <Box key={txn.id}>
-                  {newDay && <ListSubheader>{day.format(new Date(`${txn.occurred_on}T00:00:00`))}</ListSubheader>}
-                  <ListItemButton divider onClick={() => openTxn(txn)}>
-                    <ListItemText
-                      primary={title(txn)}
-                      secondary={[txn.occurred_time.slice(0, 5), txn.category_id ? categoryById.get(txn.category_id)?.name : '', accountsOf(txn)]
-                        .filter(Boolean).join(' · ')}
-                    />
-                    <Typography sx={{ ml: 2, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums', color: txn.type === 'transfer' && !filteredAccount ? undefined : color(money.amount) }}>
-                      {money.text}
+                <ListItemButton key={txn.id} onClick={() => openTxn(txn)}
+                  sx={{ px: 0, minHeight: 56, gap: 1.5, '&:not(:first-of-type)': { borderTop: 1, borderColor: 'divider' } }}>
+                  <Box sx={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0, bgcolor: cat?.color || 'text.disabled' }} />
+                  <Box sx={{ flex: 1, minWidth: 0, py: 0.75 }}>
+                    <Typography noWrap>{title(txn)}</Typography>
+                    <Typography variant="body2" color="text.secondary" noWrap>
+                      {[txn.occurred_time.slice(0, 5), cat?.name, accountsOf(txn)].filter(Boolean).join(' · ')}
                     </Typography>
-                  </ListItemButton>
-                </Box>
+                  </Box>
+                  {amount}
+                </ListItemButton>
               )
-            })}
-          </List>
-        </Paper>
-      )}
+            }
+            return (
+              <ListItemButton key={txn.id} onClick={() => openTxn(txn)}
+                sx={{ display: 'grid', gridTemplateColumns: columns, columnGap: 2, alignItems: 'center', minHeight: 52, px: 1.5, py: 0.75, borderRadius: 1 }}>
+                <Typography variant="body2" color="text.disabled" sx={{ fontVariantNumeric: 'tabular-nums' }}>{txn.occurred_time.slice(0, 5)}</Typography>
+                <Box sx={{ minWidth: 0 }}>
+                  <Typography noWrap>{title(txn)}</Typography>
+                  {txn.note && <Typography variant="body2" color="text.secondary" noWrap>{txn.note}</Typography>}
+                </Box>
+                <Stack direction="row" spacing={1} sx={{ alignItems: 'center', minWidth: 0, color: 'text.secondary' }}>
+                  {cat ? (
+                    <>
+                      <Box sx={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0, bgcolor: cat.color || 'text.disabled' }} />
+                      <Typography noWrap>{cat.name}</Typography>
+                    </>
+                  ) : <Typography color="text.disabled">—</Typography>}
+                </Stack>
+                <Typography color="text.secondary" noWrap>{accountsOf(txn)}</Typography>
+                <Box sx={{ textAlign: 'right' }}>{amount}</Box>
+                {filteredAccount && (
+                  <Box sx={{ textAlign: 'right' }}>
+                    {txn.running_balance !== null && <Money amount={txn.running_balance} currency={filteredAccount.currency} kind="balance" sx={{ color: 'text.secondary' }} />}
+                  </Box>
+                )}
+              </ListItemButton>
+            )
+          })}
+        </Day>
+      ))}
 
       {txns.hasNextPage && (
-        <Button onClick={() => txns.fetchNextPage()} loading={txns.isFetchingNextPage} sx={{ alignSelf: 'center' }}>
-          {t('txn.loadMore')}
-        </Button>
+        <Box sx={{ textAlign: 'center', mt: 3 }}>
+          <Button variant="outlined" onClick={() => txns.fetchNextPage()} loading={txns.isFetchingNextPage}>
+            {t('txn.loadMore')}
+          </Button>
+        </Box>
       )}
-    </Stack>
+    </Box>
+  )
+}
+
+function Day({ label, date, total, desktop, children }: {
+  label: string | null; date: string; total: { amount: number; currency: string } | null; desktop: boolean; children: ReactNode
+}) {
+  const id = useId()
+  return (
+    <Box component="section" aria-labelledby={id}>
+      <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'baseline', pt: desktop ? 3 : 2.5, pb: 1, px: desktop ? 1.5 : 0,
+        mb: desktop ? 0.5 : 0, borderBottom: 1, borderColor: 'divider' }}>
+        <Typography id={id} variant="body2" sx={{ fontWeight: 600, color: 'text.secondary' }}>
+          {label ?? date}
+          {label && <Box component="span" sx={{ fontWeight: 400, color: 'text.disabled' }}> · {date}</Box>}
+        </Typography>
+        {total && <Money variant="body2" amount={total.amount} currency={total.currency} sign />}
+      </Stack>
+      {children}
+    </Box>
   )
 }

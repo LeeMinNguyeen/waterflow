@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { amountText, formatMoney, groupWhileTyping, parseAmount } from './money'
+import { amountText, amountTone, formatMoney, groupWhileTyping, parseAmount } from './money'
 
 const nbsp = (s: string) => s.replace(/[  ]/g, ' ')
 
@@ -67,5 +67,31 @@ describe('amountText', () => {
       expect(parseAmount(amountText(minor, unit, 'vi'), unit, 'vi')).toBe(minor)
       expect(parseAmount(amountText(minor, unit, 'en'), unit, 'en')).toBe(minor)
     }
+  })
+})
+
+describe('formatMoney with a sign (waterflow#143)', () => {
+  it('shows + on money in and - on money out, nothing on zero', () => {
+    expect(nbsp(formatMoney(189_000, 'VND', 0, 'en', { sign: true }))).toBe('+₫189,000')
+    expect(nbsp(formatMoney(-85_000, 'VND', 0, 'vi', { sign: true }))).toBe('-85.000 ₫')
+    expect(nbsp(formatMoney(0, 'VND', 0, 'en', { sign: true }))).toBe('₫0')
+  })
+})
+
+describe('amountTone (waterflow#143)', () => {
+  it('makes money out negative and money in positive', () => {
+    expect(amountTone(-85_000)).toBe('negative')
+    expect(amountTone(32_000_000)).toBe('positive')
+    expect(amountTone(0)).toBe('neutral')
+  })
+
+  it('keeps transfers neutral, whichever way they go', () => {
+    expect(amountTone(-5_000_000, 'transfer')).toBe('neutral')
+    expect(amountTone(5_000_000, 'transfer')).toBe('neutral')
+  })
+
+  it('marks only a negative balance', () => {
+    expect(amountTone(-6_850_000, 'balance')).toBe('negative')
+    expect(amountTone(120_000_000, 'balance')).toBe('neutral')
   })
 })
