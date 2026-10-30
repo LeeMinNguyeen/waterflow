@@ -257,7 +257,15 @@
     "people": "People",
     "today": "Today",
     "yesterday": "Yesterday",
-    "moreTypes": "More"
+    "moreTypes": "More",
+    "subcategoriesOf": "Sub-categories of {{name}}",
+    "allCategories": "All",
+    "searchCategories": "Search categories",
+    "searchAccounts": "Search accounts",
+    "noteHint": "Tap to add a note",
+    "bookOf": "Book: {{name}}",
+    "chooseAccount": "Choose an account",
+    "moreActions": "More actions"
   },
   "filters": {
     "allAccounts": "All accounts",

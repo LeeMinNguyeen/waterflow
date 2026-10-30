@@ -1,12 +1,18 @@
+import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import DeleteIcon from '@mui/icons-material/DeleteOutlined'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import HistoryIcon from '@mui/icons-material/History'
+import MoreVertIcon from '@mui/icons-material/MoreVert'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
+import Checkbox from '@mui/material/Checkbox'
 import Dialog from '@mui/material/Dialog'
 import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
+import FormControlLabel from '@mui/material/FormControlLabel'
+import IconButton from '@mui/material/IconButton'
+import ListItemButton from '@mui/material/ListItemButton'
 import ListSubheader from '@mui/material/ListSubheader'
 import Menu from '@mui/material/Menu'
 import MenuItem from '@mui/material/MenuItem'
@@ -22,11 +28,11 @@ import { useTranslation } from 'react-i18next'
 import { currentLanguage } from '../i18n'
 import { api, ApiError, categoryKindFor, send, type Account, type Book, type Entry, type Suggestion, type Transaction, type TxnType } from '../lib/api'
 import { categoryTree } from '../lib/categories'
-import { timeIn, todayIn } from '../lib/labels'
+import { shiftDay, timeIn, todayIn } from '../lib/labels'
 import { amountText, formatMoney, parseAmount } from '../lib/money'
 import { personName } from '../lib/people'
 import { fromPlan, noPlan, validMonths, type PlanForm } from '../lib/installments'
-import { useAccounts, useCategories, useCurrencies, useInstallments, useInvalidateBook } from '../lib/queries'
+import { useAccounts, useBooks, useCategories, useCurrencies, useInstallments, useInvalidateBook } from '../lib/queries'
 import { AmountField } from './AmountField'
 import { CategoryPicker } from './CategoryPicker'
 import { DateField } from './DateField'
@@ -34,6 +40,8 @@ import { TimeField } from './TimeField'
 import { useErrorText } from './errors'
 import { HistoryDialog } from './HistoryDialog'
 import { InstallmentFields } from './InstallmentFields'
+import { Money } from './Money'
+import { CategoryPills, PickRow, Pill, Sheet } from './PhoneForm'
 import { newId } from '../lib/uuid'
 import { DialogFooter } from './DialogFooter'
 import { useToast } from '../lib/toast'
@@ -57,18 +65,29 @@ type Form = {
 export type TxnDefaults = { account?: string }
 
 type Props = { book: Book; txn: Transaction | null; defaults?: TxnDefaults; onClose: () => void }
+type FormProps = Props & {
+  minorOf: (currency: string) => number
+  carry?: Partial<Form>
+  onSwitchBook?: (book: Book, carry: Partial<Form>) => void
+}
 
-// The form needs each currency's decimals to show saved amounts, so it waits for them.
+// The form needs each currency's decimals to show saved amounts, so it waits for them. A new transaction can go
+// into another book: the form starts again there, keeping what doesn't belong to the book.
 export function TxnDialog(props: Props) {
   const currencies = useCurrencies()
+  const [into, setInto] = useState<{ book: Book; carry: Partial<Form> } | null>(null)
   if (!currencies.data) return null
   const map = currencies.data
-  return <TxnForm {...props} minorOf={(code) => map.get(code)?.minor_unit ?? 0} />
+  const book = into?.book ?? props.book
+  return (
+    <TxnForm key={book.id} {...props} book={book} carry={into?.carry} minorOf={(code) => map.get(code)?.minor_unit ?? 0}
+      onSwitchBook={props.txn ? undefined : (b, carry) => setInto({ book: b, carry })} />
+  )
 }
 
 // Amounts are typed as positive numbers; the type decides the sign (an expense
 // is money out). Adjustments take a sign.
-function TxnForm({ book, txn: initial, defaults, onClose, minorOf }: Props & { minorOf: (currency: string) => number }) {
+function TxnForm({ book, txn: initial, defaults, onClose, minorOf, carry, onSwitchBook }: FormProps) {
   const { t } = useTranslation()
   const toast = useToast()
   const errorText = useErrorText()
@@ -79,12 +98,16 @@ function TxnForm({ book, txn: initial, defaults, onClose, minorOf }: Props & { m
   const invalidate = useInvalidateBook()
   const id = useRef(initial?.id ?? newId()) // made once, reused on retry
   const [txn, setTxn] = useState(initial)
-  const [form, setForm] = useState<Form>(() => toForm(initial, book, minorOf, defaults))
+  const [form, setForm] = useState<Form>(() => ({ ...toForm(initial, book, minorOf, defaults), ...carry }))
   const [error, setError] = useState<unknown>(null)
   const [busy, setBusy] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
   const [moreMenu, setMoreMenu] = useState<HTMLElement | null>(null)
+  const [sheet, setSheet] = useState<'book' | 'account' | 'toAccount' | 'date' | 'time' | 'payee' | null>(null)
+  const [search, setSearch] = useState('')
+  const [actions, setActions] = useState<HTMLElement | null>(null)
+  const books = useBooks()
   const [planEdit, setPlanEdit] = useState<PlanForm | null>(null) // null: as saved
   const planId = useRef(newId())
   const set = (patch: Partial<Form>) => setForm((f) => ({ ...f, ...patch }))
@@ -254,28 +277,203 @@ function TxnForm({ book, txn: initial, defaults, onClose, minorOf }: Props & { m
 
   const two = { display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' } } as const
   const typeSx = { whiteSpace: 'nowrap', minWidth: 0, px: { xs: 0.5, sm: 1.5 }, fontSize: { xs: 13, sm: 14 } } as const
-  const save = (
-    <Button type="submit" variant={fullScreen ? 'text' : 'contained'} loading={busy} disabled={!entries || !form.date || !form.time || !planReady}
-      sx={fullScreen ? { color: 'primary.main', fontWeight: 600 } : undefined}>
-      {t('txn.save')}
-    </Button>
-  )
+  const ready = !!entries && !!form.date && !!form.time && planReady
   const other = otherTypes.includes(form.type) ? form.type : null
+  const extras = (
+    <>
+      <Dialog open={confirmDelete} onClose={() => setConfirmDelete(false)}>
+        <DialogTitle>{t('txn.deleteConfirm')}</DialogTitle>
+        <DialogFooter>
+          <Button onClick={() => setConfirmDelete(false)}>{t('common.cancel')}</Button>
+          <Button color="error" variant="contained" loading={busy} onClick={remove}>
+            {t('txn.delete')}
+          </Button>
+        </DialogFooter>
+      </Dialog>
+      {showHistory && txn && <HistoryDialog book={book} txnId={txn.id} onClose={() => setShowHistory(false)} />}
+    </>
+  )
+
+  if (fullScreen) {
+    const inflow = form.type === 'income' || form.type === 'refund'
+    const tone = form.type === 'expense' ? 'error.main' : inflow ? 'success.main' : 'text.primary'
+    const sign = form.type === 'expense' ? '−' : inflow ? '+' : ''
+    const today = todayIn(book.timezone)
+    const locale = lang === 'vi' ? 'vi-VN' : 'en-GB'
+    const day = form.date ? new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short' }).format(new Date(`${form.date}T00:00:00`)) : ''
+    const relative = form.date === today ? t('txn.today') : form.date === shiftDay(today, -1) ? t('txn.yesterday') : null
+    const balanceOf = (a: Account) => `${a.name} (${formatMoney(a.balance, a.currency, minor(a.id), lang)})`
+    const picking = sheet === 'account' || sheet === 'toAccount'
+    const matches = (a: Account) => a.name.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase())
+    const pickAccount = (id: string) => {
+      if (sheet === 'toAccount') set({ toAccount: id })
+      else choose('account', id)
+      setSheet(null)
+      setSearch('')
+    }
+    const accountItem = (a: Account) => (
+      <ListItemButton key={a.id} selected={a.id === (sheet === 'toAccount' ? form.toAccount : account)} onClick={() => pickAccount(a.id)}
+        sx={{ px: 0, minHeight: 56, gap: 2, borderTop: 1, borderColor: 'divider' }}>
+        <Typography sx={{ flex: 1, minWidth: 0 }} noWrap>{a.name}</Typography>
+        <Money amount={a.balance} currency={a.currency} kind="balance" variant="body2" />
+      </ListItemButton>
+    )
+    const editable = (books.data ?? []).filter((b) => b.role !== 'viewer' && !b.archived_at)
+    return (
+      <Dialog open onClose={onClose} fullScreen slotProps={{ paper: { component: 'form', onSubmit: submit } }}>
+        <Stack direction="row" sx={{ alignItems: 'center', minHeight: 56, px: 0.5, gap: 0.5 }}>
+          <IconButton aria-label={t('common.close')} onClick={onClose} sx={{ color: 'text.primary' }}><ArrowBackIcon /></IconButton>
+          {onSwitchBook ? (
+            <Button onClick={() => setSheet('book')} endIcon={<ExpandMoreIcon />} aria-label={t('txn.bookOf', { name: book.name })}
+              sx={{ color: 'text.primary', fontSize: 18, fontWeight: 600, minWidth: 0, px: 1 }}>
+              <Box component="span" sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{book.name}</Box>
+            </Button>
+          ) : (
+            <Typography component="h2" noWrap sx={{ fontSize: 18, fontWeight: 600, px: 1 }}>{t('txn.edit')}</Typography>
+          )}
+          <Box sx={{ flex: 1 }} />
+          {txn && (
+            <IconButton aria-label={t('txn.moreActions')} onClick={(e) => setActions(e.currentTarget)} sx={{ color: 'text.primary' }}>
+              <MoreVertIcon />
+            </IconButton>
+          )}
+        </Stack>
+        <DialogContent sx={{ px: 2, pt: 1 }}>
+          <Stack spacing={2.5}>
+            {openingBalance || form.type === 'adjustment' ? (
+              <Typography color="text.secondary">{t(`txn.types.${form.type}`)}</Typography>
+            ) : (
+              <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 1.25 }}>
+                {mainTypes.map((ty) => {
+                  const on = ty === form.type || (ty === 'expense' && form.type === 'refund')
+                  return (
+                    <Pill key={ty} look="filled" selected={on} aria-pressed={on} disabled={readOnly}
+                      onClick={() => !on && set({ type: ty, category: '' })}>
+                      {t(`txn.types.${ty}`)}
+                    </Pill>
+                  )
+                })}
+              </Box>
+            )}
+            <Stack direction="row" sx={{ alignItems: 'baseline', gap: 0.5, borderBottom: 1, borderColor: 'divider', pb: 0.5 }}>
+              {sign && <Typography aria-hidden sx={{ fontSize: 40, lineHeight: '48px', fontWeight: 500, color: tone }}>{sign}</Typography>}
+              <AmountField
+                ariaLabel={t('txn.amount')}
+                autoFocus={!txn}
+                value={form.amount}
+                onChange={(v) => set({ amount: v })}
+                minorUnit={minor(account)}
+                disabled={readOnly}
+                helperText={form.type === 'adjustment' ? t('txn.adjustmentHint') : undefined}
+                sx={{ '& .MuiOutlinedInput-notchedOutline': { border: 0 }, '& .MuiOutlinedInput-root.Mui-focused': { boxShadow: 'none' },
+                  '& .MuiOutlinedInput-input': { p: 0, fontSize: 40, lineHeight: '48px', height: 48, fontWeight: 500, color: tone,
+                    fontVariantNumeric: 'tabular-nums' } }}
+              />
+              {from && <Typography color="text.disabled" sx={{ fontWeight: 500 }}>{from.currency}</Typography>}
+            </Stack>
+            {kind && (
+              <CategoryPills rows={options} value={form.category} onChange={(id) => choose('category', id)} disabled={readOnly}
+                color={form.type === 'expense' ? 'error.main' : inflow ? 'success.main' : 'primary.main'} noneLabel={t('txn.noCategory')} />
+            )}
+            {noAccounts && <Alert severity="info">{t('txn.needAccount')}</Alert>}
+            {transfer && open.length < 2 && !noAccounts && <Alert severity="info">{t('txn.needTwoAccounts')}</Alert>}
+            <Box>
+              <PickRow label={t(transfer ? 'txn.fromAccount' : 'txn.account')} value={from && balanceOf(from)} placeholder={t('txn.chooseAccount')}
+                disabled={openingBalance || readOnly} onClick={() => setSheet('account')} />
+              {transfer && (
+                <PickRow label={t('txn.toAccount')} value={to && balanceOf(to)} placeholder={t('txn.chooseAccount')} disabled={readOnly}
+                  onClick={() => setSheet('toAccount')} />
+              )}
+              {transfer && form.toAccount && form.toAccount === account && (
+                <Typography variant="caption" color="error" component="p" sx={{ mt: 0.5 }}>{t('txn.sameAccount')}</Typography>
+              )}
+            </Box>
+            {crossCurrency && (
+              <AmountField label={`${t('txn.amountReceived')} (${to?.currency})`} required value={form.amountReceived}
+                onChange={(v) => set({ amountReceived: v })} minorUnit={minor(form.toAccount)} unit={to?.currency} disabled={readOnly} />
+            )}
+            <TextField label={t('txn.note')} value={form.note} onChange={(e) => set({ note: e.target.value })} multiline minRows={1} maxRows={4}
+              placeholder={t('txn.noteHint')} disabled={readOnly} />
+            <Stack direction="row" sx={{ flexWrap: 'wrap', gap: 1 }}>
+              <Pill disabled={readOnly} onClick={() => setSheet('date')} aria-label={`${t('txn.date')}: ${day}`}>
+                {day}{relative && ` · ${relative}`}
+              </Pill>
+              <Pill disabled={readOnly} onClick={() => setSheet('time')} aria-label={`${t('txn.time')}: ${form.time}`}>{form.time}</Pill>
+              <Pill disabled={readOnly} onClick={() => setSheet('payee')} aria-label={form.payee ? `${t('txn.payee')}: ${form.payee}` : t('txn.payee')}
+                sx={{ color: form.payee ? 'text.primary' : 'text.disabled', maxWidth: '100%' }}>
+                {form.payee || t('txn.payee')}
+              </Pill>
+            </Stack>
+            {(form.type === 'expense' || form.type === 'refund') && (
+              <FormControlLabel label={t('txn.types.refund')} disabled={readOnly}
+                control={<Checkbox checked={form.type === 'refund'} onChange={(e) => set({ type: e.target.checked ? 'refund' : 'expense' })} />} />
+            )}
+            {card && !readOnly && (!txn || installments.isFetched) && (
+              <InstallmentFields card={card} plan={plan} onChange={setPlan} purchaseDate={form.date}
+                amount={entries ? Math.abs(entries[0].amount) : null} minorUnit={minor(card.id)} />
+            )}
+            {losesPlan && !readOnly && <Alert severity="warning">{t('plan.removedOnSave')}</Alert>}
+            {txn?.created_by && (
+              <Typography variant="body2" color="text.secondary">
+                {t('txn.createdBy', { name: personName(txn.created_by, t), editor: personName(txn.modified_by, t) })}
+              </Typography>
+            )}
+            {error ? <Alert severity={error instanceof ApiError && error.status === 409 ? 'warning' : 'error'}>{errorText(error)}</Alert> : null}
+          </Stack>
+        </DialogContent>
+        {!readOnly && (
+          <Box sx={{ px: 2, pt: 1.5, pb: 'calc(16px + env(safe-area-inset-bottom))' }}>
+            <Button type="submit" variant="contained" fullWidth loading={busy} disabled={!ready}
+              sx={{ minHeight: 52, borderRadius: 999, fontSize: 16, fontWeight: 600 }}>
+              {t('txn.save')}
+            </Button>
+          </Box>
+        )}
+        <Menu anchorEl={actions} open={!!actions} onClose={() => setActions(null)}>
+          <MenuItem onClick={() => { setActions(null); setShowHistory(true) }}>{t('txn.history')}</MenuItem>
+          {!readOnly && <MenuItem onClick={() => { setActions(null); setConfirmDelete(true) }}>{t('txn.delete')}</MenuItem>}
+        </Menu>
+        <Sheet open={sheet === 'book'} title={t('book.switch')} onClose={() => setSheet(null)}>
+          {editable.map((b) => (
+            <ListItemButton key={b.id} selected={b.id === book.id} sx={{ px: 0, minHeight: 52, borderTop: 1, borderColor: 'divider' }}
+              onClick={() => {
+                setSheet(null)
+                if (b.id !== book.id) onSwitchBook?.(b, { type: form.type, amount: form.amount, date: form.date, time: form.time, payee: form.payee,
+                  note: form.note, account: '', toAccount: '', amountReceived: '', category: '' })
+              }}>
+              {b.name}
+            </ListItemButton>
+          ))}
+        </Sheet>
+        <Sheet open={picking} title={t(sheet === 'toAccount' ? 'txn.toAccount' : transfer ? 'txn.fromAccount' : 'txn.account')}
+          onClose={() => { setSheet(null); setSearch('') }}>
+          <TextField size="small" placeholder={t('txn.searchAccounts')} value={search} onChange={(e) => setSearch(e.target.value)}
+            slotProps={{ htmlInput: { 'aria-label': t('txn.searchAccounts') } }} sx={{ mb: 1 }} />
+          {open.filter((a) => a.kind !== 'person' && matches(a)).map(accountItem)}
+          {people.some(matches) && <ListSubheader disableSticky sx={{ px: 0, bgcolor: 'transparent' }}>{t('txn.people')}</ListSubheader>}
+          {people.filter(matches).map(accountItem)}
+        </Sheet>
+        <Sheet open={sheet === 'date'} title={t('txn.date')} onClose={() => setSheet(null)} done={() => setSheet(null)}>
+          <DateField label={t('txn.date')} required value={form.date} onChange={(date) => set({ date })} />
+        </Sheet>
+        <Sheet open={sheet === 'time'} title={t('txn.time')} onClose={() => setSheet(null)} done={() => setSheet(null)}>
+          <TimeField label={t('txn.time')} required value={form.time} onChange={(time) => set({ time })} />
+        </Sheet>
+        <Sheet open={sheet === 'payee'} title={t('txn.payee')} onClose={() => setSheet(null)} done={() => setSheet(null)}>
+          <TextField autoFocus value={form.payee} onChange={(e) => choose('payee', e.target.value)}
+            slotProps={{ htmlInput: { 'aria-label': t('txn.payee') } }}
+            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); setSheet(null) } }} />
+        </Sheet>
+        {extras}
+      </Dialog>
+    )
+  }
 
   return (
-    <Dialog open onClose={onClose} fullScreen={fullScreen} fullWidth maxWidth="sm"
-      slotProps={{ paper: { component: 'form', onSubmit: submit } }}>
-      {fullScreen ? (
-        <Stack direction="row" sx={{ alignItems: 'center', justifyContent: 'space-between', minHeight: 56, px: 1, borderBottom: 1, borderColor: 'divider' }}>
-          <Button onClick={onClose}>{t('common.cancel')}</Button>
-          <Typography component="h2" sx={{ fontWeight: 600, fontSize: 16 }}>{t(txn ? 'txn.edit' : 'txn.add')}</Typography>
-          {readOnly ? <Box sx={{ width: 64 }} /> : save}
-        </Stack>
-      ) : (
-        <DialogTitle>{t(txn ? 'txn.edit' : 'txn.add')}</DialogTitle>
-      )}
+    <Dialog open onClose={onClose} fullWidth maxWidth="sm" slotProps={{ paper: { component: 'form', onSubmit: submit } }}>
+      <DialogTitle>{t(txn ? 'txn.edit' : 'txn.add')}</DialogTitle>
       <DialogContent>
-        <Stack spacing={2} sx={{ pt: fullScreen ? 2 : 1 }}>
+        <Stack spacing={2} sx={{ pt: 1 }}>
           {openingBalance ? (
             <Typography color="text.secondary">{t('txn.types.opening_balance')}</Typography>
           ) : (
@@ -393,19 +591,14 @@ function TxnForm({ book, txn: initial, defaults, onClose, minorOf }: Props & { m
           </>
         )}
         <Box sx={{ flex: 1 }} />
-        {!fullScreen && <Button onClick={onClose}>{t('common.cancel')}</Button>}
-        {!fullScreen && !readOnly && save}
-      </DialogFooter>
-      <Dialog open={confirmDelete} onClose={() => setConfirmDelete(false)}>
-        <DialogTitle>{t('txn.deleteConfirm')}</DialogTitle>
-        <DialogFooter>
-          <Button onClick={() => setConfirmDelete(false)}>{t('common.cancel')}</Button>
-          <Button color="error" variant="contained" loading={busy} onClick={remove}>
-            {t('txn.delete')}
+        <Button onClick={onClose}>{t('common.cancel')}</Button>
+        {!readOnly && (
+          <Button type="submit" variant="contained" loading={busy} disabled={!ready}>
+            {t('txn.save')}
           </Button>
-        </DialogFooter>
-      </Dialog>
-      {showHistory && txn && <HistoryDialog book={book} txnId={txn.id} onClose={() => setShowHistory(false)} />}
+        )}
+      </DialogFooter>
+      {extras}
     </Dialog>
   )
 }
