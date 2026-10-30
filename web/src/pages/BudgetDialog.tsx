@@ -92,7 +92,7 @@ export function BudgetDialog({ book, category, onClose }: { book: Book; category
                   <Stack key={b.id} direction="row" spacing={1} sx={{ alignItems: 'center' }}>
                     <Stack sx={{ flex: 1, minWidth: 0 }}>
                       {b.progress ? (
-                        <BudgetBar label={t(`budget.periods.${b.period}`)} spent={b.progress.spent} budget={b.amount} percent={b.progress.percent_used} format={money} />
+                        <BudgetBar label={t(`budget.periods.${b.period}`)} spent={b.progress.spent} budget={b.amount} percent={b.progress.percent_used} color={category.color} format={money} />
                       ) : (
                         <Typography variant="body2">{t(`budget.periods.${b.period}`)} · {money(b.amount)} · {t('budget.notActive')}</Typography>
                       )}

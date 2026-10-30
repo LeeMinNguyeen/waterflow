@@ -76,7 +76,7 @@ describe('desktop (waterflow#22)', () => {
     expect(screen.getByRole('combobox', { name: 'Switch book' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'More' })).not.toBeInTheDocument()
     const paper = document.querySelector('.MuiDrawer-paper')!
-    expect(getComputedStyle(paper).backgroundColor).toBe('rgb(243, 244, 246)') // on a white page
+    expect(getComputedStyle(paper).backgroundColor).toBe('rgb(245, 245, 243)') // on a white page
   })
 
   it('lists People after Accounts (waterflow#68)', async () => {
@@ -100,6 +100,6 @@ describe('desktop (waterflow#22)', () => {
     server()
     await page()
     const paper = document.querySelector('.MuiDrawer-paper')!
-    expect(getComputedStyle(paper).backgroundColor).toBe('rgb(11, 11, 11)') // on #121212
+    expect(getComputedStyle(paper).backgroundColor).toBe('rgb(12, 12, 14)') // on #121214
   })
 })

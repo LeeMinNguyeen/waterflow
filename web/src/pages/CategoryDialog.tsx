@@ -139,7 +139,7 @@ export function CategoryDialog({ book, all, category, parent, editing: startEdit
                 <Stack spacing={1}>
                   {mine.map((b) => (
                     <BudgetBar key={b.id} label={t(`budget.periods.${b.period}`)} spent={b.progress!.spent} budget={b.amount}
-                      percent={b.progress!.percent_used} format={money} />
+                      percent={b.progress!.percent_used} color={color} format={money} />
                   ))}
                 </Stack>
               </Box>

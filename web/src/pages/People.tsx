@@ -23,7 +23,7 @@ import { send, type Book, type Contact } from '../lib/api'
 import { formatMoney } from '../lib/money'
 import { useContacts, useCurrencies } from '../lib/queries'
 import { PersonDialog } from './PersonDialog'
-import { RefreshButton } from '../components/RefreshButton'
+import { PageHeader } from '../components/Page'
 
 export function People({ book }: { book: Book }) {
   const { t } = useTranslation()
@@ -60,13 +60,9 @@ export function People({ book }: { book: Book }) {
 
   return (
     <Stack spacing={2}>
-      <Stack direction="row" sx={{ alignItems: 'center', justifyContent: 'space-between' }}>
-        <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
-          <Typography variant="h5">{t('nav.people')}</Typography>
-          <RefreshButton bookId={book.id} />
-        </Stack>
-        {canEdit && <Button variant="contained" startIcon={<AddIcon />} onClick={() => setDialog('new')}>{t('people.add')}</Button>}
-      </Stack>
+      <PageHeader title={t('nav.people')} bookId={book.id}>
+        {canEdit && <Button variant="outlined" startIcon={<AddIcon />} onClick={() => setDialog('new')}>{t('people.add')}</Button>}
+      </PageHeader>
       <Typography color="text.secondary">{t('people.title')}</Typography>
       <Typography variant="body2" color="text.secondary">{t('people.howTo')}</Typography>
       {notice.error ? <Alert severity="error">{errorText(notice.error)}</Alert> : null}
@@ -78,11 +74,11 @@ export function People({ book }: { book: Book }) {
             {contacts.data.map((p) => (
               <ListItem key={p.id} divider disablePadding sx={{ opacity: p.archived_at ? 0.55 : 1 }}
                 secondaryAction={canEdit && (
-                  <IconButton edge="end" aria-label={t('people.edit')} onClick={(e) => setMenu({ el: e.currentTarget, person: p })}>
-                    <MoreVertIcon />
+                  <IconButton edge="end" size="small" aria-label={t('people.edit')} onClick={(e) => setMenu({ el: e.currentTarget, person: p })}>
+                    <MoreVertIcon fontSize="small" />
                   </IconButton>
                 )}>
-                <ListItemButton onClick={() => navigate(`/books/${book.id}/transactions?account_id=${p.id}`)}>
+                <ListItemButton sx={{ px: 0, minHeight: 56 }} onClick={() => navigate(`/books/${book.id}/transactions?account_id=${p.id}`)}>
                   <ListItemText primary={<Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}><span>{p.name}</span>{p.archived_at && <Chip size="small" label={t('cat.archived')} />}</Stack>}
                     secondary={[standing(p), p.note].filter(Boolean).join(' · ')} />
                 </ListItemButton>

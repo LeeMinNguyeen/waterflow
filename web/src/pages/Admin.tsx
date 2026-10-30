@@ -9,7 +9,6 @@ import DialogTitle from '@mui/material/DialogTitle'
 import Checkbox from '@mui/material/Checkbox'
 import FormControlLabel from '@mui/material/FormControlLabel'
 import MenuItem from '@mui/material/MenuItem'
-import Paper from '@mui/material/Paper'
 import Stack from '@mui/material/Stack'
 import Switch from '@mui/material/Switch'
 import Table from '@mui/material/Table'
@@ -20,7 +19,7 @@ import TableRow from '@mui/material/TableRow'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useState, type FormEvent, type ReactNode } from 'react'
+import { useId, useState, type FormEvent, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useErrorText } from '../components/errors'
 import { currentLanguage } from '../i18n'
@@ -52,11 +51,12 @@ const when = (iso: string | null) =>
   iso ? new Intl.DateTimeFormat(currentLanguage() === 'vi' ? 'vi-VN' : 'en-GB', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(iso)) : ''
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
+  const id = useId()
   return (
-    <Paper variant="outlined" sx={{ p: 2.5 }}>
-      <Typography variant="h6" sx={{ mb: 2 }}>{title}</Typography>
+    <Box component="section" aria-labelledby={id} sx={{ borderTop: 1, borderColor: 'divider', pt: 3, pb: 1 }}>
+      <Typography id={id} variant="h2" sx={{ mb: 2 }}>{title}</Typography>
       <Stack spacing={2}>{children}</Stack>
-    </Paper>
+    </Box>
   )
 }
 

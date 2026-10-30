@@ -44,7 +44,7 @@ import { UpdatingNotice } from './UpdatingNotice'
 import { TxnContext } from './txnContext'
 import { TxnDialog, type TxnDefaults } from './TxnDialog'
 
-const SIDEBAR = 264
+const SIDEBAR = 224
 
 function BookSwitcher({ book }: { book: Book }) {
   const { t } = useTranslation()
@@ -123,40 +123,39 @@ function Frame({ book, children, onAdd }: { book: Book; children: ReactNode; onA
     <Box sx={{ display: 'flex', minHeight: '100dvh' }}>
       <Drawer
         variant="permanent"
-        sx={{ width: SIDEBAR, flexShrink: 0, '& .MuiDrawer-paper': { width: SIDEBAR, boxSizing: 'border-box', bgcolor: 'background.sidebar' } }}
+        sx={{ width: SIDEBAR, flexShrink: 0, '& .MuiDrawer-paper': { width: SIDEBAR, boxSizing: 'border-box', bgcolor: 'background.sidebar',
+          borderColor: 'divider', px: 1.5, pt: 2.5, pb: 2 } }}
       >
-        <Box sx={{ p: 2, pb: 1 }}>
-          <Typography variant="h6" sx={{ fontWeight: 700, mb: 2 }}>
-            {t('app.name')}
-            {version && (
-              <Typography component="span" variant="caption" color="text.secondary" title={t('admin.version', { version })}
-                sx={{ ml: 1, fontWeight: 400 }}>
-                {/^\d/.test(version) ? `v${version}` : version}
-              </Typography>
-            )}
-          </Typography>
-          <BookSwitcher book={book} />
-          {canAdd && (
-            <Button variant="contained" fullWidth startIcon={<AddIcon />} onClick={onAdd} sx={{ mt: 2 }}>
-              {t('txn.add')}
-            </Button>
+        <Typography sx={{ fontWeight: 600, fontSize: 15, letterSpacing: '-0.01em', px: 1, mb: 2.5 }}>
+          {t('app.name')}
+          {version && (
+            <Typography component="span" variant="caption" color="text.disabled" title={t('admin.version', { version })} sx={{ ml: 0.75 }}>
+              {/^\d/.test(version) ? `v${version}` : version}
+            </Typography>
           )}
-        </Box>
-        <List sx={{ px: 1 }}>
+        </Typography>
+        <BookSwitcher book={book} />
+        {canAdd && (
+          <Button variant="contained" fullWidth startIcon={<AddIcon />} onClick={onAdd} sx={{ mt: 1.5 }}>
+            {t('txn.add')}
+          </Button>
+        )}
+        <List sx={{ mt: 2.5, py: 0, display: 'flex', flexDirection: 'column', gap: 0.25 }}>
           {pages.map((p) => (
-            <ListItemButton key={p.to} component={RouterLink} to={p.to} selected={pathname === p.to} sx={{ borderRadius: 1 }}>
-              <ListItemIcon>{p.icon}</ListItemIcon>
-              <ListItemText primary={p.label} />
+            <ListItemButton key={p.to} component={RouterLink} to={p.to} selected={pathname === p.to}
+              sx={(theme) => ({ minHeight: 34, py: 0, px: 1.25, borderRadius: '7px', color: 'text.secondary',
+                '&:hover': { bgcolor: theme.palette.divider },
+                '&.Mui-selected, &.Mui-selected:hover': { bgcolor: theme.palette.divider, color: 'text.primary', fontWeight: 500 } })}>
+              {p.label}
             </ListItemButton>
           ))}
         </List>
         <Box sx={{ flex: 1 }} />
-        <Divider />
-        <Box sx={{ p: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+        <Box sx={{ borderTop: 1, borderColor: 'divider', pt: 1.5, display: 'flex', alignItems: 'center', gap: 1 }}>
           <ListItemButton component={RouterLink} to={`/books/${book.id}/profile`} selected={pathname.endsWith('/profile')}
-            sx={{ borderRadius: 1, px: 1, flex: 1, minWidth: 0 }}>
-            <ListItemIcon sx={{ minWidth: 32 }}><PersonIcon fontSize="small" /></ListItemIcon>
-            <ListItemText primary={me.data?.profile.username} slotProps={{ primary: { noWrap: true, variant: 'body2' } }} />
+            sx={(theme) => ({ borderRadius: '7px', px: 1.25, minHeight: 34, py: 0, flex: 1, minWidth: 0, color: 'text.secondary', fontSize: 13,
+              '&.Mui-selected, &.Mui-selected:hover': { bgcolor: theme.palette.divider, color: 'text.primary' } })}>
+            <Box component="span" sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{me.data?.profile.username}</Box>
           </ListItemButton>
           <Tooltip title={t('auth.signOut')}>
             <IconButton size="small" onClick={() => signOut()} aria-label={t('auth.signOut')}>
@@ -165,12 +164,10 @@ function Frame({ book, children, onAdd }: { book: Book; children: ReactNode; onA
           </Tooltip>
         </Box>
       </Drawer>
-      <Box component="main" sx={{ flex: 1, minWidth: 0, px: 4, py: 3 }}>
-        <Box>
-          <UpdatingNotice />
-          <BookInvites />
-          {children}
-        </Box>
+      <Box component="main" sx={{ flex: 1, minWidth: 0, px: 6, pt: 4.5, pb: 7 }}>
+        <UpdatingNotice />
+        <BookInvites />
+        {children}
       </Box>
     </Box>
   )
@@ -206,10 +203,10 @@ function PhoneFrame({ book, pages, canAdd, onAdd, admin, children }: {
 
   return (
     <Box sx={{ minHeight: '100dvh' }}>
-      <AppBar position="sticky" elevation={0} sx={{ bgcolor: 'background.sidebar', color: 'text.primary', borderBottom: 1, borderColor: 'divider' }}>
+      <AppBar position="sticky" elevation={0} sx={{ bgcolor: 'background.default', color: 'text.primary', borderBottom: 1, borderColor: 'divider' }}>
         <Toolbar>
           <Button color="inherit" onClick={() => setSheet('books')} endIcon={<ExpandMoreIcon />} aria-label={t('book.switch')}
-            sx={{ textTransform: 'none', fontSize: '1.1rem', fontWeight: 600, minWidth: 0, maxWidth: '100%', px: 1, ml: -1 }}>
+            sx={{ fontSize: 17, fontWeight: 600, color: 'text.primary', minWidth: 0, maxWidth: '100%', px: 1, ml: -1 }}>
             <Box component="span" sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{book.name}</Box>
           </Button>
         </Toolbar>
@@ -220,13 +217,16 @@ function PhoneFrame({ book, pages, canAdd, onAdd, admin, children }: {
         {children}
       </Box>
       {canAdd && (
-        <Fab color="primary" aria-label={t('txn.add')} onClick={onAdd} sx={{ position: 'fixed', right: 16, bottom: `calc(${bottom} + 16px)` }}>
+        <Fab color="primary" aria-label={t('txn.add')} onClick={onAdd}
+          sx={{ position: 'fixed', right: 16, bottom: `calc(${bottom} + 16px)`, boxShadow: '0 6px 16px rgba(0,0,0,.18)' }}>
           <AddIcon />
         </Fab>
       )}
       <Paper square elevation={0} sx={{ position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 'appBar', borderTop: 1, borderColor: 'divider',
-        bgcolor: 'background.sidebar', pb: 'env(safe-area-inset-bottom)' }}>
-        <BottomNavigation showLabels value={current} sx={{ bgcolor: 'transparent', height: NAV_HEIGHT }}>
+        bgcolor: 'background.default', pb: 'env(safe-area-inset-bottom)' }}>
+        <BottomNavigation showLabels value={current} sx={{ bgcolor: 'transparent', height: NAV_HEIGHT,
+          '& .MuiBottomNavigationAction-root': { color: 'text.disabled' }, '& .Mui-selected': { color: 'primary.main' },
+          '& .MuiBottomNavigationAction-label, & .MuiBottomNavigationAction-label.Mui-selected': { fontSize: 11, fontWeight: 500 } }}>
           {main.map((p) => (
             <BottomNavigationAction key={p.to} value={p.to} label={p.label} icon={p.icon} component={RouterLink} to={p.to}
               sx={{ minWidth: 0, px: 0.5, '& .MuiBottomNavigationAction-label': { whiteSpace: 'nowrap' } }} />
