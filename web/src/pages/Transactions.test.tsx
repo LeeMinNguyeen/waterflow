@@ -67,6 +67,7 @@ describe('Transactions by day (waterflow#143)', () => {
     await userEvent.click(await screen.findByRole('menuitem', { name: 'Vietcombank' }))
     expect(screen.getByTestId('where')).toHaveTextContent('/books/b1/transactions?account_id=bank')
     expect(screen.getByRole('button', { name: 'Account: Vietcombank' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Account: Vietcombank' }).parentElement).toHaveStyle({ height: '36px' })
     await userEvent.click(screen.getByRole('button', { name: 'Clear Account' }))
     expect(screen.getByTestId('where')).toHaveTextContent(/^\/books\/b1\/transactions$/)
   })
