@@ -88,6 +88,14 @@ describe('desktop (waterflow#22)', () => {
     expect(within(nav).getByRole('link', { name: 'People' })).toHaveAttribute('href', '/books/b1/people')
   })
 
+  it('shows each page with its icon (waterflow#148)', async () => {
+    desktop(true)
+    server()
+    await page()
+    const nav = screen.getByRole('link', { name: 'Overview' }).closest('ul')!
+    for (const link of within(nav).getAllByRole('link')) expect(link.querySelector('svg')).not.toBeNull()
+  })
+
   it("shows the server's version next to the app's name", async () => {
     desktop(true)
     server()
