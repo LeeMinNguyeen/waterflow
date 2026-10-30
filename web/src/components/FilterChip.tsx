@@ -10,7 +10,7 @@ export function FilterChip({ label, value, onClick, onClear, clearLabel }: {
   const on = !!value
   return (
     <Box sx={(theme) => ({
-      display: 'inline-flex', alignItems: 'center', height: 32, borderRadius: 999, flexShrink: 0, border: 1, overflow: 'hidden',
+      display: 'inline-flex', alignItems: 'center', height: 36, borderRadius: 999, flexShrink: 0, border: 1, overflow: 'hidden',
       borderColor: on ? theme.palette.accentSoft : theme.palette.lineStrong, bgcolor: on ? theme.palette.accentSoft : 'transparent',
       color: on ? 'primary.main' : 'text.secondary',
       '& .MuiButtonBase-root.Mui-focusVisible': { outline: `2px solid ${theme.palette.primary.main}`, outlineOffset: -2 },

@@ -1,9 +1,9 @@
 import { screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { beforeAll, describe, expect, it } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it } from 'vitest'
 import type { Book, Dashboard as Dash } from '../lib/api'
 import { currencies, fakeApi } from '../test/fakeApi'
-import { renderApp } from '../test/render'
+import { desktop, renderApp } from '../test/render'
 import { todayIn } from '../lib/labels'
 import { Dashboard } from './Dashboard'
 
@@ -139,5 +139,20 @@ describe('the design, line by line (waterflow#143)', () => {
     const title = (await screen.findByRole('heading', { name: 'Spending and income' })).parentElement!
     expect(within(title).getByText('Spending')).toBeInTheDocument()
     expect(within(title).getByText('Income')).toBeInTheDocument()
+  })
+})
+
+describe('two columns that take only the height they need (waterflow#150)', () => {
+  afterEach(() => desktop(false))
+
+  it('stacks each column with a divider between sections', async () => {
+    desktop(true)
+    dashServer({ accounts: [row(1)], recent_transactions: [txn(1)] })
+    await renderApp(<Dashboard book={book} />)
+    const next = (name: string) => screen.getByRole('region', { name }).nextElementSibling
+    await screen.findByRole('region', { name: 'Accounts' })
+    expect(next('By category')).toHaveRole('separator')
+    expect(next('By category')!.nextElementSibling).toBe(screen.getByRole('region', { name: 'Accounts' }))
+    expect(next('Spending and income')!.nextElementSibling).toBe(screen.getByRole('region', { name: 'Recent' }))
   })
 })

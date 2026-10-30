@@ -1,5 +1,6 @@
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
+import Divider from '@mui/material/Divider'
 import Link from '@mui/material/Link'
 import List from '@mui/material/List'
 import ListItemButton from '@mui/material/ListItemButton'
@@ -8,7 +9,7 @@ import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import useMediaQuery from '@mui/material/useMediaQuery'
 import { useTheme } from '@mui/material/styles'
-import type { ReactNode } from 'react'
+import { Fragment, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router'
 import { Bar } from '../components/Bar'
@@ -142,6 +143,110 @@ export function Dashboard({ book }: { book: Book }) {
     </Stack>
   )
 
+  const cashflowSection = (
+    <Section title={t('dash.cashflow')} action={legend}>
+      <CashflowChart
+        data={cashflow}
+        labels={{ spent: t('dash.spent'), income: t('dash.income'), month: t('dash.month') }}
+        formatMoney={(v) => money(v)}
+        formatAxis={(v) => axis.format(v / 10 ** minor(book.base_currency))}
+        formatMonth={(iso) => monthFmt.format(new Date(`${iso}T00:00:00`))}
+      />
+      {notConverted > 0 && <Typography variant="body2" color="textSecondary" sx={{ mt: 1 }}>{t('dash.notConverted', { count: notConverted })}</Typography>}
+    </Section>
+  )
+  const categoriesSection = (
+    <Section title={t('dash.topCategories')}>
+      {bars.length === 0 && <Typography color="textSecondary">{t('dash.noSpending')}</Typography>}
+      {bars.map((b) => {
+        const name = b.id ? nameOf.get(b.id) ?? '' : t('dash.uncategorized')
+        const color = b.id ? colorOf.get(b.id) : null
+        return (
+          <Box key={b.id ?? 'none'} onClick={() => b.id && navigate(`/books/${book.id}/transactions?category_id=${b.id}`)}
+            sx={{ py: 1.125, cursor: b.id ? 'pointer' : undefined }}>
+            <Stack direction="row" spacing={1.25} sx={{ alignItems: 'center', mb: 1 }}>
+              <Dot color={color} />
+              <Typography noWrap sx={{ flex: 1, minWidth: 0 }}>{name}</Typography>
+              <Typography sx={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{money(b.spent)}</Typography>
+            </Stack>
+            <Bar label={name} percent={(b.spent / barMax) * 100} color={color || 'text.disabled'} />
+          </Box>
+        )
+      })}
+    </Section>
+  )
+  const recentSection = (
+    <Section title={t('dash.recent')} action={seeAll('/transactions')}>
+      <List disablePadding>
+        {d.recent_transactions.slice(0, 5).map((r) => (
+          <ListItemButton key={r.id} onClick={() => openRecent(r.id)} sx={rowSx}>
+            <Dot color={colorNamed(r.category)} />
+            <ListItemText primary={r.payee || t(`txn.types.${r.type}`)}
+              secondary={[when(r.occurred_on), r.category].filter(Boolean).join(' · ')}
+              slotProps={{ primary: { noWrap: true }, secondary: { noWrap: true } }} />
+            {r.amount !== null && r.currency && (
+              <Money amount={r.amount} currency={r.currency} kind={r.type === 'transfer' ? 'transfer' : 'flow'} sign />
+            )}
+          </ListItemButton>
+        ))}
+      </List>
+    </Section>
+  )
+  const accountsSection = (
+    <Section title={t('dash.accounts')} action={seeAll('/accounts')}>
+      <List disablePadding>
+        {shownAccounts.map((a) => (
+          <ListItemButton key={a.account_id} onClick={() => navigate(`/books/${book.id}/transactions?account_id=${a.account_id}`)}
+            sx={{ ...rowSx, opacity: a.in_net_worth ? 1 : 0.55 }}>
+            <ListItemText primary={a.name} secondary={t(`accounts.kinds.${a.kind}`)}
+              slotProps={{ primary: { noWrap: true } }} />
+            <Box sx={{ textAlign: 'right' }}>
+              <Money amount={a.balance} currency={a.currency} kind="balance" sx={{ display: 'block' }} />
+              {a.currency !== book.base_currency && (
+                <Typography variant="caption" color="textDisabled" sx={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
+                  {a.converted_balance === null ? t('dash.noRate') : `≈ ${money(a.converted_balance)}`}
+                </Typography>
+              )}
+            </Box>
+          </ListItemButton>
+        ))}
+      </List>
+      {!pinned.length && d.accounts.length > 0 && (
+        <Typography variant="caption" color="textDisabled" component="p" sx={{ mt: 1 }}>{t('dash.pinHint')}</Typography>
+      )}
+    </Section>
+  )
+  const budgetsSection = d.budgets.length > 0 && (
+    <Section title={t('dash.budgets')} action={seeAll('/categories')}>
+      <Stack spacing={2.5} sx={{ pt: 0.5 }}>
+        {d.budgets.slice(0, 6).map((b) => (
+          <BudgetBar key={b.budget_id} label={`${b.category} · ${t(`budget.periods.${b.period}`)}`} spent={b.spent} budget={b.budget}
+            percent={b.percent_used ?? 0} color={colorOf.get(b.category_id)} format={(v) => money(v)} />
+        ))}
+      </Stack>
+    </Section>
+  )
+  const peopleSection = d.people.length > 0 && (
+    <Section title={t('dash.people')} action={seeAll('/people')}>
+      <List disablePadding>
+        {d.people.map((p) => (
+          <ListItemButton key={`${p.contact_id}-${p.currency}`} sx={rowSx} onClick={() => navigate(`/books/${book.id}/people`)}>
+            <ListItemText primary={p.name} slotProps={{ primary: { noWrap: true } }} />
+            <Stack sx={{ textAlign: 'right' }}>
+              {p.owed_to_you > 0 && <Typography sx={{ fontVariantNumeric: 'tabular-nums' }}>{t('people.owesYou', { amount: money(p.owed_to_you, p.currency) })}</Typography>}
+              {p.you_owe > 0 && <Typography color="error" sx={{ fontVariantNumeric: 'tabular-nums' }}>{t('people.youOwe', { amount: money(p.you_owe, p.currency) })}</Typography>}
+            </Stack>
+          </ListItemButton>
+        ))}
+      </List>
+    </Section>
+  )
+  const column = (...parts: ReactNode[]) => (
+    <Stack divider={<Divider />} spacing={3} sx={{ minWidth: 0 }}>
+      {parts.filter(Boolean).map((part, i) => <Fragment key={i}>{part}</Fragment>)}
+    </Stack>
+  )
+
   return (
     <Box>
       {desktop && (
@@ -161,104 +266,13 @@ export function Dashboard({ book }: { book: Book }) {
       </Box>
 
       <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'minmax(0, 1fr)', md: 'minmax(0, 2fr) minmax(0, 1fr)' }, columnGap: 8,
-        rowGap: { xs: 3, md: 5 }, mt: { xs: 3, md: 4 }, alignItems: 'start' }}>
-        <Section title={t('dash.cashflow')} action={legend}>
-          <CashflowChart
-            data={cashflow}
-            labels={{ spent: t('dash.spent'), income: t('dash.income'), month: t('dash.month') }}
-            formatMoney={(v) => money(v)}
-            formatAxis={(v) => axis.format(v / 10 ** minor(book.base_currency))}
-            formatMonth={(iso) => monthFmt.format(new Date(`${iso}T00:00:00`))}
-          />
-          {notConverted > 0 && <Typography variant="body2" color="textSecondary" sx={{ mt: 1 }}>{t('dash.notConverted', { count: notConverted })}</Typography>}
-        </Section>
-
-        <Section title={t('dash.topCategories')}>
-          {bars.length === 0 && <Typography color="textSecondary">{t('dash.noSpending')}</Typography>}
-          {bars.map((b) => {
-            const name = b.id ? nameOf.get(b.id) ?? '' : t('dash.uncategorized')
-            const color = b.id ? colorOf.get(b.id) : null
-            return (
-              <Box key={b.id ?? 'none'} onClick={() => b.id && navigate(`/books/${book.id}/transactions?category_id=${b.id}`)}
-                sx={{ py: 1.125, cursor: b.id ? 'pointer' : undefined }}>
-                <Stack direction="row" spacing={1.25} sx={{ alignItems: 'center', mb: 1 }}>
-                  <Dot color={color} />
-                  <Typography noWrap sx={{ flex: 1, minWidth: 0 }}>{name}</Typography>
-                  <Typography sx={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{money(b.spent)}</Typography>
-                </Stack>
-                <Bar label={name} percent={(b.spent / barMax) * 100} color={color || 'text.disabled'} />
-              </Box>
-            )
-          })}
-        </Section>
-
-        <Section title={t('dash.recent')} action={seeAll('/transactions')}>
-          <List disablePadding>
-            {d.recent_transactions.slice(0, 5).map((r) => (
-              <ListItemButton key={r.id} onClick={() => openRecent(r.id)} sx={rowSx}>
-                <Dot color={colorNamed(r.category)} />
-                <ListItemText primary={r.payee || t(`txn.types.${r.type}`)}
-                  secondary={[when(r.occurred_on), r.category].filter(Boolean).join(' · ')}
-                  slotProps={{ primary: { noWrap: true }, secondary: { noWrap: true } }} />
-                {r.amount !== null && r.currency && (
-                  <Money amount={r.amount} currency={r.currency} kind={r.type === 'transfer' ? 'transfer' : 'flow'} sign />
-                )}
-              </ListItemButton>
-            ))}
-          </List>
-        </Section>
-
-        <Stack spacing={4}>
-          <Section title={t('dash.accounts')} action={seeAll('/accounts')}>
-            <List disablePadding>
-              {shownAccounts.map((a) => (
-                <ListItemButton key={a.account_id} onClick={() => navigate(`/books/${book.id}/transactions?account_id=${a.account_id}`)}
-                  sx={{ ...rowSx, opacity: a.in_net_worth ? 1 : 0.55 }}>
-                  <ListItemText primary={a.name} secondary={t(`accounts.kinds.${a.kind}`)}
-                    slotProps={{ primary: { noWrap: true } }} />
-                  <Box sx={{ textAlign: 'right' }}>
-                    <Money amount={a.balance} currency={a.currency} kind="balance" sx={{ display: 'block' }} />
-                    {a.currency !== book.base_currency && (
-                      <Typography variant="caption" color="textDisabled" sx={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
-                        {a.converted_balance === null ? t('dash.noRate') : `≈ ${money(a.converted_balance)}`}
-                      </Typography>
-                    )}
-                  </Box>
-                </ListItemButton>
-              ))}
-            </List>
-            {!pinned.length && d.accounts.length > 0 && (
-              <Typography variant="caption" color="textDisabled" component="p" sx={{ mt: 1 }}>{t('dash.pinHint')}</Typography>
-            )}
-          </Section>
-
-          {d.budgets.length > 0 && (
-            <Section title={t('dash.budgets')} action={seeAll('/categories')}>
-              <Stack spacing={2.5} sx={{ pt: 0.5 }}>
-                {d.budgets.slice(0, 6).map((b) => (
-                  <BudgetBar key={b.budget_id} label={`${b.category} · ${t(`budget.periods.${b.period}`)}`} spent={b.spent} budget={b.budget}
-                    percent={b.percent_used ?? 0} color={colorOf.get(b.category_id)} format={(v) => money(v)} />
-                ))}
-              </Stack>
-            </Section>
-          )}
-
-          {d.people.length > 0 && (
-            <Section title={t('dash.people')} action={seeAll('/people')}>
-              <List disablePadding>
-                {d.people.map((p) => (
-                  <ListItemButton key={`${p.contact_id}-${p.currency}`} sx={rowSx} onClick={() => navigate(`/books/${book.id}/people`)}>
-                    <ListItemText primary={p.name} slotProps={{ primary: { noWrap: true } }} />
-                    <Stack sx={{ textAlign: 'right' }}>
-                      {p.owed_to_you > 0 && <Typography sx={{ fontVariantNumeric: 'tabular-nums' }}>{t('people.owesYou', { amount: money(p.owed_to_you, p.currency) })}</Typography>}
-                      {p.you_owe > 0 && <Typography color="error" sx={{ fontVariantNumeric: 'tabular-nums' }}>{t('people.youOwe', { amount: money(p.you_owe, p.currency) })}</Typography>}
-                    </Stack>
-                  </ListItemButton>
-                ))}
-              </List>
-            </Section>
-          )}
-        </Stack>
+        mt: { xs: 3, md: 4 }, alignItems: 'start' }}>
+        {desktop ? (
+          <>
+            {column(cashflowSection, recentSection)}
+            {column(categoriesSection, accountsSection, budgetsSection, peopleSection)}
+          </>
+        ) : column(cashflowSection, categoriesSection, recentSection, accountsSection, budgetsSection, peopleSection)}
       </Box>
       {credit && (
         <Typography variant="caption" color="textDisabled" component="p" sx={{ mt: 4 }}>
