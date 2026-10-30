@@ -147,6 +147,7 @@ function Frame({ book, children, onAdd }: { book: Book; children: ReactNode; onA
               sx={(theme) => ({ minHeight: 34, py: 0, px: 1.25, borderRadius: '7px', color: 'text.secondary',
                 '&:hover': { bgcolor: theme.palette.divider },
                 '&.Mui-selected, &.Mui-selected:hover': { bgcolor: theme.palette.divider, color: 'text.primary', fontWeight: 500 } })}>
+              <ListItemIcon sx={{ minWidth: 0, mr: 1.5, color: 'inherit', '& svg': { fontSize: 20 } }}>{p.icon}</ListItemIcon>
               {p.label}
             </ListItemButton>
           ))}
