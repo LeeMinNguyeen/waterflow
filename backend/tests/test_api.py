@@ -581,6 +581,18 @@ def test_installment_plans(client, database):
     assert rows[0].startswith("Book,Card,Purchase,Date,Amount,Months") and len(rows) == 2
 
 
+def test_a_category_with_a_siblings_name_is_name_taken(client):
+    """It used to answer 500 (review #166)."""
+    u = signed_up(client)
+    bid, _ = new_book_with_accounts(client, u)
+    food = add_category(client, u, bid, "Food")
+    add_category(client, u, bid, "Lunch", parent=food["id"])
+    for parent in (None, food["id"]):
+        r = client.post(f"/v1/books/{bid}/categories", headers=auth(u), json={
+            "id": str(uuid.uuid4()), "name": "Food" if parent is None else "Lunch", "kind": "expense", "parent_id": parent})
+        assert (r.status_code, r.json()) == (409, {"detail": "name_taken"})
+
+
 def test_categories(client):
     u = signed_up(client)
     bid, accts = new_book_with_accounts(client, u)

@@ -193,6 +193,7 @@
     "admin_self": "You can't disable your own account.",
     "password_mismatch": "The two passwords don't match.",
     "two_factor_off": "Two-step verification is off.",
+    "two_factor_on": "Two-step verification is already on. Turn it off first to set it up again.",
     "invalid_timezone": "That timezone isn't one this server knows. Pick another.",
     "updater_off": "One-click updates are off on this server.",
     "origin_not_allowed": "This address isn't this server's own web app.",

@@ -710,7 +710,7 @@ def test_features_from_the_old_app(database):
     with pytest.raises(DBAPIError, match="expense categories"):
         run(u, "insert into budgets (book_id, category_id, period, amount) values (:b, :c, 'monthly', 1)", b=b, c=saving)
     assert refused(u, "update categories set kind = 'expense' where id = :c", c=saving) == "RaiseException"
-    with pytest.raises(DBAPIError, match="opening"):
+    with pytest.raises(DBAPIError, match="category_kind"):
         add(u, b, "opening_balance", date(2026, 10, 2), [(chk, 1)], saving)
 
     # All of it reaches the export.

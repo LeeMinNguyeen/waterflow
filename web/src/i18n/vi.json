@@ -193,6 +193,7 @@
     "admin_self": "Bạn không thể vô hiệu hóa tài khoản của chính mình.",
     "password_mismatch": "Hai mật khẩu không khớp.",
     "two_factor_off": "Xác minh hai bước đang tắt.",
+    "two_factor_on": "Xác minh hai bước đang bật. Hãy tắt trước rồi mới thiết lập lại.",
     "invalid_timezone": "Máy chủ không nhận múi giờ này. Hãy chọn múi giờ khác.",
     "updater_off": "Máy chủ này chưa bật cập nhật bằng một nút bấm.",
     "origin_not_allowed": "Địa chỉ này không phải ứng dụng web của chính máy chủ.",
