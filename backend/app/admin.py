@@ -1,8 +1,8 @@
 """Commands for whoever runs the server, for when the web app can't help:
 
     docker compose exec waterflow python -m app.admin reset-password <username>
-        A one-time reset link (24 hours) for anyone, the admin included. Like
-        the admin's reset link: also turns their two-factor off.
+        A one-time reset link (24 hours) for any account that isn't disabled, the
+        admin included. Like the admin's reset link: also turns their two-factor off.
     docker compose exec waterflow python -m app.admin make-admin <username>
         Makes that account the admin (for example after the admin left).
     docker compose exec waterflow python -m app.admin repurge

@@ -320,7 +320,7 @@ def test_two_factor_with_recovery_codes(client):
 
 
 def test_two_step_on_again_needs_turning_off_first(client):
-    """A session left open somewhere can't swap the secret and the recovery codes (review #166)."""
+    """A session left open somewhere can't swap the secret and the recovery codes."""
     name, token = sign_up(client)
     first = client.post("/v1/auth/two-factor/setup", headers=bearer(token)).json()["secret"]
     client.post("/v1/auth/two-factor/enable", headers=bearer(token), json={"secret": first, "code": pyotp.TOTP(first).now()})
@@ -332,7 +332,7 @@ def test_two_step_on_again_needs_turning_off_first(client):
 
 
 def test_sign_up_without_a_way_in_never_says_whether_a_username_exists(client, admin, invite_only):
-    """Review #166: the users insert used to come first, so a taken name answered username_taken."""
+    """With no invite on an invite-only server, a taken username and a free one get the same answer."""
     taken, _ = admin
     plain = client.post("/v1/auth/sign-up", json={"username": taken, "password": PASSWORD})
     assert (plain.status_code, plain.json()) == (403, {"detail": "invite_required"})
@@ -341,17 +341,16 @@ def test_sign_up_without_a_way_in_never_says_whether_a_username_exists(client, a
 
 
 def test_database_errors_and_refused_requests_log_no_values(client, caplog):
-    """A dropped connection mid-request would log the query's values (a TOTP secret, a password hash); a refused
-    request its input (a too short password). Review #166."""
+    """Neither a database error's values (a TOTP secret, a password hash) nor a refused request's input (a password)."""
     from app.core.db import engine
     assert engine.hide_parameters
     with caplog.at_level(logging.INFO):
         r = client.post("/v1/auth/sign-up", json={"username": "shortpass", "password": "sentinel1"})
-    assert r.status_code == 422 and "sentinel1" not in caplog.text
+    assert r.status_code == 422 and "invalid request" in caplog.text and "sentinel1" not in caplog.text
 
 
-def test_operator_commands_refuse_accounts_they_cannot_help(client, database, monkeypatch, capsys):
-    """make-admin on a closing account, and reset-password on a disabled one, used to say they worked. Review #166."""
+def test_operator_commands_refuse_accounts_they_cannot_help(client, database, monkeypatch):
+    """make-admin on a closing account and reset-password on a disabled one refuse, as neither would work."""
     from app import admin as commands
     monkeypatch.setattr(commands, "admin_url", lambda: database.url.set(drivername="postgresql").render_as_string(hide_password=False))
     closing, _ = sign_up(client)

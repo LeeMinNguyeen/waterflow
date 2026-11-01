@@ -582,7 +582,6 @@ def test_installment_plans(client, database):
 
 
 def test_a_category_with_a_siblings_name_is_name_taken(client):
-    """It used to answer 500 (review #166)."""
     u = signed_up(client)
     bid, _ = new_book_with_accounts(client, u)
     food = add_category(client, u, bid, "Food")
