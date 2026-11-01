@@ -1,6 +1,7 @@
-import { screen } from '@testing-library/react'
+import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
+import { session } from '../auth/session'
 import type { Book } from '../lib/api'
 import { currencies, fakeApi } from '../test/fakeApi'
 import { renderApp } from '../test/render'
@@ -42,5 +43,14 @@ describe('Create a book (waterflow#21)', () => {
     await new Promise((r) => setTimeout(r, 20))
     expect(api.calls.some((c) => c.path === '/v1/books')).toBe(true)
     expect(screen.queryByRole('button', { name: 'Cancel' })).not.toBeInTheDocument()
+  })
+
+  it('has Sign out for someone with no book yet, who has no other way out on a shared computer (review #166)', async () => {
+    const api = server([])
+    api.routes['POST /v1/auth/sign-out'] = undefined
+    await renderApp(<CreateBook />, { route: '/books/new' })
+    await userEvent.click(await screen.findByRole('button', { name: 'Sign out' }))
+    await waitFor(() => expect(session.token()).toBeNull())
+    expect(api.writes().map((c) => c.path)).toEqual(['/v1/auth/sign-out'])
   })
 })

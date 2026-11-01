@@ -27,6 +27,19 @@ export const session = {
     listeners.forEach((l) => l())
   },
 
+  // Only when the token really changes (signing in or out, another tab, someone signing in over a session), with the
+  // token from before.
+  onChange(listener: (before: string | null) => void): () => void {
+    let last = read()
+    return session.subscribe(() => {
+      const now = read()
+      if (now === last) return
+      const before = last
+      last = now
+      listener(before)
+    })
+  },
+
   subscribe(listener: () => void): () => void {
     listeners.add(listener)
     // Signing in or out in another tab of this browser.
