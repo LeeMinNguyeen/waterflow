@@ -20,12 +20,13 @@ import { useNavigate } from 'react-router'
 import { useErrorText } from '../components/errors'
 import { currentLanguage } from '../i18n'
 import { send, type Book, type Contact } from '../lib/api'
-import { formatMoney } from '../lib/money'
+import { useFormatMoney } from '../lib/hideAmounts'
 import { useContacts, useCurrencies } from '../lib/queries'
 import { PersonDialog } from './PersonDialog'
 import { PageHeader } from '../components/Page'
 
 export function People({ book }: { book: Book }) {
+  const formatMoney = useFormatMoney()
   const { t } = useTranslation()
   const errorText = useErrorText()
   const qc = useQueryClient()

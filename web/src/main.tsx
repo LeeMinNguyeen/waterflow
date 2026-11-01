@@ -6,6 +6,7 @@ import { createRoot } from 'react-dom/client'
 import App from './App.tsx'
 import { AppTheme } from './components/AppTheme'
 import { DatesProvider } from './components/DatesProvider'
+import { HideAmountsProvider } from './components/HideAmountsProvider'
 import { ToastProvider } from './components/ToastProvider'
 import { config } from './config'
 import { storeUrlFor } from './lib/store'
@@ -30,7 +31,9 @@ createRoot(document.getElementById('root')!).render(
       <QueryClientProvider client={queryClient}>
         <DatesProvider>
           <ToastProvider>
-            <App />
+            <HideAmountsProvider>
+              <App />
+            </HideAmountsProvider>
           </ToastProvider>
         </DatesProvider>
       </QueryClientProvider>

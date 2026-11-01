@@ -32,7 +32,7 @@ import { useErrorText } from '../components/errors'
 import { currentLanguage } from '../i18n'
 import { send, type Account, type AccountKind, type Book } from '../lib/api'
 import { groupByKind, type AccountGroup } from '../lib/accounts'
-import { formatMoney } from '../lib/money'
+import { useFormatMoney } from '../lib/hideAmounts'
 import { currencyLabel } from '../lib/labels'
 import { useAccounts, useCurrencies } from '../lib/queries'
 import { AccountDialog } from './AccountDialog'
@@ -42,6 +42,7 @@ import { PageHeader } from '../components/Page'
 // A table on desktop, a list on phones. An account opens its details, which
 // lead to its transactions.
 export function Accounts({ book }: { book: Book }) {
+  const formatMoney = useFormatMoney()
   const { t } = useTranslation()
   const errorText = useErrorText()
   const qc = useQueryClient()

@@ -12,7 +12,7 @@ import { Fragment } from 'react'
 import { useTranslation } from 'react-i18next'
 import { currentLanguage } from '../i18n'
 import type { Book } from '../lib/api'
-import { formatMoney } from '../lib/money'
+import { useFormatMoney } from '../lib/hideAmounts'
 import { personName } from '../lib/people'
 import { useAccounts, useCategories, useCurrencies, useHistory } from '../lib/queries'
 import { useErrorText } from './errors'
@@ -20,6 +20,7 @@ import { DialogFooter } from './DialogFooter'
 
 // Every saved version of a transaction, oldest first: created, each edit, deleted.
 export function HistoryDialog({ book, txnId, onClose }: { book: Book; txnId: string; onClose: () => void }) {
+  const formatMoney = useFormatMoney()
   const { t } = useTranslation()
   const errorText = useErrorText()
   const lang = currentLanguage()

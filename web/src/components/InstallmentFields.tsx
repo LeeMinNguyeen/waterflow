@@ -8,7 +8,7 @@ import { useTranslation } from 'react-i18next'
 import { currentLanguage } from '../i18n'
 import type { Account } from '../lib/api'
 import { statementsFrom, validMonths, type PlanForm } from '../lib/installments'
-import { formatMoney } from '../lib/money'
+import { useFormatMoney } from '../lib/hideAmounts'
 import { AmountField } from './AmountField'
 import { DateField } from './DateField'
 
@@ -22,6 +22,7 @@ type Props = {
 }
 
 export function InstallmentFields({ card, plan, onChange, purchaseDate, amount, minorUnit }: Props) {
+  const formatMoney = useFormatMoney()
   const { t } = useTranslation()
   const lang = currentLanguage()
   const converted = plan.convertedOn || purchaseDate

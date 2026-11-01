@@ -26,7 +26,7 @@ import { send, type Book, type Category, type CategoryKind } from '../lib/api'
 import { categoryTree } from '../lib/categories'
 import { BudgetBar } from '../components/BudgetBar'
 import { currentLanguage } from '../i18n'
-import { formatMoney } from '../lib/money'
+import { useFormatMoney } from '../lib/hideAmounts'
 import { useBudgets, useCategories, useCurrencies } from '../lib/queries'
 import { BudgetDialog } from './BudgetDialog'
 import { CategoryDialog } from './CategoryDialog'
@@ -36,6 +36,7 @@ const KINDS: CategoryKind[] = ['expense', 'income', 'transfer']
 
 // A category opens its details, which lead to its transactions.
 export function Categories({ book }: { book: Book }) {
+  const formatMoney = useFormatMoney()
   const { t } = useTranslation()
   const errorText = useErrorText()
   const navigate = useNavigate()

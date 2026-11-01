@@ -23,7 +23,7 @@ import { useOpenTxn } from '../components/txnContext'
 import { currentLanguage } from '../i18n'
 import { api, type Book, type Category, type Transaction } from '../lib/api'
 import { shiftDay, todayIn } from '../lib/labels'
-import { formatMoney } from '../lib/money'
+import { useFormatMoney, useHideAmounts } from '../lib/hideAmounts'
 import { useCategories, useCurrencies, useDashboard } from '../lib/queries'
 import { BudgetDialog } from './BudgetDialog'
 
@@ -65,6 +65,8 @@ function lastSixMonths(today: string): string[] {
 
 // Everything from one API call, in the book's currency.
 export function Dashboard({ book }: { book: Book }) {
+  const formatMoney = useFormatMoney()
+  const { hidden } = useHideAmounts()
   const { t } = useTranslation()
   const errorText = useErrorText()
   const lang = currentLanguage()
@@ -151,7 +153,7 @@ export function Dashboard({ book }: { book: Book }) {
         data={cashflow}
         labels={{ spent: t('dash.spent'), income: t('dash.income'), month: t('dash.month') }}
         formatMoney={(v) => money(v)}
-        formatAxis={(v) => axis.format(v / 10 ** minor(book.base_currency))}
+        formatAxis={(v) => (hidden ? '' : axis.format(v / 10 ** minor(book.base_currency)))}
         formatMonth={(iso) => monthFmt.format(new Date(`${iso}T00:00:00`))}
       />
       {notConverted > 0 && <Typography variant="body2" color="textSecondary" sx={{ mt: 1 }}>{t('dash.notConverted', { count: notConverted })}</Typography>}

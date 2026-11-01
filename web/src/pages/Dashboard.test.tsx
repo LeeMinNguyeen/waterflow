@@ -166,3 +166,17 @@ describe('two columns that take only the height they need (waterflow#150)', () =
     expect(next('Spending and income')!.nextElementSibling).toBe(screen.getByRole('region', { name: 'Recent' }))
   })
 })
+
+describe('hidden amounts (waterflow#104)', () => {
+  afterEach(() => localStorage.clear())
+
+  it('shows dots for every amount, the chart\'s axis included', async () => {
+    localStorage.setItem('waterflow.hideAmounts', '1')
+    dashServer({ net_worth: 249_752_750, spent_this_month: 14_860_000, spent_last_month: 16_240_000, income_this_month: 32_000_000,
+      cashflow_6_months: [{ month: '2026-10', spent: 14_860_000, income: 32_000_000, not_converted: 0 }] })
+    await renderApp(<Dashboard book={book} />)
+    expect((await screen.findAllByText('₫••••')).length).toBeGreaterThanOrEqual(3)
+    expect(document.body.textContent).not.toMatch(/\d,\d{3}/)
+    expect(document.body.textContent).not.toMatch(/\d+M\b/)
+  })
+})

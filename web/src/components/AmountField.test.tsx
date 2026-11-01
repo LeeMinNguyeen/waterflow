@@ -1,7 +1,7 @@
 import { screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { renderApp } from '../test/render'
 import { AmountField } from './AmountField'
 
@@ -43,5 +43,27 @@ describe('AmountField', () => {
   it('has no ± where the sign comes from elsewhere', async () => {
     await renderApp(<Field />)
     expect(screen.queryByRole('button', { name: 'Change sign' })).not.toBeInTheDocument()
+  })
+})
+
+describe('with amounts hidden (waterflow#104)', () => {
+  afterEach(() => localStorage.clear())
+
+  it('shows dots unless the field has focus: typing shows the number', async () => {
+    localStorage.setItem('waterflow.hideAmounts', '1')
+    await renderApp(<Field />)
+    const input = screen.getByLabelText('Amount')
+    await userEvent.type(input, '125000')
+    expect(input).toHaveValue('125,000')
+    await userEvent.tab()
+    expect(input).toHaveValue('••••')
+    await userEvent.click(input)
+    expect(input).toHaveValue('125,000')
+  })
+
+  it('keeps an empty field empty', async () => {
+    localStorage.setItem('waterflow.hideAmounts', '1')
+    await renderApp(<Field />)
+    expect(screen.getByLabelText('Amount')).toHaveValue('')
   })
 })
