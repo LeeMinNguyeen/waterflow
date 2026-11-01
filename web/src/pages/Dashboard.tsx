@@ -9,7 +9,7 @@ import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import useMediaQuery from '@mui/material/useMediaQuery'
 import { useTheme } from '@mui/material/styles'
-import { Fragment, type ReactNode } from 'react'
+import { Fragment, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router'
 import { Bar } from '../components/Bar'
@@ -21,10 +21,11 @@ import { Money } from '../components/Money'
 import { PageHeader, Section, SeeAll } from '../components/Page'
 import { useOpenTxn } from '../components/txnContext'
 import { currentLanguage } from '../i18n'
-import { api, type Book, type Transaction } from '../lib/api'
+import { api, type Book, type Category, type Transaction } from '../lib/api'
 import { shiftDay, todayIn } from '../lib/labels'
 import { formatMoney } from '../lib/money'
 import { useCategories, useCurrencies, useDashboard } from '../lib/queries'
+import { BudgetDialog } from './BudgetDialog'
 
 // Credits some rate sources ask for (backend/app/jobs/fx_update.py); a proper name, not translated.
 const RATE_CREDITS: Record<string, { label: string; href: string }> = {
@@ -73,6 +74,7 @@ export function Dashboard({ book }: { book: Book }) {
   const chartColors = useChartColors()
   const dash = useDashboard(book.id)
   const categories = useCategories(book.id, true)
+  const [budgetFor, setBudgetFor] = useState<Category | null>(null)
   const currencies = useCurrencies()
   const minor = (c: string) => currencies.data?.get(c)?.minor_unit ?? 0
   const money = (amount: number, currency = book.base_currency) => formatMoney(amount, currency, minor(currency), lang)
@@ -219,10 +221,14 @@ export function Dashboard({ book }: { book: Book }) {
   const budgetsSection = d.budgets.length > 0 && (
     <Section title={t('dash.budgets')} action={seeAll('/categories')}>
       <Stack spacing={2.5} sx={{ pt: 0.5 }}>
-        {d.budgets.slice(0, 6).map((b) => (
-          <BudgetBar key={b.budget_id} label={`${b.category} · ${t(`budget.periods.${b.period}`)}`} spent={b.spent} budget={b.budget}
-            percent={b.percent_used ?? 0} color={colorOf.get(b.category_id)} format={(v) => money(v)} />
-        ))}
+        {d.budgets.slice(0, 6).map((b) => {
+          const category = categories.data?.find((c) => c.id === b.category_id)
+          return (
+            <BudgetBar key={b.budget_id} label={`${b.category} · ${t(`budget.periods.${b.period}`)}`} spent={b.spent} budget={b.budget}
+              percent={b.percent_used ?? 0} color={colorOf.get(b.category_id)} format={(v) => money(v)}
+              onClick={category && (() => setBudgetFor(category))} />
+          )
+        })}
       </Stack>
     </Section>
   )
@@ -274,6 +280,7 @@ export function Dashboard({ book }: { book: Book }) {
           </>
         ) : column(cashflowSection, categoriesSection, recentSection, accountsSection, budgetsSection, peopleSection)}
       </Box>
+      {budgetFor && <BudgetDialog book={book} category={budgetFor} onClose={() => setBudgetFor(null)} />}
       {credit && (
         <Typography variant="caption" color="textDisabled" component="p" sx={{ mt: 4 }}>
           {t('dash.ratesBy')}{' '}

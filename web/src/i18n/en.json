@@ -382,6 +382,7 @@
     "startsOn": "Starts",
     "endsOn": "Ends (optional)",
     "save": "Save",
+    "edit": "Edit budget",
     "delete": "Delete budget",
     "progress": "{{spent}} of {{budget}}",
     "left": "{{amount}} left",
@@ -630,6 +631,7 @@
   },
   "toast": {
     "budgetAdded": "Budget added",
+    "budgetSaved": "Budget saved",
     "txnSaved": "Transaction saved",
     "txnDeleted": "Transaction deleted",
     "accountSaved": "Account saved",

@@ -73,3 +73,14 @@ describe('category details (waterflow#23)', () => {
     expect(screen.getByTestId('where')).toHaveTextContent('/books/b1/transactions?category_id=c2')
   })
 })
+
+describe('budgets on the Categories page (waterflow#139)', () => {
+  it("opens the category's budgets from the bar under it, rather than its details", async () => {
+    server()
+    await renderApp(<Categories book={book} />, { route: '/books/b1/categories' })
+    await userEvent.click(await screen.findByRole('button', { name: /^Monthly/ }))
+    const dialog = await screen.findByRole('dialog', { name: 'Budgets · Dining out' })
+    expect(within(dialog).getByRole('button', { name: 'Edit budget' })).toBeInTheDocument()
+    expect(screen.queryByText('Category details')).not.toBeInTheDocument()
+  })
+})

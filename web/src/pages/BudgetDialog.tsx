@@ -1,4 +1,5 @@
 import DeleteIcon from '@mui/icons-material/DeleteOutlined'
+import EditIcon from '@mui/icons-material/EditOutlined'
 import Alert from '@mui/material/Alert'
 import Button from '@mui/material/Button'
 import Dialog from '@mui/material/Dialog'
@@ -16,14 +17,16 @@ import { AmountField } from '../components/AmountField'
 import { BudgetBar } from '../components/BudgetBar'
 import { useErrorText } from '../components/errors'
 import { currentLanguage } from '../i18n'
-import { budgetPeriods, send, type Book, type Budget, type BudgetPeriod, type Category } from '../lib/api'
+import { ApiError, budgetPeriods, send, type Book, type Budget, type BudgetPeriod, type Category } from '../lib/api'
 import { todayIn } from '../lib/labels'
-import { formatMoney, parseAmount } from '../lib/money'
+import { amountText, formatMoney, parseAmount } from '../lib/money'
 import { useBudgets, useCurrencies, useInvalidateBook } from '../lib/queries'
 import { newId } from '../lib/uuid'
 import { DateField } from '../components/DateField'
 import { DialogFooter } from '../components/DialogFooter'
 import { useToast } from '../lib/toast'
+
+type Change = { budget: Budget; amount: string; startsOn: string; endsOn: string; badStarts: boolean; badEnds: boolean }
 
 // A category's budgets: one per period, in the book's currency. Sub-categories count too.
 export function BudgetDialog({ book, category, onClose }: { book: Book; category: Category; onClose: () => void }) {
@@ -46,18 +49,26 @@ export function BudgetDialog({ book, category, onClose }: { book: Book; category
   const [error, setError] = useState<unknown>(null)
   const [busy, setBusy] = useState(false)
   const [id] = useState(() => newId())
+  const [change, setChange] = useState<Change | null>(null)
+  const canEdit = book.role !== 'viewer'
   const parsed = parseAmount(amount, minor, lang)
   const ready = !!parsed && parsed > 0 && !badDates.starts && !badDates.ends
+  const changed = change ? parseAmount(change.amount, minor, lang) : null
+  const changeReady = !!change && !!changed && changed > 0 && !!change.startsOn && !change.badStarts && !change.badEnds
+    && (!change.endsOn || change.endsOn >= change.startsOn)
+  const edit = (c: Partial<Change>) => setChange((now) => now && { ...now, ...c })
+  const adding = canEdit && !change && free.length > 0
 
-  async function run(fn: () => Promise<unknown>) {
+  // The error, or null when it worked.
+  async function run(fn: () => Promise<unknown>): Promise<unknown> {
     setBusy(true)
     setError(null)
     try {
       await fn()
-      return true
+      return null
     } catch (err) {
       setError(err)
-      return false
+      return err
     } finally {
       setBusy(false)
       await invalidate(book.id)
@@ -67,20 +78,36 @@ export function BudgetDialog({ book, category, onClose }: { book: Book; category
   async function add(e: FormEvent) {
     e.preventDefault()
     if (!ready) return
-    const ok = await run(() => send('POST', `/v1/books/${book.id}/budgets`, {
+    const err = await run(() => send('POST', `/v1/books/${book.id}/budgets`, {
       id, category_id: category.id, period, amount: parsed, starts_on: startsOn || null, ends_on: endsOn || null,
     }))
-    if (ok) {
+    if (!err) {
       toast(t('toast.budgetAdded'))
       onClose()
     }
   }
 
+  async function save(e: FormEvent) {
+    e.preventDefault()
+    if (!change || !changeReady) return
+    const { budget: b, startsOn: starts, endsOn: ends } = change
+    const err = await run(() => send('PATCH', `/v1/books/${book.id}/budgets/${b.id}`, {
+      version: b.version, amount: changed, starts_on: starts, ...(ends ? { ends_on: ends } : { ongoing: true }),
+    }))
+    if (!err) toast(t('toast.budgetSaved'))
+    // A conflict shows the budget as it is now, to change again from there.
+    if (!err || (err instanceof ApiError && err.status === 409)) setChange(null)
+  }
+
   const remove = (b: Budget) => run(() => send('DELETE', `/v1/books/${book.id}/budgets/${b.id}?version=${b.version}`))
+  const startChange = (b: Budget) => {
+    setError(null)
+    setChange({ budget: b, amount: amountText(b.amount, minor, lang), startsOn: b.starts_on, endsOn: b.ends_on ?? '', badStarts: false, badEnds: false })
+  }
 
   return (
     <Dialog open onClose={onClose} fullWidth maxWidth="sm">
-      <form onSubmit={add}>
+      <form onSubmit={change ? save : add}>
         <DialogTitle>{t('budget.title')} · {category.name}</DialogTitle>
         <DialogContent>
           <Stack spacing={2}>
@@ -88,7 +115,19 @@ export function BudgetDialog({ book, category, onClose }: { book: Book; category
             {mine.length > 0 && (
               <Stack spacing={2}>
                 <Typography variant="subtitle2">{t('budget.existing')}</Typography>
-                {mine.map((b) => (
+                {mine.map((b) => change?.budget.id === b.id ? (
+                  <Stack key={b.id} spacing={2}>
+                    <Typography>{t(`budget.periods.${b.period}`)}</Typography>
+                    <AmountField label={`${t('budget.amount')} (${book.base_currency})`} required autoFocus value={change.amount}
+                      onChange={(amount) => edit({ amount })} minorUnit={minor} />
+                    <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+                      <DateField label={t('budget.startsOn')} required value={change.startsOn} onChange={(startsOn) => edit({ startsOn })}
+                        onInvalid={(badStarts) => edit({ badStarts })} />
+                      <DateField label={t('budget.endsOn')} value={change.endsOn} onChange={(endsOn) => edit({ endsOn })}
+                        onInvalid={(badEnds) => edit({ badEnds })} />
+                    </Stack>
+                  </Stack>
+                ) : (
                   <Stack key={b.id} direction="row" spacing={1} sx={{ alignItems: 'center' }}>
                     <Stack sx={{ flex: 1, minWidth: 0 }}>
                       {b.progress ? (
@@ -97,15 +136,22 @@ export function BudgetDialog({ book, category, onClose }: { book: Book; category
                         <Typography variant="body2">{t(`budget.periods.${b.period}`)} · {money(b.amount)} · {t('budget.notActive')}</Typography>
                       )}
                     </Stack>
-                    <IconButton aria-label={t('budget.delete')} onClick={() => remove(b)} disabled={busy}>
-                      <DeleteIcon />
-                    </IconButton>
+                    {canEdit && (
+                      <>
+                        <IconButton aria-label={t('budget.edit')} onClick={() => startChange(b)} disabled={busy || !!change}>
+                          <EditIcon />
+                        </IconButton>
+                        <IconButton aria-label={t('budget.delete')} onClick={() => remove(b)} disabled={busy || !!change}>
+                          <DeleteIcon />
+                        </IconButton>
+                      </>
+                    )}
                   </Stack>
                 ))}
                 <Divider />
               </Stack>
             )}
-            {free.length > 0 && (
+            {adding && (
               <Stack spacing={2}>
                 <Typography variant="subtitle2">{t('budget.add')}</Typography>
                 <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
@@ -114,7 +160,7 @@ export function BudgetDialog({ book, category, onClose }: { book: Book; category
                   </TextField>
                   <AmountField label={`${t('budget.amount')} (${book.base_currency})`} required value={amount} onChange={setAmount} minorUnit={minor} />
                 </Stack>
-                <Stack direction="row" spacing={2}>
+                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
                   <DateField label={t('budget.startsOn')} value={startsOn} onChange={setStartsOn}
                     onInvalid={(starts) => setBadDates((b) => ({ ...b, starts }))} />
                   <DateField label={t('budget.endsOn')} value={endsOn} onChange={setEndsOn}
@@ -126,9 +172,16 @@ export function BudgetDialog({ book, category, onClose }: { book: Book; category
           </Stack>
         </DialogContent>
         <DialogFooter>
-          <Button onClick={onClose}>{t(free.length ? 'common.cancel' : 'common.close')}</Button>
-          {free.length > 0 && (
-            <Button type="submit" variant="contained" loading={busy} disabled={!ready}>{t('budget.save')}</Button>
+          {change ? (
+            <>
+              <Button onClick={() => setChange(null)}>{t('common.cancel')}</Button>
+              <Button type="submit" variant="contained" loading={busy} disabled={!changeReady}>{t('budget.save')}</Button>
+            </>
+          ) : (
+            <>
+              <Button onClick={onClose}>{t(adding ? 'common.cancel' : 'common.close')}</Button>
+              {adding && <Button type="submit" variant="contained" loading={busy} disabled={!ready}>{t('budget.save')}</Button>}
+            </>
           )}
         </DialogFooter>
       </form>
