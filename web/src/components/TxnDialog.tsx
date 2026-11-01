@@ -166,18 +166,14 @@ function TxnForm({ book, txn: initial, defaults, onClose, minorOf, carry, onSwit
   // A new expense or income fills in from the user's own history once the amount is typed.
   const suggestible = !txn && (form.type === 'expense' || form.type === 'income')
   const typed = suggestible ? parseAmount(form.amount, minorOf(from?.currency ?? book.base_currency), lang) : null
+  const [suggestion, setSuggestion] = useState<Partial<Suggestion> | null>(null)
   useEffect(() => {
     if (!typed || typed <= 0) return
     let current = true
     const timer = setTimeout(async () => {
       try {
         const s = await api<Suggestion | null>(`/v1/books/${book.id}/transactions/suggest?type=${form.type}&amount=${typed}`)
-        if (!current || !s) return
-        const patch: Partial<Form> = {}
-        if (!touched.current.has('account') && accountList.some((a) => a.id === s.account_id && !a.archived_at)) patch.account = s.account_id
-        if (!touched.current.has('category') && s.category_id && options.some((o) => o.category.id === s.category_id)) patch.category = s.category_id
-        if (!touched.current.has('payee') && s.payee) patch.payee = s.payee
-        setForm((f) => ({ ...f, ...patch }))
+        if (current && s) setSuggestion(s)
       } catch {
         // A suggestion is a convenience: without one the form stays as it is.
       }
@@ -188,6 +184,22 @@ function TxnForm({ book, txn: initial, defaults, onClose, minorOf, carry, onSwit
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- asks again only when the amount or the type changes
   }, [typed, form.type])
+
+  // The suggestion can arrive before the accounts or categories: each part waits for its list.
+  useEffect(() => {
+    if (!suggestion) return
+    const { account_id, category_id, payee } = suggestion
+    const accountNow = !!account_id && !!accounts.data
+    const categoryNow = !!category_id && !!categories.data
+    if (!accountNow && !categoryNow && !payee) return
+    const patch: Partial<Form> = {}
+    if (accountNow && !touched.current.has('account') && accounts.data?.some((a) => a.id === account_id && !a.archived_at)) patch.account = account_id
+    if (categoryNow && !touched.current.has('category') && options.some((o) => o.category.id === category_id)) patch.category = category_id
+    if (payee && !touched.current.has('payee')) patch.payee = payee
+    setForm((f) => ({ ...f, ...patch }))
+    const left = { ...(account_id && !accountNow ? { account_id } : {}), ...(category_id && !categoryNow ? { category_id } : {}) }
+    setSuggestion(Object.keys(left).length ? left : null)
+  }, [suggestion, accounts.data, categories.data, options])
 
   const card = form.type === 'expense' && from?.kind === 'credit_card' ? from : null
   const savedOnCard = !!txn && txn.entries.some((e) => byId.get(e.account_id)?.kind === 'credit_card')
@@ -304,8 +316,12 @@ function TxnForm({ book, txn: initial, defaults, onClose, minorOf, carry, onSwit
   const two = { display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' } } as const
   const typeSx = { whiteSpace: 'nowrap', minWidth: 0, px: { xs: 0.5, sm: 1.5 }, fontSize: { xs: 13, sm: 14 } } as const
   const ready = !!entries && !!form.date && !!form.time && planReady
-  // The dialog takes focus as it opens, so the amount is focused once it has.
-  const focusAmount = () => { if (!txn) amountRef.current?.focus() }
+  // The dialog takes focus as it opens, so the amount is focused once it has, unless the user already went to a field.
+  const focusAmount = (node: HTMLElement) => {
+    const active = document.activeElement
+    const untouched = !active || active === document.body || (node.contains(active) && (active as HTMLElement).tabIndex < 0)
+    if (!txn && untouched) amountRef.current?.focus()
+  }
   const other = otherTypes.includes(form.type) ? form.type : null
   const extras = (
     <>

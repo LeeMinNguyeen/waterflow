@@ -110,6 +110,41 @@ describe('filling in from my own history (waterflow#65)', () => {
     expect(screen.getByRole('combobox', { name: /^Account/ })).toHaveTextContent('Cash')
     expect(screen.getByLabelText('Payee')).toHaveValue('Mine')
   })
+
+  it('fills in the account and category once they load, when the suggestion came first', async () => {
+    let release!: () => void
+    const late = new Promise<void>((r) => { release = r })
+    fakeApi({
+      'GET /v1/currencies': currencies,
+      'GET /v1/books/b1/accounts': async () => { await late; return [cash, bank] },
+      'GET /v1/books/b1/categories': async () => { await late; return [parking] },
+      'GET /v1/books/b1/transactions/suggest': { account_id: 'bank', category_id: 'parking', payee: 'Gửi xe' },
+    })
+    await renderApp(<TxnDialog book={book} txn={null} onClose={() => {}} />)
+    await userEvent.type(await screen.findByLabelText(/^Amount/), '5000')
+    expect(await screen.findByDisplayValue('Gửi xe')).toBeInTheDocument()
+    release()
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Category' })).toHaveValue('Parking'))
+    expect(screen.getByRole('combobox', { name: /^Account/ })).toHaveTextContent('Bank')
+  })
+})
+
+describe('the focus as the dialog opens', () => {
+  it('goes to the amount', async () => {
+    server()
+    await renderApp(<TxnDialog book={book} txn={null} onClose={() => {}} />)
+    const amount = await screen.findByLabelText(/^Amount/)
+    await waitFor(() => expect(amount).toHaveFocus())
+  })
+
+  it('stays on a field the user went to before the dialog finished opening', async () => {
+    server()
+    await renderApp(<TxnDialog book={book} txn={null} onClose={() => {}} />)
+    const payee = await screen.findByLabelText('Payee')
+    await userEvent.click(payee)
+    await new Promise((r) => setTimeout(r, 500))
+    expect(payee).toHaveFocus()
+  })
 })
 
 describe('picking a category (waterflow#67)', () => {
