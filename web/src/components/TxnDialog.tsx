@@ -22,7 +22,6 @@ import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import ToggleButton from '@mui/material/ToggleButton'
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
-import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import useMediaQuery from '@mui/material/useMediaQuery'
 import { useTheme } from '@mui/material/styles'
@@ -558,16 +557,9 @@ function TxnForm({ book, txn: initial, defaults, onClose, minorOf, carry, onSwit
 
   return (
     <Dialog open onClose={onClose} fullWidth maxWidth="sm"
-      slotProps={{ paper: { component: 'form', onSubmit: submit, sx: { maxWidth: 520 } }, transition: { onEntered: focusAmount } }}>
-      <DialogTitle sx={{ pr: canDuplicate ? 11 : 7 }}>
+      slotProps={{ paper: { component: 'form', onSubmit: submit }, transition: { onEntered: focusAmount } }}>
+      <DialogTitle sx={{ pr: 7 }}>
         {t(txn ? 'txn.edit' : 'txn.add')}
-        {canDuplicate && (
-          <Tooltip title={t('txn.duplicate')}>
-            <IconButton size="small" aria-label={t('txn.duplicate')} onClick={duplicate} sx={{ position: 'absolute', right: 52, top: 18 }}>
-              <ContentCopyIcon fontSize="small" />
-            </IconButton>
-          </Tooltip>
-        )}
         <IconButton size="small" aria-label={t('common.close')} onClick={onClose} sx={{ position: 'absolute', right: 16, top: 18 }}>
           <CloseIcon fontSize="small" />
         </IconButton>
@@ -684,6 +676,11 @@ function TxnForm({ book, txn: initial, defaults, onClose, minorOf, carry, onSwit
             <Button startIcon={<HistoryIcon />} onClick={() => setShowHistory(true)}>
               {t('txn.history')}
             </Button>
+            {canDuplicate && (
+              <Button startIcon={<ContentCopyIcon />} onClick={duplicate}>
+                {t('txn.duplicate')}
+              </Button>
+            )}
             {!readOnly && (
               <Button color="error" startIcon={<DeleteIcon />} onClick={() => setConfirmDelete(true)}>
                 {t('txn.delete')}
