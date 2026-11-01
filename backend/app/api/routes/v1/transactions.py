@@ -25,8 +25,13 @@ Text = Annotated[str, StringConstraints(strip_whitespace=True, max_length=500)]
 
 class Entry(BaseModel):
     account_id: UUID
-    amount: Annotated[int, Field(ge=-MAX_AMOUNT, le=MAX_AMOUNT)]    # signed, in the account's currency
+    amount: int                                # signed, in the account's currency
     currency: str | None = None                # filled in on the way out
+
+
+class NewEntry(Entry):
+    # Bounded only on the way in: a larger amount saved before the bound can still be read, fixed and deleted.
+    amount: Annotated[int, Field(ge=-MAX_AMOUNT, le=MAX_AMOUNT)]
 
 
 class Transaction(BaseModel):
@@ -127,7 +132,7 @@ class TxnBody(BaseModel):
     type: Type
     occurred_on: date
     occurred_time: time | None = None          # none: 00:00 on a new one, unchanged on an edit
-    entries: list[Entry] = Field(min_length=1, max_length=2)
+    entries: list[NewEntry] = Field(min_length=1, max_length=2)
     category_id: UUID | None = None
     payee: Text | None = None
     note: Text | None = None
@@ -221,11 +226,17 @@ class UpdateTxn(TxnBody):
     version: int
 
 
+def _not_in_another_book(db: Session, book_id: UUID, txn_id: UUID) -> None:
+    """404 for a transaction in another of the user's books; one deleted meanwhile stays a 409 conflict."""
+    if db.execute(text("select book_id <> :b from transactions where id = :i"), {"b": book_id, "i": txn_id}).scalar():
+        raise HTTPException(404, "not_found")
+
+
 @router.put("/{txn_id}")
 def update(book_id: UUID, txn_id: UUID, body: UpdateTxn, db: Session = Depends(get_db)) -> Transaction:
     """Replaces the whole transaction (header and entries)."""
     require_role(get_book(db, book_id), "owner", "editor")
-    get_transaction(db, book_id, txn_id)
+    _not_in_another_book(db, book_id, txn_id)
     update_transaction(db, body.to_domain(txn_id, book_id), body.version)
     db.commit()
     return get_transaction(db, book_id, txn_id)
@@ -234,7 +245,7 @@ def update(book_id: UUID, txn_id: UUID, body: UpdateTxn, db: Session = Depends(g
 @router.delete("/{txn_id}", status_code=204)
 def delete(book_id: UUID, txn_id: UUID, version: int, db: Session = Depends(get_db)) -> Response:
     require_role(get_book(db, book_id), "owner", "editor")
-    get_transaction(db, book_id, txn_id)
+    _not_in_another_book(db, book_id, txn_id)
     delete_transaction(db, book_id, txn_id, version)
     db.commit()
     return Response(status_code=204)

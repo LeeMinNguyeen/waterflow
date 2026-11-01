@@ -1372,6 +1372,28 @@ def test_a_transaction_changes_only_in_its_own_book(client):
     assert client.get(f"/v1/books/{b}/transactions/{t['id']}", headers=auth(u)).json()["payee"] == "Lunch"
 
 
+def test_an_amount_saved_past_the_bound_can_still_be_read_and_deleted(client, database):
+    u = signed_up(client)
+    bid = _book(client, u)
+    cash = _account(client, u, bid)
+    t = _expense(client, u, bid, cash, 1000)
+    with database.connect() as c:
+        c.execute(text("update entries set amount = -2000000000000000 where transaction_id = :t"), {"t": t["id"]})
+    assert client.get(f"/v1/books/{bid}/transactions/{t['id']}", headers=auth(u)).json()["entries"][0]["amount"] == -2 * 10**15
+    assert client.get(f"/v1/books/{bid}/transactions", headers=auth(u)).status_code == 200
+    version = client.get(f"/v1/books/{bid}/transactions/{t['id']}", headers=auth(u)).json()["version"]
+    assert client.delete(f"/v1/books/{bid}/transactions/{t['id']}?version={version}", headers=auth(u)).status_code == 204
+
+
+def test_a_transaction_deleted_meanwhile_is_still_a_conflict(client):
+    u = signed_up(client)
+    bid = _book(client, u)
+    t = _expense(client, u, bid, _account(client, u, bid), 1000)
+    assert client.delete(f"/v1/books/{bid}/transactions/{t['id']}?version={t['version']}", headers=auth(u)).status_code == 204
+    r = client.delete(f"/v1/books/{bid}/transactions/{t['id']}?version={t['version']}", headers=auth(u))
+    assert (r.status_code, r.json()) == (409, {"detail": "conflict"})
+
+
 def test_monthly_interest_rounds_half_up_in_whole_units():
     from app.domain.bills import monthly_interest
     assert monthly_interest(60_000, 1) == 1                         # 0.5 rounds up

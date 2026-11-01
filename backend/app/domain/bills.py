@@ -105,7 +105,7 @@ select p.id, p.account_id, p.transaction_id, t.payee, t.occurred_on, -e.amount a
 def installment_plans(db: Session, book_id: UUID, today: date) -> list[dict]:
     """A book's plans with what's billed so far, as of the last statement before `today`."""
     out = []
-    # A card that has lost its statement day (refused now) has no statements to bill on.
+    # A card without a statement day has no statements to bill on.
     for p in db.execute(text(PLANS + " where p.book_id = :b and a.statement_day is not null"
                                      " order by t.occurred_on, t.created_at"), {"b": book_id}).mappings():
         shares = parts(p["amount"], p["months"])

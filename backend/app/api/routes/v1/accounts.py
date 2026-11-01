@@ -191,9 +191,10 @@ def update_account(book_id: UUID, account_id: UUID, body: UpdateAccount, db: Ses
                     "a": body.archived, **details}).rowcount
     if n == 0:
         raise HTTPException(409, "conflict")
-    # A plan bills on its card's statements: without a statement day every installments call would fail.
-    if db.execute(text("select exists (select 1 from installment_plans p join accounts a on a.id = p.account_id"
-                       " where a.id = :i and (a.kind <> 'credit_card' or a.statement_day is null))"), {"i": account_id}).scalar():
+    # A plan bills on its card's statements: a card with plans keeps its statement day and stays a card.
+    if current.kind == "credit_card" and current.statement_day and db.execute(text(
+            "select exists (select 1 from installment_plans p join accounts a on a.id = p.account_id"
+            " where a.id = :i and (a.kind <> 'credit_card' or a.statement_day is null))"), {"i": account_id}).scalar():
         raise HTTPException(409, "card_has_installments")
     db.commit()
     return get_account(db, book_id, account_id)
