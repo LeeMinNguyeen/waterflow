@@ -33,4 +33,16 @@ describe('the language a page opens in', () => {
     localStorage.setItem('waterflow.accountLanguage', 'vi')
     expect((await freshI18n()).language).toBe('en')
   })
+
+  it('goes back to the sign-in language when someone else signs in over a session (review #166)', async () => {
+    localStorage.setItem('waterflow.language', 'en')
+    localStorage.setItem('waterflow.session', 'alice')
+    localStorage.setItem('waterflow.accountLanguage', 'vi')
+    const i18n = await freshI18n()
+    const { session } = await import('../auth/session')
+    expect(i18n.language).toBe('vi')
+    session.set('bob')
+    expect(i18n.language).toBe('en')
+    expect(localStorage.getItem('waterflow.accountLanguage')).toBeNull()
+  })
 })

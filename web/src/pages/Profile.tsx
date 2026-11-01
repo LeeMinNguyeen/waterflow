@@ -91,6 +91,7 @@ function ProfileForm({ profile }: { profile: ProfileT }) {
     try {
       const me = await send<Me>('PATCH', '/v1/me', { username: username.trim().toLowerCase(), display_name: displayName.trim(), language, timezone })
       qc.setQueryData(keys.me, me)
+      rememberedDevice.rename(profile.username, me.profile.username)
       applyAccountLanguage(language)
       setStatus({ saved: true })
     } catch (err) {

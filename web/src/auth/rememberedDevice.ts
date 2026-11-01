@@ -16,6 +16,12 @@ export const rememberedDevice = {
       // private mode: nothing is remembered
     }
   },
+  rename(from: string, to: string) {
+    const token = this.get(from)
+    if (!token || key(from) === key(to)) return
+    this.set(to, token)
+    this.forget(from)
+  },
   forget(username: string) {
     try {
       localStorage.removeItem(key(username))

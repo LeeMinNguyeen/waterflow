@@ -3,7 +3,7 @@ import Button from '@mui/material/Button'
 import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
-import { useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link as RouterLink, useLocation, useNavigate, useSearchParams } from 'react-router'
 import { Centered } from '../components/Centered'
@@ -13,6 +13,8 @@ import { FileField } from '../components/FileField'
 import { LanguagePicker } from '../components/LanguagePicker'
 import { useInstance } from '../lib/queries'
 import { newAccountBody, useSignedInForm } from '../auth/forms'
+import { session } from '../auth/session'
+import { signOut } from '../auth/signOut'
 import { FormError, NewAccountFields, PasswordFields, PublicHeader, PublicPage } from '../components/AccountForm'
 
 // Join with an invite (/join?code=X7K2-9QPM, from the admin's link or QR
@@ -157,11 +159,15 @@ function SetupRestore({ onBack }: { onBack: () => void }) {
   )
 }
 
-// A reset link from the admin (/reset?token=...): a new password, then signed in.
+// A reset link from the admin (/reset?token=...): a new password, then signed in. Whoever is signed in on this
+// browser is signed out first: the link is for someone else's account.
 export function Reset() {
   const { t } = useTranslation()
   const [params] = useSearchParams()
   const { submit, error, busy } = useSignedInForm()
+  useEffect(() => {
+    if (session.token()) void signOut()
+  }, [])
   return (
     <PublicPage>
       <Stack component="form" spacing={2} onSubmit={(e) => submit(e, (form) => {

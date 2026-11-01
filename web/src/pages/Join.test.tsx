@@ -127,6 +127,15 @@ describe('setting up a new server', () => {
 })
 
 describe('a reset link', () => {
+  it('signs out whoever is signed in on this browser first, so their data never shows to the person resetting (review #166)', async () => {
+    const api = fakeApi({ 'GET /v1/instance': { name: 'Nhà', signup: 'invite', setup_needed: false }, 'POST /v1/auth/sign-out': undefined })
+    session.set('alice-token')
+    await renderApp(<Reset />, { route: '/reset?token=t' })
+    await waitFor(() => expect(session.token()).toBeNull())
+    expect(api.writes().map((c) => c.path)).toEqual(['/v1/auth/sign-out'])
+    expect(await screen.findByRole('heading', { level: 1 })).toHaveTextContent('Choose a new password')
+  })
+
   it('opens in the sign-in language, with the button to change it (waterflow#134)', async () => {
     fakeApi({ 'GET /v1/instance': { name: 'Nhà', signup: 'invite', setup_needed: false } })
     session.set(null)
