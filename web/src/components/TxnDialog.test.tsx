@@ -188,6 +188,21 @@ describe('amounts in a currency of their own (review #166)', () => {
     expect(api.writes()[0].body).toMatchObject({ entries: [{ account_id: 'cash', amount: -50_000 }] })
   })
 
+  it("still takes a picked payee's account in another currency while no amount is typed", async () => {
+    const card: Account = { ...cash, id: 'usd', name: 'USD card', kind: 'credit_card', currency: 'USD' }
+    fakeApi({
+      'GET /v1/currencies': currencies,
+      'GET /v1/books': [book],
+      'GET /v1/books/b1/accounts': [cash, { ...cash, id: 'bank', name: 'Bank', kind: 'checking' }, card],
+      'GET /v1/books/b1/categories': [],
+      'GET /v1/books/b1/payees': [{ payee: 'Netflix', count: 3, account_id: 'usd', category_id: null }],
+    })
+    await renderApp(<TxnDialog book={book} txn={null} onClose={() => {}} />)
+    await userEvent.type(await screen.findByLabelText('Payee'), 'Net')
+    await userEvent.click(await screen.findByRole('option', { name: /Netflix/ }))
+    await waitFor(() => expect(screen.getByRole('combobox', { name: /^Account/ })).toHaveTextContent('USD card'))
+  })
+
   it("leaves an untouched account alone when the suggestion's is in another currency", async () => {
     const card: Account = { ...cash, id: 'usd', name: 'USD card', kind: 'credit_card', currency: 'USD' }
     const bank: Account = { ...cash, id: 'bank', name: 'Bank', kind: 'checking' }

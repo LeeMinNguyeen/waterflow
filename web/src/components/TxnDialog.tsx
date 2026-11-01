@@ -211,15 +211,15 @@ function TxnForm({ book, txn: initial, defaults, onClose, minorOf, carry, onSwit
     const categoryNow = !!category_id && !!categories.data
     if (!accountNow && !categoryNow && !payee) return
     const patch: Partial<Form> = {}
-    // An account in another currency would read the typed amount in its decimals.
-    if (accountNow && !touched.current.has('account')
-      && accounts.data?.some((a) => a.id === account_id && !a.archived_at && a.currency === amountCurrency)) patch.account = account_id
+    // Once an amount is typed, an account in another currency would read it in its decimals.
+    if (accountNow && !touched.current.has('account') && accounts.data?.some((a) => a.id === account_id && !a.archived_at
+      && (form.amount.trim() === '' || a.currency === amountCurrency))) patch.account = account_id
     if (categoryNow && !touched.current.has('category') && options.some((o) => o.category.id === category_id)) patch.category = category_id
     if (payee && !touched.current.has('payee')) patch.payee = payee
     setForm((f) => ({ ...f, ...patch }))
     const left = { ...(account_id && !accountNow ? { account_id } : {}), ...(category_id && !categoryNow ? { category_id } : {}) }
     setSuggestion(Object.keys(left).length ? left : null)
-  }, [suggestion, accounts.data, categories.data, options, amountCurrency])
+  }, [suggestion, accounts.data, categories.data, options, amountCurrency, form.amount])
 
   const payeeType = form.type === 'expense' || form.type === 'income' ? form.type : null
   const payees = usePayees(book.id, form.payee, payeeType).data ?? []
@@ -449,7 +449,7 @@ function TxnForm({ book, txn: initial, defaults, onClose, minorOf, carry, onSwit
       <Dialog open onClose={onClose} fullScreen slotProps={{ paper: { component: 'form', onSubmit: submit }, transition: { onEntered: focusAmount } }}>
         <Stack direction="row" sx={{ alignItems: 'center', minHeight: 56, px: 0.5, gap: 0.5 }}>
           <IconButton aria-label={t('common.close')} onClick={onClose} sx={{ color: 'text.primary' }}><ArrowBackIcon /></IconButton>
-          {onSwitchBook ? (
+          {onSwitchBook && !txn ? (
             <Button onClick={() => setSheet('book')} endIcon={<ExpandMoreIcon />} aria-label={t('txn.bookOf', { name: book.name })}
               sx={{ color: 'text.primary', fontSize: 18, fontWeight: 600, minWidth: 0, px: 1 }}>
               <Box component="span" sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{book.name}</Box>
