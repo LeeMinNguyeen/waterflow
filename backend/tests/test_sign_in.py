@@ -600,7 +600,14 @@ def test_an_update_whose_backup_fails_stops_with_a_plain_reason(monkeypatch):
     monkeypatch.setattr(backup, "run_backup", mismatch)
     with pytest.raises(SystemExit) as stopped:
         launch.backup_before_updating("postgresql://u:p@db/x", "/tmp")
-    assert "nothing was updated" in str(stopped.value) and "PostgreSQL 15 to 17" in str(stopped.value)
+    assert "nothing was updated" in str(stopped.value) and "Own database" in str(stopped.value)
+
+    def full(*_):
+        raise backup.BackupError("no space left on device")
+    monkeypatch.setattr(backup, "run_backup", full)
+    with pytest.raises(SystemExit) as stopped:
+        launch.backup_before_updating("postgresql://u:p@db/x", "/tmp")
+    assert "no space left" in str(stopped.value) and "Own database" not in str(stopped.value)
 
 
 def test_launcher_builds_login_urls():

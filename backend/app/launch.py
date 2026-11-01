@@ -118,13 +118,13 @@ def run_jobs_once() -> None:
 
 
 def backup_before_updating(admin: str, backup_dir: str) -> None:
-    """Stops the server with one plain line, not a traceback, when the backup an update needs can't be made."""
+    """Stops the server with a plain reason, not a traceback, when the backup an update needs can't be made."""
     try:
         path, _, _ = backup.run_backup(admin, backup_dir)
     except backup.BackupError as e:
-        hint = (" This image's pg_dump is PostgreSQL 17, which can't back up a newer server: Waterflow supports"
-                " PostgreSQL 15 to 17 for now." if "version mismatch" in str(e) else "")
-        raise SystemExit(f"the backup before updating failed, so nothing was updated: {e}.{hint}") from None
+        hint = (" The image's pg_dump can't back up a newer PostgreSQL than its own: see Own database in the docs."
+                if "version mismatch" in str(e) else "")
+        raise SystemExit(f"the backup before updating failed, so nothing was updated: {backup._scrub(str(e), admin)}.{hint}") from None
     print(f"before updating: backed up to {path}", flush=True)
 
 
