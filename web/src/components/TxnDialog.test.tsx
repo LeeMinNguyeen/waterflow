@@ -645,6 +645,24 @@ describe('the sign of an amount (waterflow#137)', () => {
     expect(api.writes()[0].body).toMatchObject({ entries: [{ account_id: 'loan', amount: -6_000_000 }] })
   })
 
+  it("saves a loan's opening debt typed as a sum as the whole debt (waterflow#120)", async () => {
+    const loan: Account = { ...bank, id: 'loan', name: 'Loan', kind: 'loan' }
+    const api = fakeApi({
+      'GET /v1/currencies': currencies,
+      'GET /v1/books/b1/accounts': [loan],
+      'GET /v1/books/b1/categories': [],
+      'PUT /v1/books/b1/transactions/t1': ({ body }: { body: unknown }) => body,
+    })
+    const owed: Transaction = { ...opening, entries: [{ account_id: 'loan', amount: -5_000_000, currency: 'VND' }] }
+    await renderApp(<TxnDialog book={book} txn={owed} onClose={() => {}} />)
+    const amount = await screen.findByLabelText(/^Amount owed/)
+    await waitFor(() => expect(amount).toHaveValue('5,000,000'))
+    await userEvent.clear(amount)
+    await userEvent.type(amount, '4000000+2000000{Enter}')
+    await waitFor(() => expect(api.writes()).toHaveLength(1))
+    expect(api.writes()[0].body).toMatchObject({ entries: [{ account_id: 'loan', amount: -6_000_000 }] })
+  })
+
   it('waits for the accounts before an opening balance can be typed, since they decide its sign', async () => {
     fakeApi({
       'GET /v1/currencies': currencies,

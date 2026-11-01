@@ -55,9 +55,12 @@ const mainTypes: TxnType[] = ['expense', 'income', 'transfer']
 const otherTypes: TxnType[] = ['refund', 'adjustment']
 const signedTypes: TxnType[] = ['adjustment', 'opening_balance']
 
+// For a sum, the + and - between its terms flip too: -(a + b) is -a - b.
 const negated = (text: string) => {
   const t = text.trim()
-  return t === '' || t === '-' ? text : t.startsWith('-') ? t.slice(1) : `-${t}`
+  if (t === '' || t === '-') return text
+  const flipped = t.replace(/(?<=[^+\-*/×÷\s]\s*)[+-]/g, (op) => (op === '+' ? '-' : '+'))
+  return flipped.startsWith('-') ? flipped.slice(1) : `-${flipped}`
 }
 
 type Form = {
@@ -480,7 +483,7 @@ function TxnForm({ book, txn: initial, defaults, onClose, minorOf, carry, onSwit
                 helperText={amountHint ?? (owedOpening ? t('accounts.amountOwed') : undefined)}
                 sx={{ '& .MuiOutlinedInput-notchedOutline, & .MuiOutlinedInput-root.Mui-focused .MuiOutlinedInput-notchedOutline': { border: 0 },
                   '& .MuiOutlinedInput-root.Mui-focused': { boxShadow: 'none' },
-                  '& .MuiOutlinedInput-input': { p: 0, fontSize: 40, lineHeight: '48px', height: 48, fontWeight: 500, color: tone,
+                  '& .MuiOutlinedInput-input': { p: 0, fontSize: form.amount.length > 10 ? 30 : 40, lineHeight: '48px', height: 48, fontWeight: 500, color: tone,
                     fontVariantNumeric: 'tabular-nums' } }}
               />
               {from && <Typography color="textDisabled" sx={{ fontWeight: 500 }}>{from.currency}</Typography>}

@@ -5,9 +5,9 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { renderApp } from '../test/render'
 import { AmountField } from './AmountField'
 
-function Field({ signed = false }: { signed?: boolean }) {
+function Field({ signed = false, unit }: { signed?: boolean; unit?: string }) {
   const [value, setValue] = useState('')
-  return <AmountField label="Amount" value={value} onChange={setValue} minorUnit={0} signed={signed} />
+  return <AmountField label="Amount" value={value} onChange={setValue} minorUnit={0} signed={signed} unit={unit} />
 }
 
 describe('AmountField', () => {
@@ -67,3 +67,49 @@ describe('with amounts hidden (waterflow#104)', () => {
     expect(screen.getByLabelText('Amount')).toHaveValue('')
   })
 })
+
+describe('sums (waterflow#120)', () => {
+  it('shows what a sum comes to while typing, and puts the result in the field when it loses focus', async () => {
+    await renderApp(<Field unit="VND" />)
+    const input = screen.getByLabelText('Amount')
+    await userEvent.type(input, '45000+100000')
+    expect(input).toHaveValue('45,000+100,000')
+    expect(screen.getByText('= 145,000 VND')).toBeInTheDocument()
+    await userEvent.tab()
+    expect(input).toHaveValue('145,000')
+    expect(screen.queryByText(/^= /)).not.toBeInTheDocument()
+  })
+
+  it("doesn't call a sum wrong while its next number is still to come, only once the field is left", async () => {
+    await renderApp(<Field />)
+    const input = screen.getByLabelText('Amount')
+    await userEvent.type(input, '45000+')
+    expect(screen.queryByText("The amount isn't in the right format.")).not.toBeInTheDocument()
+    await userEvent.tab()
+    expect(screen.getByText("The amount isn't in the right format.")).toBeInTheDocument()
+    expect(input).toHaveValue('45,000+')
+  })
+
+  it('offers 000 and + on a touch screen while the field has focus', async () => {
+    const matchMedia = window.matchMedia
+    window.matchMedia = ((query: string) => ({
+      matches: query.includes('pointer: coarse'), media: query, onchange: null, addListener: () => {}, removeListener: () => {},
+      addEventListener: () => {}, removeEventListener: () => {}, dispatchEvent: () => false,
+    })) as unknown as typeof window.matchMedia
+    try {
+      await renderApp(<Field />)
+      const input = screen.getByLabelText('Amount')
+      expect(screen.queryByRole('button', { name: '000' })).not.toBeInTheDocument()
+      await userEvent.type(input, '45')
+      await userEvent.click(screen.getByRole('button', { name: '000' }))
+      expect(input).toHaveValue('45,000')
+      await userEvent.click(screen.getByRole('button', { name: '+' }))
+      await userEvent.type(input, '5000')
+      expect(input).toHaveValue('45,000+5,000')
+      expect(input).toHaveFocus()
+    } finally {
+      window.matchMedia = matchMedia
+    }
+  })
+})
+
