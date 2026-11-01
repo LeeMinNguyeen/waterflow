@@ -916,3 +916,90 @@ def test_scheduler_runs_what_is_due_as_the_purge_login(database):
                 last_finished_at="null", last_result="null", last_detail="null")
         purger.dispose()
         api.dispose()
+
+
+def test_categories_never_loop(database):
+    """A category can't be its own parent, and a cycle that slipped in ends the ancestors' walk instead of running
+    forever (it serves budgets and the transaction filter)."""
+    u = new_user("loop_owner")
+    b = new_book(u)
+    a = new_category(u, b, "A")
+    assert refused(u, "update categories set parent_id = id where id = :c", c=a) == "CheckViolation"
+    c = new_category(u, b, "C", parent=a)
+    with database.connect() as owner:              # two moves at the same moment: A under C while C is under A
+        owner.execute(text("update categories set parent_id = :c where id = :a"), {"c": c, "a": a})
+    with session(u) as s:
+        s.execute(text("set local statement_timeout = '5s'"))
+        assert s.execute(text("select count(*) from category_ancestors where category_id = :a"), {"a": a}).scalar() == 2
+
+
+def test_two_owners_removing_each_other_at_once_keep_one(database):
+    """Each sees the other as an owner unless the book is locked first: one of them must be refused."""
+    from app.core import db
+    one, two = new_user("race_one"), new_user("race_two")
+    b = new_book(one)
+    share(one, b, two, "owner")
+    results, gate = {}, threading.Event()
+
+    def remove(me, other, wait):
+        try:
+            with db.user_session(me) as s:
+                if wait:
+                    gate.wait()
+                s.execute(text("delete from book_members where book_id = :b and user_id = :u"), {"b": b, "u": other})
+                if not wait:
+                    gate.set()
+                    time.sleep(0.5)
+            results[me] = "done"
+        except DBAPIError as e:
+            results[me] = "owner_required" if "owner_required" in str(e) else str(e)
+
+    threads = [threading.Thread(target=remove, args=(one, two, False)), threading.Thread(target=remove, args=(two, one, True))]
+    [x.start() for x in threads]
+    [x.join() for x in threads]
+    assert sorted(results.values()) == ["done", "owner_required"]
+    with database.connect() as owner:
+        assert owner.execute(text("select count(*) from book_members where book_id = :b and role = 'owner'"), {"b": b}).scalar() == 1
+
+
+def test_a_budgeted_category_stays_an_expense():
+    u = new_user("budget_kind")
+    b = new_book(u)
+    food = new_category(u, b, "Food")
+    run(u, "insert into budgets (book_id, category_id, period, amount) values (:b, :c, 'monthly', 1000)", b=b, c=food)
+    with pytest.raises(DBAPIError, match="budget_expense_only"):
+        run(u, "update categories set kind = 'income' where id = :c", c=food)
+
+
+def test_a_plan_follows_its_purchase_to_a_later_date():
+    """A purchase moved to a later date keeps a plan that can still change (Pay off early); the plan's own dates are
+    still checked, with a coded error."""
+    from app.domain.transactions import Entry, TxnIn, update_transaction
+    u = new_user("plan_date")
+    b = new_book(u, "VND")
+    card = new_account(u, b, "Visa", "credit_card")
+    run(u, "update accounts set statement_day = 20 where id = :a", a=card)
+    t = add(u, b, "expense", date(2026, 10, 10), [(card, -6_000_000)])
+    run(u, "insert into installment_plans (id, book_id, transaction_id, months, converted_on, first_statement)"
+           " values (gen_random_uuid(), :b, :t, 6, '2026-10-10', '2026-10-20')", b=b, t=t)
+    with session(u) as s:
+        update_transaction(s, TxnIn(t, b, "expense", date(2026, 10, 12), [Entry(card, -6_000_000)]), 1)
+    run(u, "update installment_plans set ended_on = '2026-10-15' where transaction_id = :t", t=t)
+    with pytest.raises(DBAPIError, match="installment_invalid"):
+        run(u, "update installment_plans set converted_on = '2026-10-01' where transaction_id = :t", t=t)
+
+
+def test_a_job_that_never_finished_counts_as_failed(database):
+    """A run killed midway (the container replaced at the jobs hour) isn't today's run: it's retried."""
+    with database.connect() as owner:
+        owner.execute(text("update jobs set last_started_at = now() - interval '2 hours',"
+                           " last_finished_at = now() - interval '26 hours', last_result = 'done' where name = 'rates'"))
+        assert owner.execute(text("select last_result from job_schedule() where name = 'rates'")).scalar() == "failed"
+        owner.execute(text("update jobs set last_finished_at = now() where name = 'rates'"))
+        assert owner.execute(text("select last_result from job_schedule() where name = 'rates'")).scalar() == "done"
+
+
+def test_the_edit_history_is_indexed_by_book(database):
+    with database.connect() as owner:
+        assert owner.execute(text("select count(*) from pg_indexes where tablename = 'transaction_history'"
+                                  " and indexdef like '%(book_id%'")).scalar() >= 1

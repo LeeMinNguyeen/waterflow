@@ -202,6 +202,7 @@
     "restore_too_new": "Bản sao lưu này từ phiên bản Waterflow mới hơn: hãy cập nhật máy chủ này trước.",
     "restore_too_large": "Tệp quá lớn: tối đa 100 MB.",
     "installment_exists": "Khoản mua này đã có kế hoạch trả góp.",
+    "installment_invalid": "Khoản trả góp này không khớp với giao dịch: phải là chi tiêu trên thẻ tín dụng có ngày sao kê, chuyển đổi vào hoặc sau ngày mua.",
     "person_account": "Đây là tài khoản riêng của một người: hãy sửa ở mục Vay mượn."
   },
   "nav": {

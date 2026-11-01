@@ -505,12 +505,12 @@ def test_the_old_default_server_name_becomes_waterflow(fresh_server):
     from app.jobs import migrate
     url, _ = fresh_server
     with psycopg.connect(url, autocommit=True) as conn:
-        *before, last = migrate.pending(conn)
-        assert last.name.endswith("_waterflow.sql")
-        for migration in before:
+        pending = migrate.pending(conn)
+        rename = next(i for i, m in enumerate(pending) if m.name.endswith("_waterflow.sql"))
+        for migration in pending[:rename]:
             migrate.apply(conn, migration)
         assert conn.execute("select name from instance_settings").fetchone()[0] == "MSaving"
-        migrate.apply(conn, last)
+        migrate.apply(conn, pending[rename])
         assert conn.execute("select name from instance_settings").fetchone()[0] == "Waterflow"
 
 
