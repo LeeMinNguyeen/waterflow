@@ -151,3 +151,16 @@ describe('pinning accounts to the Overview (waterflow#74, waterflow#88)', () => 
     })
   })
 })
+
+describe('hidden amounts (waterflow#104)', () => {
+  afterEach(() => localStorage.clear())
+
+  it('shows dots for every balance and total', async () => {
+    localStorage.setItem('waterflow.hideAmounts', '1')
+    server()
+    await renderApp(<Accounts book={book} />)
+    await screen.findByText('Nợ mẹ')
+    expect((await screen.findAllByText('₫••••')).length).toBeGreaterThan(0)
+    expect(document.body.textContent).not.toMatch(/\d,\d{3}/)
+  })
+})

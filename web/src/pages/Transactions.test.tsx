@@ -85,3 +85,15 @@ describe('Transactions by day (waterflow#143)', () => {
     expect(day).not.toHaveTextContent(today.slice(0, 4))
   })
 })
+
+describe('hidden amounts (waterflow#104)', () => {
+  afterEach(() => localStorage.clear())
+
+  it('shows dots for every amount', async () => {
+    localStorage.setItem('waterflow.hideAmounts', '1')
+    server()
+    await renderApp(<Transactions book={book} />, { route: '/books/b1/transactions' })
+    expect((await screen.findAllByText(/••••/)).length).toBeGreaterThan(0)
+    expect(document.body.textContent).not.toMatch(/\d,\d{3}/)
+  })
+})

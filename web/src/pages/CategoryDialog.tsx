@@ -20,7 +20,7 @@ import { useErrorText } from '../components/errors'
 import { currentLanguage } from '../i18n'
 import { send, type Book, type Category, type CategoryKind } from '../lib/api'
 import { categoryTree } from '../lib/categories'
-import { formatMoney } from '../lib/money'
+import { useFormatMoney } from '../lib/hideAmounts'
 import { useBudgets, useCurrencies } from '../lib/queries'
 import { newId } from '../lib/uuid'
 import { CategoryPicker } from '../components/CategoryPicker'
@@ -44,6 +44,7 @@ type Props = {
 // Add, show or edit a category. An existing one opens with its fields greyed
 // out and its budgets; Edit turns the fields on.
 export function CategoryDialog({ book, all, category, parent, editing: startEditing = false, onTransactions, onClose }: Props) {
+  const formatMoney = useFormatMoney()
   const { t } = useTranslation()
   const toast = useToast()
   const errorText = useErrorText()

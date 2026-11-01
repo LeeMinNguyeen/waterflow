@@ -11,6 +11,8 @@ import LogoutIcon from '@mui/icons-material/Logout'
 import PeopleIcon from '@mui/icons-material/PeopleOutlined'
 import PersonIcon from '@mui/icons-material/PersonOutlined'
 import SettingsIcon from '@mui/icons-material/Settings'
+import VisibilityIcon from '@mui/icons-material/VisibilityOutlined'
+import VisibilityOffIcon from '@mui/icons-material/VisibilityOffOutlined'
 import AppBar from '@mui/material/AppBar'
 import BottomNavigation from '@mui/material/BottomNavigation'
 import BottomNavigationAction from '@mui/material/BottomNavigationAction'
@@ -35,6 +37,7 @@ import useMediaQuery from '@mui/material/useMediaQuery'
 import { useTheme } from '@mui/material/styles'
 import { useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useHideAmounts } from '../lib/hideAmounts'
 import { Link as RouterLink, useLocation, useNavigate } from 'react-router'
 import type { Book, Transaction } from '../lib/api'
 import { useBookChanges, useBooks, useInstance, useMe } from '../lib/queries'
@@ -127,14 +130,17 @@ function Frame({ book, children, onAdd }: { book: Book; children: ReactNode; onA
         sx={{ width: SIDEBAR, flexShrink: 0, '& .MuiDrawer-paper': { width: SIDEBAR, boxSizing: 'border-box', bgcolor: 'background.sidebar',
           borderColor: 'divider', px: 1.5, pt: 2.5, pb: 2 } }}
       >
-        <Typography sx={{ fontWeight: 600, fontSize: 15, letterSpacing: '-0.01em', px: 1, mb: 2.5 }}>
-          {t('app.name')}
-          {version && (
-            <Typography component="span" variant="caption" color="textDisabled" title={t('admin.version', { version })} sx={{ ml: 0.75 }}>
-              {/^\d/.test(version) ? `v${version}` : version}
-            </Typography>
-          )}
-        </Typography>
+        <Box sx={{ display: 'flex', alignItems: 'center', px: 1, mb: 2.5 }}>
+          <Typography sx={{ fontWeight: 600, fontSize: 15, letterSpacing: '-0.01em', flex: 1 }}>
+            {t('app.name')}
+            {version && (
+              <Typography component="span" variant="caption" color="textDisabled" title={t('admin.version', { version })} sx={{ ml: 0.75 }}>
+                {/^\d/.test(version) ? `v${version}` : version}
+              </Typography>
+            )}
+          </Typography>
+          <HideAmountsButton size="small" />
+        </Box>
         <BookSwitcher book={book} />
         {canAdd && (
           <Button variant="contained" fullWidth startIcon={<AddIcon />} onClick={onAdd} sx={{ mt: 1.5 }}>
@@ -211,6 +217,8 @@ function PhoneFrame({ book, pages, canAdd, onAdd, admin, children }: {
             sx={{ fontSize: 17, fontWeight: 600, color: 'text.primary', minWidth: 0, maxWidth: '100%', px: 1, ml: -1 }}>
             <Box component="span" sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{book.name}</Box>
           </Button>
+          <Box sx={{ flex: 1 }} />
+          <HideAmountsButton edge="end" />
         </Toolbar>
       </AppBar>
       <Box component="main" sx={{ p: 2, pt: 2.5, pb: `calc(${NAV_HEIGHT + 88}px + env(safe-area-inset-bottom))` }}>
@@ -267,5 +275,16 @@ function PhoneFrame({ book, pages, canAdd, onAdd, admin, children }: {
         </List>
       </Drawer>
     </Box>
+  )
+}
+
+function HideAmountsButton({ size, edge }: { size?: 'small'; edge?: 'end' }) {
+  const { t } = useTranslation()
+  const { hidden, toggle } = useHideAmounts()
+  return (
+    <IconButton size={size} edge={edge} onClick={toggle} aria-label={t(hidden ? 'common.showAmounts' : 'common.hideAmounts')}
+      sx={{ color: 'text.secondary', ...(size === 'small' && { my: -0.5 }) }}>
+      {hidden ? <VisibilityOffIcon fontSize={size} /> : <VisibilityIcon fontSize={size} />}
+    </IconButton>
   )
 }

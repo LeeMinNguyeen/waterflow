@@ -68,7 +68,8 @@ until the mobile app ships.
   (`useInvalidateBook`, Refresh) note the marker first, so the poll doesn't fetch the same change again.
 - **Security:** the server sends a strict CSP (scripts `'self'` only; `style-src 'unsafe-inline'` for MUI's
   Emotion; QR codes are `data:` images from the API). No third-party scripts, fonts or analytics. Nothing in
-  localStorage but the session token, the language and appearance choices, and remembered-device tokens.
+  localStorage but the session token, the language and appearance choices, whether amounts are hidden, and
+  remembered-device tokens.
 - **Menus (⋮) are words only,** no icons: an icon takes room a phone doesn't have.
 - **The look** (the minimal design): colours, type and component defaults in `theme.ts`, Inter bundled
   (`@fontsource-variable/inter`, no font from elsewhere). Amounts on screen go through `components/Money`: red below

@@ -26,7 +26,8 @@ import {
   accountKinds, api, ApiError, interestKinds, last4Kinds, liabilityKinds, personKinds, send, type Account, type AccountKind, type Book,
 } from '../lib/api'
 import { timeIn, todayIn } from '../lib/labels'
-import { amountText, formatMoney, parseAmount } from '../lib/money'
+import { amountText, parseAmount } from '../lib/money'
+import { useFormatMoney } from '../lib/hideAmounts'
 import { useContacts, useCurrencies, useInvalidateBook } from '../lib/queries'
 import { newId } from '../lib/uuid'
 import { BillPanel, InstallmentsPanel } from './AccountBill'
@@ -55,6 +56,7 @@ export function AccountDialog(props: Props) {
 // positive and saved negative. Editing the current balance adds an adjustment
 // for the difference, dated today, since balances only come from transactions.
 function AccountForm({ book, account, editing: startEditing = false, onTransactions, onClose, minorOf }: Props & { minorOf: (currency: string) => number }) {
+  const formatMoney = useFormatMoney()
   const { t } = useTranslation()
   const toast = useToast()
   const errorText = useErrorText()

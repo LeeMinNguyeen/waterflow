@@ -32,7 +32,8 @@ import { currentLanguage } from '../i18n'
 import { api, ApiError, categoryKindFor, liabilityKinds, send, type Account, type Book, type Entry, type Payee, type Suggestion, type Transaction, type TxnType } from '../lib/api'
 import { categoryTree } from '../lib/categories'
 import { shiftDay, timeIn, todayIn } from '../lib/labels'
-import { amountText, formatMoney, parseAmount } from '../lib/money'
+import { amountText, parseAmount } from '../lib/money'
+import { useFormatMoney } from '../lib/hideAmounts'
 import { personName } from '../lib/people'
 import { fromPlan, noPlan, validMonths, type PlanForm } from '../lib/installments'
 import { useAccounts, useBooks, useCategories, useCurrencies, useInstallments, useInvalidateBook, usePayees } from '../lib/queries'
@@ -101,6 +102,7 @@ export function TxnDialog(props: Props) {
 // Amounts are typed as positive numbers; the type decides the sign (an expense
 // is money out). Adjustments and opening balances take a sign.
 function TxnForm({ book, txn: initial, defaults, onClose, minorOf, carry, onSwitchBook, onDuplicate }: FormProps) {
+  const formatMoney = useFormatMoney()
   const { t } = useTranslation()
   const toast = useToast()
   const errorText = useErrorText()

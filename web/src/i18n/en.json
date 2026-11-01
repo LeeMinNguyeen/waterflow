@@ -150,6 +150,8 @@
     "installmentFeeNote": "Installment fee: {{payee}}"
   },
   "common": {
+    "hideAmounts": "Hide amounts",
+    "showAmounts": "Show amounts",
     "cancel": "Cancel",
     "copy": "Copy",
     "done": "Done",

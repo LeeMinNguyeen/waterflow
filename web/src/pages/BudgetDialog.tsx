@@ -19,7 +19,8 @@ import { useErrorText } from '../components/errors'
 import { currentLanguage } from '../i18n'
 import { ApiError, budgetPeriods, send, type Book, type Budget, type BudgetPeriod, type Category } from '../lib/api'
 import { todayIn } from '../lib/labels'
-import { amountText, formatMoney, parseAmount } from '../lib/money'
+import { amountText, parseAmount } from '../lib/money'
+import { useFormatMoney } from '../lib/hideAmounts'
 import { useBudgets, useCurrencies, useInvalidateBook } from '../lib/queries'
 import { newId } from '../lib/uuid'
 import { DateField } from '../components/DateField'
@@ -30,6 +31,7 @@ type Change = { budget: Budget; amount: string; startsOn: string; endsOn: string
 
 // A category's budgets: one per period, in the book's currency. Sub-categories count too.
 export function BudgetDialog({ book, category, onClose }: { book: Book; category: Category; onClose: () => void }) {
+  const formatMoney = useFormatMoney()
   const { t } = useTranslation()
   const errorText = useErrorText()
   const lang = currentLanguage()

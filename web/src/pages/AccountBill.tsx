@@ -23,7 +23,8 @@ import { useErrorText } from '../components/errors'
 import { currentLanguage } from '../i18n'
 import { liabilityKinds, send, type Account, type Bill, type Book, type InstallmentPlan } from '../lib/api'
 import { timeIn, todayIn } from '../lib/labels'
-import { amountText, formatMoney, parseAmount } from '../lib/money'
+import { amountText, parseAmount } from '../lib/money'
+import { useFormatMoney } from '../lib/hideAmounts'
 import { useAccounts, useBills, useInstallments, useInvalidateBook } from '../lib/queries'
 import { newId } from '../lib/uuid'
 import { DialogFooter } from '../components/DialogFooter'
@@ -58,6 +59,7 @@ export function BillPanel({ book, account, minorUnit, canPay }: { book: Book; ac
 function BillCard({ book, account, bill: b, minorUnit, canPay, alone, last }: {
   book: Book; account: Account; bill: Bill; minorUnit: number; canPay: boolean; alone: boolean; last: boolean
 }) {
+  const formatMoney = useFormatMoney()
   const { t } = useTranslation()
   const lang = currentLanguage()
   const [paying, setPaying] = useState(false)
@@ -123,6 +125,7 @@ function BillCard({ book, account, bill: b, minorUnit, canPay, alone, last }: {
 function PayBillDialog({ book, account, bill, minorUnit, onClose }: {
   book: Book; account: Account; bill: Bill; minorUnit: number; onClose: () => void
 }) {
+  const formatMoney = useFormatMoney()
   const { t } = useTranslation()
   const toast = useToast()
   const errorText = useErrorText()
@@ -212,6 +215,7 @@ function PayBillDialog({ book, account, bill, minorUnit, onClose }: {
 
 // A card's purchases paid in installments that still have some to bill, with Pay off early.
 export function InstallmentsPanel({ book, account, minorUnit, canEdit }: { book: Book; account: Account; minorUnit: number; canEdit: boolean }) {
+  const formatMoney = useFormatMoney()
   const { t } = useTranslation()
   const lang = currentLanguage()
   const errorText = useErrorText()

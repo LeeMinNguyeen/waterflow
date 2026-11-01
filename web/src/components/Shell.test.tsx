@@ -111,3 +111,30 @@ describe('desktop (waterflow#22)', () => {
     expect(getComputedStyle(paper).backgroundColor).toBe('rgb(12, 12, 14)') // on #121214
   })
 })
+
+describe('hiding amounts (waterflow#104)', () => {
+  afterEach(() => {
+    localStorage.clear()
+    desktop(false)
+  })
+
+  it('has an eye button on a phone that hides and shows amounts, remembered by this browser', async () => {
+    server()
+    const { unmount } = await page()
+    await userEvent.click(screen.getByRole('button', { name: 'Hide amounts' }))
+    expect(screen.getByRole('button', { name: 'Show amounts' })).toBeInTheDocument()
+    expect(localStorage.getItem('waterflow.hideAmounts')).toBe('1')
+    unmount()
+    await page()
+    await userEvent.click(screen.getByRole('button', { name: 'Show amounts' }))
+    expect(screen.getByRole('button', { name: 'Hide amounts' })).toBeInTheDocument()
+    expect(localStorage.getItem('waterflow.hideAmounts')).toBeNull()
+  })
+
+  it('has it in the sidebar on a desktop', async () => {
+    desktop(true)
+    server()
+    await page()
+    expect(screen.getByRole('button', { name: 'Hide amounts' })).toBeInTheDocument()
+  })
+})

@@ -150,6 +150,8 @@
     "installmentFeeNote": "Phí trả góp: {{payee}}"
   },
   "common": {
+    "hideAmounts": "Ẩn số tiền",
+    "showAmounts": "Hiện số tiền",
     "cancel": "Hủy",
     "copy": "Sao chép",
     "done": "Xong",
