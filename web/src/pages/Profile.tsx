@@ -21,7 +21,7 @@ import { useTranslation } from 'react-i18next'
 import { useErrorText } from '../components/errors'
 import { LanguagePicker } from '../components/LanguagePicker'
 import { TimezonePicker } from '../components/TimezonePicker'
-import { currentLanguage, setLanguage, type Language } from '../i18n'
+import { applyAccountLanguage, currentLanguage, type Language } from '../i18n'
 import { api, download, send, type DeviceSession, type Me, type Profile as ProfileT } from '../lib/api'
 import { keys, useMe } from '../lib/queries'
 
@@ -91,7 +91,7 @@ function ProfileForm({ profile }: { profile: ProfileT }) {
     try {
       const me = await send<Me>('PATCH', '/v1/me', { username: username.trim().toLowerCase(), display_name: displayName.trim(), language, timezone })
       qc.setQueryData(keys.me, me)
-      setLanguage(language)
+      applyAccountLanguage(language)
       setStatus({ saved: true })
     } catch (err) {
       setStatus({ error: err })

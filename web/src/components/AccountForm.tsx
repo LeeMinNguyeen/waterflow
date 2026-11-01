@@ -1,22 +1,33 @@
 import Alert from '@mui/material/Alert'
+import Box from '@mui/material/Box'
 import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useInstance } from '../lib/queries'
+import { Centered } from './Centered'
 import { useErrorText } from './errors'
-import { LanguagePicker } from './LanguagePicker'
+import { LanguageMenu } from './LanguageMenu'
 
-// The title row of every screen before sign-in: the server's name and, where asked, the language dropdown.
-export function PublicHeader({ title, languageSwitch = true }: { title: string; languageSwitch?: boolean }) {
+// A screen before sign-in with the language button at the window's top right, clear of the form on a phone too.
+export function PublicPage({ children }: { children: ReactNode }) {
+  return (
+    <Box sx={{ position: 'relative' }}>
+      <Box sx={{ position: 'absolute', top: { xs: 12, sm: 16 }, right: { xs: 12, sm: 16 } }}>
+        <LanguageMenu />
+      </Box>
+      <Centered>{children}</Centered>
+    </Box>
+  )
+}
+
+// The title row of every screen before sign-in.
+export function PublicHeader({ title }: { title: string }) {
   const instance = useInstance()
   return (
     <Stack spacing={1.5}>
-      <Stack direction="row" spacing={2} sx={{ justifyContent: 'space-between', alignItems: 'center', minHeight: 22 }}>
-        <Typography sx={{ fontWeight: 600, fontSize: 15, letterSpacing: '-0.01em' }}>{instance.data?.name}</Typography>
-        {languageSwitch && <LanguagePicker size="small" />}
-      </Stack>
+      <Typography sx={{ fontWeight: 600, fontSize: 15, letterSpacing: '-0.01em', minHeight: 22 }}>{instance.data?.name}</Typography>
       <Typography variant="h1">{title}</Typography>
     </Stack>
   )

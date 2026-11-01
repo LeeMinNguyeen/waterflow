@@ -8,7 +8,7 @@ import { useErrorText } from './components/errors'
 import { IdleSignOut } from './components/IdleSignOut'
 import { Shell } from './components/Shell'
 import { UpdatingNotice } from './components/UpdatingNotice'
-import { setLanguage } from './i18n'
+import { applyAccountLanguage } from './i18n'
 import { useBooks, useInstance, useMe } from './lib/queries'
 import { useUpdating } from './lib/updating'
 import { AccountClosing } from './pages/AccountClosing'
@@ -50,7 +50,7 @@ function RequireAccount() {
   const me = useMe(signedIn)
   const language = me.data?.profile.language
   useEffect(() => {
-    if (language) setLanguage(language) // the saved language wins once signed in
+    if (language) applyAccountLanguage(language)
   }, [language])
 
   if (!signedIn) return <Navigate to="/sign-in" replace />

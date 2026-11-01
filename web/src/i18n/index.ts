@@ -1,37 +1,63 @@
 import i18n from 'i18next'
 import { initReactI18next } from 'react-i18next'
+import { session } from '../auth/session'
 import en from './en.json'
 import vi from './vi.json'
 
-// Every screen opens in the language this browser remembers: the signed-in user's (users.language), kept after
-// signing out, or the one picked before sign-in. English when it remembers none.
+// Two languages. The sign-in language is this browser's (waterflow.language): the screens before sign-in use it, and
+// only the language button and Join's dropdown change it. The account's language (users.language) is the app's once
+// signed in; it is kept here only while a session is, so a reload opens in it. English when neither is known.
 export const languages = ['en', 'vi'] as const
 export type Language = (typeof languages)[number]
 
-const KEY = 'waterflow.language'
+const SIGN_IN = 'waterflow.language'
+const ACCOUNT = 'waterflow.accountLanguage'
 const known = (v: string | null | undefined): Language => languages.find((l) => l === v) ?? 'en'
 
-function remembered(): Language {
+function read(key: string): string | null {
   try {
-    return known(localStorage.getItem(KEY))
+    return localStorage.getItem(key)
   } catch {
-    return 'en'
+    return null
   }
 }
 
-export function setLanguage(lang: Language) {
+function write(key: string, value: string | null) {
   try {
-    localStorage.setItem(KEY, lang)
+    if (value) localStorage.setItem(key, value)
+    else localStorage.removeItem(key)
   } catch {
     // private mode: the choice lasts until the tab closes
   }
+}
+
+function show(lang: Language) {
   if (i18n.language !== lang) void i18n.changeLanguage(lang)
   document.documentElement.lang = lang
 }
 
+export function setSignInLanguage(lang: Language) {
+  write(SIGN_IN, lang)
+  show(lang)
+}
+
+export function applyAccountLanguage(lang: Language) {
+  write(ACCOUNT, lang)
+  show(lang)
+}
+
+const opening = () => known(session.token() ? read(ACCOUNT) ?? read(SIGN_IN) : read(SIGN_IN))
+
+// Whatever ends the session (Sign out, inactivity, an expired session, another tab) goes back to the sign-in language.
+session.subscribe(() => {
+  if (session.token()) return
+  write(ACCOUNT, null)
+  show(known(read(SIGN_IN)))
+})
+
 i18n.use(initReactI18next).init({
   resources: { en: { translation: en }, vi: { translation: vi } },
-  lng: remembered(),
+  lng: opening(),
   fallbackLng: 'en',
   interpolation: { escapeValue: false }, // React already escapes
 })

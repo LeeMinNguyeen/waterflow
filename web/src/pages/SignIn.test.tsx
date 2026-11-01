@@ -20,12 +20,18 @@ describe('the sign-in page', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
-  it('is in the language this browser remembers, with no language switch', async () => {
+  it("has a language button at the top, in the language's own name; a pick changes the screen and is remembered (waterflow#134)", async () => {
     fakeApi({ 'GET /v1/instance': { name: 'Nhà', signup: 'invite', setup_needed: false } })
     session.set(null)
-    await renderApp(<SignIn />, { lang: 'vi' })
+    await renderApp(<SignIn />)
+    await userEvent.click(await screen.findByRole('button', { name: 'English ▾' }))
+    expect(screen.getAllByRole('menuitem').map((o) => o.textContent)).toEqual(['English', 'Tiếng Việt'])
+    expect(screen.getByRole('menuitem', { name: 'English' })).toHaveClass('Mui-selected')
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Tiếng Việt' }))
     expect(await screen.findByRole('button', { name: 'Đăng nhập' })).toBeInTheDocument()
-    expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Tiếng Việt ▾' })).toBeInTheDocument()
+    expect(localStorage.getItem('waterflow.language')).toBe('vi')
+    localStorage.removeItem('waterflow.language')
   })
 
   it('says nothing of the kind otherwise', async () => {

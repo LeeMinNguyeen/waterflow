@@ -79,9 +79,10 @@ describe('signing out the other devices', () => {
 })
 
 describe('the language', () => {
-  afterEach(() => localStorage.removeItem('waterflow.language'))
+  afterEach(() => localStorage.clear())
 
-  it('is a dropdown of each language in its own name, saved with the profile', async () => {
+  it("is a dropdown of each language in its own name, saved with the profile; this browser's sign-in language stays (waterflow#134)", async () => {
+    localStorage.setItem('waterflow.language', 'en')
     const api = server([laptop])
     await renderApp(<Profile />)
     await userEvent.click(await screen.findByRole('combobox', { name: 'Language' }))
@@ -90,7 +91,8 @@ describe('the language', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Save' }))
     await waitFor(() => expect(api.writes()[0]).toMatchObject({ method: 'PATCH', path: '/v1/me', body: { language: 'vi' } }))
     expect(await screen.findByRole('combobox', { name: 'Ngôn ngữ' })).toHaveTextContent('Tiếng Việt')
-    expect(localStorage.getItem('waterflow.language')).toBe('vi')
+    expect(localStorage.getItem('waterflow.language')).toBe('en')
+    expect(localStorage.getItem('waterflow.accountLanguage')).toBe('vi')
   })
 })
 

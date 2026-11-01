@@ -13,7 +13,7 @@ import { FileField } from '../components/FileField'
 import { LanguagePicker } from '../components/LanguagePicker'
 import { useInstance } from '../lib/queries'
 import { newAccountBody, useSignedInForm } from '../auth/forms'
-import { FormError, NewAccountFields, PasswordFields, PublicHeader } from '../components/AccountForm'
+import { FormError, NewAccountFields, PasswordFields, PublicHeader, PublicPage } from '../components/AccountForm'
 
 // Join with an invite (/join?code=X7K2-9QPM, from the admin's link or QR
 // code), or without one when the admin has opened sign-up. The code and the
@@ -50,7 +50,7 @@ export function Join() {
   if (!account) return (
     <Centered key="code">
       <Stack component="form" spacing={2} onSubmit={next}>
-        <PublicHeader title={t('join.title')} languageSwitch={false} />
+        <PublicHeader title={t('join.title')} />
         <Typography color="textSecondary">{t(open ? 'join.introOpen' : 'join.intro')}</Typography>
         <TextField label={t('join.code')} value={code} onChange={(e) => setCode(e.target.value)} required={!open}
           helperText={t('join.codeHint')} slotProps={{ htmlInput: { autoCapitalize: 'characters', autoComplete: 'off' } }} />
@@ -66,7 +66,7 @@ export function Join() {
     <Centered key="account">
       <Stack component="form" spacing={2} onSubmit={(e) => submit(e, (form) =>
         send<Token>('POST', '/v1/auth/sign-up', { ...newAccountBody(form), invite_code: code.trim() || null }))}>
-        <PublicHeader title={t('join.title')} languageSwitch={false} />
+        <PublicHeader title={t('join.title')} />
         <Typography color="textSecondary">{t('join.accountIntro')}</Typography>
         <NewAccountFields />
         <FormError error={error} />
@@ -84,7 +84,7 @@ export function Setup() {
   const [restoring, setRestoring] = useState(false)
   if (restoring) return <SetupRestore onBack={() => setRestoring(false)} />
   return (
-    <Centered>
+    <PublicPage>
       <Stack component="form" spacing={2} onSubmit={(e) => submit(e, (form) => {
         const f = new FormData(form)
         return send<Token>('POST', '/v1/setup', {
@@ -104,7 +104,7 @@ export function Setup() {
         <Button type="submit" variant="contained" size="large" loading={busy}>{t('setup.submit')}</Button>
         <Button onClick={() => setRestoring(true)}>{t('restore.instead')}</Button>
       </Stack>
-    </Centered>
+    </PublicPage>
   )
 }
 
@@ -136,7 +136,7 @@ function SetupRestore({ onBack }: { onBack: () => void }) {
   }
 
   return (
-    <Centered>
+    <PublicPage>
       <Stack component="form" spacing={2} onSubmit={start}>
         <PublicHeader title={t('restore.title')} />
         {state.restarting ? <Alert severity="info">{t('restore.setupRestarting')}</Alert> : (
@@ -153,7 +153,7 @@ function SetupRestore({ onBack }: { onBack: () => void }) {
           </>
         )}
       </Stack>
-    </Centered>
+    </PublicPage>
   )
 }
 
@@ -163,7 +163,7 @@ export function Reset() {
   const [params] = useSearchParams()
   const { submit, error, busy } = useSignedInForm()
   return (
-    <Centered>
+    <PublicPage>
       <Stack component="form" spacing={2} onSubmit={(e) => submit(e, (form) => {
         const { password } = newAccountBody(form)
         return send<Token>('POST', '/v1/auth/reset', { token: params.get('token') ?? '', new_password: password })
@@ -174,6 +174,6 @@ export function Reset() {
         <FormError error={error} />
         <Button type="submit" variant="contained" size="large" loading={busy}>{t('reset.submit')}</Button>
       </Stack>
-    </Centered>
+    </PublicPage>
   )
 }
