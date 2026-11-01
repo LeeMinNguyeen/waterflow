@@ -685,6 +685,63 @@ def test_suggestions_from_my_own_history(client):
                       params={"type": "expense", "amount": 5_000}).status_code == 404
 
 
+def test_payee_suggestions(client):
+    """R-TXN-8: typing a payee offers the book's payees, every member's: those starting with the text first, then those
+    containing it, the most used first, each with the account and category of its latest transaction of the type."""
+    names = {k: f"{k}_{uuid.uuid4().hex[:8]}" for k in ("owner", "editor", "viewer")}
+    users = {k: signed_up(client, names[k]) for k in names}
+    owner = users["owner"]
+    bid, accts = new_book_with_accounts(client, owner)
+    for k in ("editor", "viewer"):
+        client.post(f"/v1/books/{bid}/members", headers=auth(owner), json={"username": names[k], "role": k})
+        client.post(f"/v1/me/book-invites/{bid}/accept", headers=auth(users[k]))
+    food = add_category(client, owner, bid, "Ăn uống")["id"]
+    coffee = add_category(client, owner, bid, "Cà phê")["id"]
+    pay = add_category(client, owner, bid, "Lương", kind="income")["id"]
+    move = add_category(client, owner, bid, "Chuyển", kind="transfer")["id"]
+
+    def add(u, payee, account, category, day, type_="expense", amount=50_000):
+        entries = ([{"account_id": accts["Cash"], "amount": -amount}, {"account_id": accts["Bank"], "amount": amount}]
+                   if type_ == "transfer" else [{"account_id": accts[account], "amount": -amount if type_ == "expense" else amount}])
+        r = client.post(f"/v1/books/{bid}/transactions", headers=auth(u), json={
+            "id": str(uuid.uuid4()), "type": type_, "occurred_on": f"2026-10-{day:02d}", "category_id": category,
+            "payee": payee, "entries": entries})
+        assert r.status_code == 201, r.text
+
+    def payees(u, q, type_=None):
+        r = client.get(f"/v1/books/{bid}/payees", headers=auth(u), params={"q": q} | ({"type": type_} if type_ else {}))
+        assert r.status_code == 200, r.text
+        return r.json()
+
+    add(owner, "Highlands", "Cash", coffee, 1)
+    add(owner, "highlands ", "Bank", food, 3)
+    add(users["editor"], "Highlands", "Bank", coffee, 5)
+    add(owner, "Phở Highlands", "Cash", food, 4)
+    add(owner, "Phở Highlands", "Cash", food, 6)
+    add(owner, "Phở Highlands", "Cash", food, 7)
+    add(owner, "Công ty", "Bank", pay, 2, type_="income")
+    add(owner, "Highlands ATM", "Cash", move, 8, type_="transfer")
+
+    got = payees(owner, "HIGH")
+    assert [p["payee"] for p in got] == ["Highlands", "Phở Highlands"]        # starts with it first, then contains it
+    assert got[0] == {"payee": "Highlands", "count": 3, "account_id": accts["Bank"], "category_id": coffee}
+    assert got[1]["count"] == 3
+    assert [p["payee"] for p in payees(owner, "")] == ["Phở Highlands", "Highlands", "Công ty"]    # equal counts: latest first
+    assert [p["payee"] for p in payees(owner, "", "income")] == ["Công ty"]
+    assert payees(owner, "atm") == []                                         # transfers aren't offered
+    assert payees(users["viewer"], "high") == got                             # a viewer reads them too
+    assert payees(owner, "%") == [] and payees(owner, "_") == []
+
+    for i in range(10):
+        add(owner, f"Shop {i}", "Cash", food, 10)
+    assert len(payees(owner, "shop")) == 8
+
+    other = signed_up(client)
+    assert client.get(f"/v1/books/{bid}/payees", headers=auth(other), params={"q": "high"}).status_code == 404
+    other_bid, other_accts = new_book_with_accounts(client, other)
+    assert client.get(f"/v1/books/{other_bid}/payees", headers=auth(other), params={"q": "high"}).json() == []
+
+
 def test_transactions_and_two_browsers(client):
     u = signed_up(client)
     bid, accts = new_book_with_accounts(client, u)

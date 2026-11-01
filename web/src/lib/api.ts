@@ -66,6 +66,7 @@ export const send = <T>(method: string, path: string, body?: unknown) =>
 
 // Filled into a new transaction from the user's own recent ones (GET .../transactions/suggest).
 export type Suggestion = { account_id: string; category_id: string | null; payee: string | null }
+export type Payee = { payee: string; count: number; account_id: string; category_id: string | null }
 
 // Files and fields as multipart/form-data; the browser sets the boundary.
 export const upload = <T>(path: string, form: FormData) => api<T>(path, { method: 'POST', body: form })
