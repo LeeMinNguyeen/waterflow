@@ -7,7 +7,7 @@ import Typography from '@mui/material/Typography'
 import { useTranslation } from 'react-i18next'
 import { currentLanguage } from '../i18n'
 import type { Account } from '../lib/api'
-import { statementsFrom, validMonths, type PlanForm } from '../lib/installments'
+import { planDates, validMonths, type PlanForm } from '../lib/installments'
 import { useFormatMoney } from '../lib/hideAmounts'
 import { AmountField } from './AmountField'
 import { DateField } from './DateField'
@@ -25,9 +25,7 @@ export function InstallmentFields({ card, plan, onChange, purchaseDate, amount, 
   const formatMoney = useFormatMoney()
   const { t } = useTranslation()
   const lang = currentLanguage()
-  const converted = plan.convertedOn || purchaseDate
-  const statements = card.statement_day && converted ? statementsFrom(converted, card.statement_day) : []
-  const first = statements.includes(plan.firstStatement) ? plan.firstStatement : statements[0] ?? ''
+  const { convertedOn: converted, firstStatement: first, statements } = planDates(plan, purchaseDate, card.statement_day)
   const dateFmt = new Intl.DateTimeFormat(lang === 'vi' ? 'vi-VN' : 'en-GB', { dateStyle: 'medium' })
   const months = validMonths(plan.months) ? Number(plan.months) : null
   const each = amount && months ? Math.floor(amount / months) : null
