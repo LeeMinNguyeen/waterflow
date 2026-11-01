@@ -13,6 +13,11 @@ async function pick(name: string, option: string) {
   await userEvent.click(await screen.findByRole('option', { name: option }))
 }
 
+async function chooseLanguage(button: string, option: string) {
+  await userEvent.click(await screen.findByRole('button', { name: button }))
+  await userEvent.click(await screen.findByRole('menuitem', { name: option }))
+}
+
 afterEach(() => localStorage.removeItem('waterflow.language'))
 
 describe('joining, in two steps', () => {
@@ -31,9 +36,12 @@ describe('joining, in two steps', () => {
     await renderApp(<Join />, { route: '/join?code=X7K2-9QPM' })
     expect(await screen.findByLabelText(/^Invite code/)).toHaveValue('X7K2-9QPM')
     expect(screen.queryByLabelText(/^Username/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /▾/ })).not.toBeInTheDocument()
     await pick('Language', 'Tiếng Việt')
-    expect(localStorage.getItem('waterflow.language')).toBe('vi')
+    expect(localStorage.getItem('waterflow.language')).toBe('vi')   // this browser's sign-in language too
     await userEvent.click(screen.getByRole('button', { name: 'Tiếp tục' }))
+    expect(await screen.findByLabelText(/^Tên người dùng/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /▾/ })).not.toBeInTheDocument()
 
     await userEvent.type(await screen.findByLabelText(/^Tên người dùng/), 'lan')
     expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
@@ -79,14 +87,16 @@ describe('joining, in two steps', () => {
 })
 
 describe('setting up a new server', () => {
-  it("has the language dropdown, which changes the screen and is the admin's language", async () => {
+  it("has the language button, which changes the screen and is the admin's language (waterflow#134)", async () => {
     const api = fakeApi({
       'GET /v1/instance': { name: 'Waterflow', signup: 'invite', setup_needed: true },
       'POST /v1/setup': { token: 'admin-token' },
     })
     session.set(null)
     await renderApp(<Setup />)
-    await pick('Language', 'Tiếng Việt')
+    expect(screen.queryByRole('combobox', { name: 'Language' })).not.toBeInTheDocument()
+    await chooseLanguage('English ▾', 'Tiếng Việt')
+    expect(screen.getByRole('button', { name: 'Tiếng Việt ▾' })).toBeInTheDocument()
     await userEvent.type(screen.getByLabelText(/^Mã thiết lập/), 'CJJV-SJ9H-EDWZ')
     await userEvent.type(screen.getByLabelText(/^Tên người dùng/), 'lan')
     await userEvent.type(screen.getByLabelText(/^Mật khẩu/), 'a long password')
@@ -104,6 +114,7 @@ describe('setting up a new server', () => {
     session.set(null)
     await renderApp(<Setup />)
     await userEvent.click(await screen.findByRole('button', { name: 'Restore a backup instead' }))
+    expect(screen.getByRole('button', { name: 'English ▾' })).toBeInTheDocument()
     await userEvent.type(screen.getByLabelText(/^Setup code/), 'cjjv-sj9h-edwz')
     await userEvent.upload(screen.getByLabelText('Backup file'), new File(['dump'], 'waterflow.dump'))
     await userEvent.click(screen.getByRole('button', { name: 'Restore' }))
@@ -116,13 +127,13 @@ describe('setting up a new server', () => {
 })
 
 describe('a reset link', () => {
-  it('opens in the language this browser remembers, with the dropdown to change it', async () => {
+  it('opens in the sign-in language, with the button to change it (waterflow#134)', async () => {
     fakeApi({ 'GET /v1/instance': { name: 'Nhà', signup: 'invite', setup_needed: false } })
     session.set(null)
     await renderApp(<Reset />, { route: '/reset?token=t', lang: 'vi' })
-    expect(await screen.findByRole('combobox', { name: 'Ngôn ngữ' })).toHaveTextContent('Tiếng Việt')
-    await pick('Ngôn ngữ', 'English')
-    expect(await screen.findByRole('combobox', { name: 'Language' })).toHaveTextContent('English')
+    await chooseLanguage('Tiếng Việt ▾', 'English')
+    expect(await screen.findByRole('button', { name: 'English ▾' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Choose a new password')
     expect(localStorage.getItem('waterflow.language')).toBe('en')
   })
 })

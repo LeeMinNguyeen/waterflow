@@ -1,10 +1,10 @@
 import MenuItem from '@mui/material/MenuItem'
 import TextField from '@mui/material/TextField'
 import { useTranslation } from 'react-i18next'
-import { currentLanguage, languages, setLanguage, type Language } from '../i18n'
+import { currentLanguage, languages, setSignInLanguage, type Language } from '../i18n'
 
-// Each language in its own name. Without value and onChange it is the screen's language, remembered in this browser.
-export function LanguagePicker({ value, onChange = setLanguage, size, helperText }: {
+// Each language in its own name. Without value and onChange it is the screen's language, kept as this browser's sign-in language.
+export function LanguagePicker({ value, onChange = setSignInLanguage, size, helperText }: {
   value?: Language; onChange?: (lang: Language) => void; size?: 'small'; helperText?: string
 }) {
   const { t } = useTranslation()

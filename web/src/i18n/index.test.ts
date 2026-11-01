@@ -20,4 +20,17 @@ describe('the language a page opens in', () => {
     expect((await freshI18n()).language).toBe('en')
     expect(document.documentElement.lang).toBe('en')
   })
+
+  it("is the account's language while signed in, remembered so a reload opens in it", async () => {
+    localStorage.setItem('waterflow.language', 'en')
+    localStorage.setItem('waterflow.session', 'token')
+    localStorage.setItem('waterflow.accountLanguage', 'vi')
+    expect((await freshI18n()).language).toBe('vi')
+  })
+
+  it("is the sign-in language without a session, whatever account language was left behind", async () => {
+    localStorage.setItem('waterflow.language', 'en')
+    localStorage.setItem('waterflow.accountLanguage', 'vi')
+    expect((await freshI18n()).language).toBe('en')
+  })
 })
