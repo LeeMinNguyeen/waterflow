@@ -157,7 +157,8 @@
     "edit": "Edit",
     "viewTransactions": "View transactions",
     "refresh": "Refresh",
-    "optional": "Optional"
+    "optional": "Optional",
+    "flipSign": "Change sign"
   },
   "errors": {
     "invalid_credentials": "Wrong username or password.",

@@ -259,6 +259,7 @@ function AccountForm({ book, account, editing: startEditing = false, onTransacti
               value={form.balance}
               onChange={(balance) => set({ balance })}
               minorUnit={minorUnit}
+              signed={!owed}
               helperText={editing ? t('accounts.balanceHint') : form.currency ?? undefined}
             />
           ) : (
@@ -268,6 +269,7 @@ function AccountForm({ book, account, editing: startEditing = false, onTransacti
                 value={form.opening}
                 onChange={(opening) => set({ opening })}
                 minorUnit={minorUnit}
+                signed={!owed}
               />
               <DateField label={t('accounts.openedOn')} value={form.openedOn} onChange={(openedOn) => set({ openedOn })} onInvalid={setBadDate}
                 sx={{ maxWidth: 190 }} />

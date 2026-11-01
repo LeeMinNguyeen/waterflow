@@ -5,9 +5,9 @@ import { describe, expect, it } from 'vitest'
 import { renderApp } from '../test/render'
 import { AmountField } from './AmountField'
 
-function Field() {
+function Field({ signed = false }: { signed?: boolean }) {
   const [value, setValue] = useState('')
-  return <AmountField label="Amount" value={value} onChange={setValue} minorUnit={0} />
+  return <AmountField label="Amount" value={value} onChange={setValue} minorUnit={0} signed={signed} />
 }
 
 describe('AmountField', () => {
@@ -18,5 +18,30 @@ describe('AmountField', () => {
     expect(input).toHaveValue('0')
     await userEvent.type(input, '99999')
     expect(input).toHaveValue('99,999')
+  })
+
+  it("flips the sign with ± where an amount can be below zero, since a phone's number pad has no minus key", async () => {
+    await renderApp(<Field signed />)
+    const input = screen.getByLabelText('Amount')
+    await userEvent.type(input, '45000')
+    await userEvent.click(screen.getByRole('button', { name: 'Change sign' }))
+    expect(input).toHaveValue('-45,000')
+    await userEvent.click(screen.getByRole('button', { name: 'Change sign' }))
+    expect(input).toHaveValue('45,000')
+  })
+
+  it('starts a negative amount with ± before any digit, without calling it wrong', async () => {
+    await renderApp(<Field signed />)
+    await userEvent.click(screen.getByRole('button', { name: 'Change sign' }))
+    const input = screen.getByLabelText('Amount')
+    expect(input).toHaveValue('-')
+    expect(input).toHaveAttribute('aria-invalid', 'false')
+    await userEvent.type(input, '45000')
+    expect(input).toHaveValue('-45,000')
+  })
+
+  it('has no ± where the sign comes from elsewhere', async () => {
+    await renderApp(<Field />)
+    expect(screen.queryByRole('button', { name: 'Change sign' })).not.toBeInTheDocument()
   })
 })

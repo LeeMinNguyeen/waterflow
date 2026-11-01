@@ -157,7 +157,8 @@
     "edit": "Sửa",
     "viewTransactions": "Xem giao dịch",
     "refresh": "Làm mới",
-    "optional": "Không bắt buộc"
+    "optional": "Không bắt buộc",
+    "flipSign": "Đổi dấu"
   },
   "errors": {
     "invalid_credentials": "Sai tên người dùng hoặc mật khẩu.",

@@ -1,3 +1,4 @@
+import IconButton from '@mui/material/IconButton'
 import InputAdornment from '@mui/material/InputAdornment'
 import TextField, { type TextFieldProps } from '@mui/material/TextField'
 import { useTranslation } from 'react-i18next'
@@ -11,14 +12,29 @@ type Props = Omit<TextFieldProps, 'value' | 'onChange'> & {
   big?: boolean
   unit?: string
   ariaLabel?: string
+  // The amount can be below zero: a ± button flips it, since a phone's number pad has no minus key.
+  signed?: boolean
 }
 
 // Amount input: groups thousands while typing and reads the number by the
 // language's separators ("1.250" in Vietnamese is one thousand two hundred fifty).
-export function AmountField({ value, onChange, minorUnit, big = false, unit, ariaLabel, sx, ...props }: Props) {
+export function AmountField({ value, onChange, minorUnit, big = false, unit, ariaLabel, signed = false, sx, ...props }: Props) {
   const { t } = useTranslation()
   const lang = currentLanguage()
-  const bad = value.trim() !== '' && parseAmount(value, minorUnit, lang) === null
+  const typed = value.trim()
+  const bad = typed !== '' && !(signed && typed === '-') && parseAmount(value, minorUnit, lang) === null
+  const end = unit || signed ? (
+    <InputAdornment position="end" sx={{ fontWeight: 500 }}>
+      {unit}
+      {signed && (
+        <IconButton edge="end" size="small" aria-label={t('common.flipSign')} disabled={props.disabled}
+          onMouseDown={(e) => e.preventDefault()} onClick={() => onChange(typed.startsWith('-') ? typed.slice(1) : `-${typed}`)}
+          sx={{ ml: unit ? 1 : 0, width: 32, height: 32, fontSize: 20, lineHeight: 1, color: 'text.secondary' }}>
+          ±
+        </IconButton>
+      )}
+    </InputAdornment>
+  ) : undefined
   return (
     <TextField
       {...props}
@@ -31,7 +47,7 @@ export function AmountField({ value, onChange, minorUnit, big = false, unit, ari
       ...(Array.isArray(sx) ? sx : [sx])]}
       slotProps={{
         htmlInput: { inputMode: minorUnit ? 'decimal' : 'numeric', autoComplete: 'off', 'aria-label': ariaLabel },
-        input: unit ? { endAdornment: <InputAdornment position="end" sx={{ fontWeight: 500 }}>{unit}</InputAdornment> } : undefined,
+        input: end ? { endAdornment: end } : undefined,
       }}
     />
   )
