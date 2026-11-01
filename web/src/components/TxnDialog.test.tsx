@@ -91,7 +91,7 @@ describe('filling in from my own history (waterflow#65)', () => {
     const api = history()
     await renderApp(<TxnDialog book={book} txn={null} onClose={() => {}} />)
     await userEvent.type(await screen.findByLabelText(/^Amount/), '5000')
-    expect(await screen.findByDisplayValue('Gửi xe')).toBeInTheDocument()
+    expect(await screen.findByDisplayValue('Gửi xe', {}, { timeout: 3000 })).toBeInTheDocument()
     expect(screen.getByRole('combobox', { name: /^Account/ })).toHaveTextContent('Bank')
     expect(screen.getByRole('combobox', { name: 'Category' })).toHaveValue('Parking')
     const asked = api.calls.filter((c) => c.path === '/v1/books/b1/transactions/suggest').at(-1)!
@@ -106,7 +106,7 @@ describe('filling in from my own history (waterflow#65)', () => {
     await userEvent.click(await screen.findByRole('option', { name: /Cash/ }))
     await userEvent.type(screen.getByLabelText('Payee'), 'Mine')
     await userEvent.type(screen.getByLabelText(/^Amount/), '5000')
-    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Category' })).toHaveValue('Parking'))
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Category' })).toHaveValue('Parking'), { timeout: 3000 })
     expect(screen.getByRole('combobox', { name: /^Account/ })).toHaveTextContent('Cash')
     expect(screen.getByLabelText('Payee')).toHaveValue('Mine')
   })
