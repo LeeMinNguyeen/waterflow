@@ -288,6 +288,7 @@ function TxnForm({ book, txn: initial, defaults, onClose, minorOf, carry, onSwit
     onChange: (v: string) => set({ amount: owedOpening ? negated(v) : v }),
     minorUnit: minor(account),
     error: minus,
+    signed: signed && !owedOpening,
   }
   const amountHint = minus ? t('txn.noMinus') : form.type === 'adjustment' ? t('txn.adjustmentHint')
     : openingBalance && !owedOpening ? t('txn.openingHint') : undefined

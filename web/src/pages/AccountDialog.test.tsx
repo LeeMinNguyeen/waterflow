@@ -299,3 +299,36 @@ describe('fields that follow the kind and currency', () => {
     expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled()
   })
 })
+
+describe('a ± button where a balance can be below zero (waterflow#155)', () => {
+  it("turns a new account's opening balance negative", async () => {
+    const api = server()
+    api.routes['POST /v1/books/b1/accounts'] = ({ body }: { body: unknown }) => body
+    await renderApp(<AccountDialog book={book} account={null} onClose={() => {}} />)
+    await userEvent.type(await screen.findByRole('textbox', { name: /account name/i }), 'Bank')
+    await userEvent.type(field('Opening balance'), '500000')
+    await userEvent.click(screen.getByRole('button', { name: 'Change sign' }))
+    expect(field('Opening balance')).toHaveValue('-500,000')
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(api.writes()).toHaveLength(1))
+    expect(api.writes()[0].body).toMatchObject({ name: 'Bank', opening_balance: -500_000 })
+  })
+
+  it('sets a current balance below zero', async () => {
+    const api = server()
+    await renderApp(<AccountDialog book={book} account={cash} editing onClose={() => {}} />)
+    await userEvent.clear(await screen.findByRole('textbox', { name: 'Current balance' }))
+    await userEvent.type(field('Current balance'), '64000')
+    await userEvent.click(screen.getByRole('button', { name: 'Change sign' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(api.writes()).toHaveLength(2))
+    expect(api.writes()[1].body).toMatchObject({ type: 'adjustment', entries: [{ account_id: 'a1', amount: -7_000_000 }] })
+  })
+
+  it('has none on what a card owes', async () => {
+    server()
+    await renderApp(<AccountDialog book={book} account={card} editing onClose={() => {}} />)
+    await screen.findByRole('textbox', { name: 'Amount owed now' })
+    expect(screen.queryByRole('button', { name: 'Change sign' })).not.toBeInTheDocument()
+  })
+})
