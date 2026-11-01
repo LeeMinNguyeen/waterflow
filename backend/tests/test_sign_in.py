@@ -831,7 +831,7 @@ def test_admin_restores_a_backup_from_the_web(client, admin, restore_dir, a_back
 
 @pytest.mark.parametrize("path", ["/v1/setup/restore", "/v1/admin/restore"])
 def test_an_oversized_restore_is_refused_before_it_is_read(client, monkeypatch, path):
-    """Before anything checks who's asking: the whole upload used to land on disk first."""
+    """Before anything checks who's asking, and before the body is read."""
     from app.api.routes.v1 import restore
     monkeypatch.setattr(restore, "MAX_DUMP", 1000)
     monkeypatch.setattr(restore, "MAX_PURGED", 100)

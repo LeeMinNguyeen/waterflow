@@ -32,7 +32,8 @@ RESTORES = {"/v1/admin/restore", "/v1/setup/restore"}
 async def refuse_oversized_restores(request: Request, call_next):
     if request.method == "POST" and request.url.path in RESTORES:
         length = request.headers.get("content-length", "")
-        if not length.isdigit() or int(length) > restore.MAX_DUMP + restore.MAX_PURGED + 2**20:
+        if ("transfer-encoding" in request.headers or not length.isdigit()
+                or int(length) > restore.MAX_DUMP + restore.MAX_PURGED + 2**20):
             return JSONResponse({"detail": "restore_too_large"}, status_code=413)
     return await call_next(request)
 

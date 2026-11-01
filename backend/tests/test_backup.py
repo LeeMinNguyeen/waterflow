@@ -136,7 +136,7 @@ def snapshot(database):
 
 def test_restore_commands_documented():
     assert len(RESTORE) == 5 and RESTORE[0].startswith("psql") and RESTORE[3].startswith("pg_restore --no-owner")
-    assert "delete from sessions" in RESTORE[4]
+    assert "'sessions', 'remembered_devices', 'password_resets'" in RESTORE[4]
 
 
 def test_backup_restores_everything(source, target, tmp_path):
@@ -305,6 +305,20 @@ def test_a_restore_signs_everyone_out(live, tmp_path):
     assert web_restore.restore_if_requested(libpq_url(name), str(backups)) == "done"
     assert sql(name, "select (select count(*) from sessions) + (select count(*) from remembered_devices)"
                      " + (select count(*) from password_resets)") == [(0,)]
+
+
+def test_signing_out_skips_tables_an_older_backup_lacks():
+    """A backup from 0.1.x has no remembered_devices: the migrations add it after the restore."""
+    from app.jobs import restore as web_restore
+    name = f"old_backup_{uuid.uuid4().hex[:8]}"
+    sql("postgres", f'create database "{name}"')
+    try:
+        sql(name, "create table sessions (token_sha256 bytea primary key)", "insert into sessions values ('x')",
+            "create table password_resets (token_sha256 bytea primary key)")
+        web_restore._sign_everyone_out(libpq_url(name))
+        assert sql(name, "select count(*) from sessions") == [(0,)]
+    finally:
+        sql("postgres", f'drop database "{name}" with (force)')
 
 
 def test_a_failed_restore_puts_the_database_back(live, tmp_path, monkeypatch):
