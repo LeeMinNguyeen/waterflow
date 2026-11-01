@@ -82,8 +82,7 @@ type FormProps = Props & {
 }
 
 // The form needs each currency's decimals to show saved amounts, so it waits for them. A new transaction can go
-// into another book: the form starts again there, keeping what doesn't belong to the book. A duplicate is a new
-// transaction started from a saved one.
+// into another book: the form starts again there, keeping what doesn't belong to the book.
 export function TxnDialog(props: Props) {
   const currencies = useCurrencies()
   const [into, setInto] = useState<{ book: Book; carry: Partial<Form> } | null>(null)
@@ -126,8 +125,12 @@ function TxnForm({ book, txn: initial, defaults, onClose, minorOf, carry, onSwit
   const [planEdit, setPlanEdit] = useState<PlanForm | null>(null) // null: as saved
   const planId = useRef(newId())
   const set = (patch: Partial<Form>) => setForm((f) => ({ ...f, ...patch }))
-  // What the user set themselves, which a suggestion never overwrites; an account given by the caller counts.
-  const touched = useRef(new Set<'account' | 'category' | 'payee'>(defaults?.account ? ['account'] : []))
+  // What the user set themselves, which a suggestion never overwrites; an account given by the caller, and anything
+  // carried into a new form, count.
+  const touched = useRef(new Set<'account' | 'category' | 'payee'>([
+    ...(defaults?.account ? ['account' as const] : []),
+    ...(['account', 'category', 'payee'] as const).filter((field) => carry?.[field]),
+  ]))
   const choose = (field: 'account' | 'category' | 'payee', value: string) => {
     touched.current.add(field)
     set({ [field]: value })

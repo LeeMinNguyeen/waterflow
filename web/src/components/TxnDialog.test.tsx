@@ -696,6 +696,20 @@ describe('duplicating, and saving to add another (waterflow#102)', () => {
     expect((copy.body as { id: string }).id).not.toBe(latte.id)
   })
 
+  it('keeps what it copied when a suggestion for the amount comes back', async () => {
+    const api = cafe()
+    const food = { ...coffee, id: 'food', name: 'Food' }
+    api.routes['GET /v1/books/b1/categories'] = [coffee, food]
+    api.routes['GET /v1/books/b1/transactions/suggest'] = { account_id: 'cash', category_id: 'food', payee: 'Phở 24' }
+    await renderApp(<TxnDialog book={book} txn={latte} onClose={() => {}} />)
+    await userEvent.click(await screen.findByRole('button', { name: 'Duplicate' }))
+    await waitFor(() => expect(api.calls.some((c) => c.path === '/v1/books/b1/transactions/suggest')).toBe(true))
+    await new Promise((r) => setTimeout(r, 300))
+    expect(screen.getByLabelText('Payee')).toHaveValue('Highlands')
+    expect(screen.getByRole('combobox', { name: /^Account/ })).toHaveTextContent('Bank')
+    expect(screen.getByRole('combobox', { name: 'Category' })).toHaveValue('Coffee')
+  })
+
   it("doesn't copy a card purchase's installment plan", async () => {
     const api = cafe()
     await renderApp(<TxnDialog book={book} txn={laptop} onClose={() => {}} />)
