@@ -1,6 +1,7 @@
 -- A category is never its own parent, and a cycle two moves at once can still make (A under B while B moves under A)
 -- ends the ancestors' walk, which budgets and the transaction filter read: union, not union all.
-update categories set parent_id = null where parent_id = id;
+-- A category that is its own parent moves to the top, renamed with its id's start so no sibling has its name.
+update categories set parent_id = null, name = name || ' (' || left(id::text, 8) || ')' where parent_id = id;
 alter table categories drop constraint if exists categories_not_own_parent;
 alter table categories add constraint categories_not_own_parent check (parent_id is distinct from id);
 
@@ -13,13 +14,13 @@ with recursive up as (
 )
 select category_id, ancestor_id from up;
 
--- The book is locked first, so of two owners removing or demoting each other at once the second waits and then sees
--- the first's change.
+-- Of two owners removing or demoting each other at once, the second waits for the first (a lock per book, not on the
+-- book's row, which deleting the book locks in the other order) and then sees its change.
 create or replace function keep_an_owner() returns trigger
 language plpgsql security definer set search_path = pg_catalog, public, pg_temp as $$
 begin
   if old.role = 'owner' and old.accepted_at is not null and (tg_op = 'DELETE' or new.role <> 'owner') then
-    perform 1 from books where id = old.book_id for update;
+    perform pg_advisory_xact_lock(hashtextextended(old.book_id::text, 0));
     if exists (select 1 from books where id = old.book_id)
        and not exists (select 1 from book_members
                         where book_id = old.book_id and user_id <> old.user_id
@@ -30,7 +31,6 @@ begin
   return coalesce(new, old);
 end $$;
 
--- A budget's category stays an expense one.
 create or replace function category_kind_keeps_budgets() returns trigger
 language plpgsql security definer set search_path = pg_catalog, public, pg_temp as $$
 begin
@@ -46,7 +46,7 @@ create trigger categories_keep_budgets before update of kind on categories
 grant execute on function category_kind_keeps_budgets() to app_user;
 
 -- A plan's conversion date is checked when it's made or that date changes, so a purchase moved to a later date keeps
--- a plan that can still change (Pay off early). Errors carry a code.
+-- a plan that can still change (Pay off early).
 create or replace function installment_plan_fits() returns trigger
 language plpgsql set search_path = pg_catalog, public, pg_temp as $$
 declare

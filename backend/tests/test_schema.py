@@ -934,32 +934,58 @@ def test_categories_never_loop(database):
 
 
 def test_two_owners_removing_each_other_at_once_keep_one(database):
-    """Each sees the other as an owner unless the book is locked first: one of them must be refused."""
+    """Each sees the other as an owner unless the second waits for the first: one of them must be refused."""
     from app.core import db
     one, two = new_user("race_one"), new_user("race_two")
     b = new_book(one)
     share(one, b, two, "owner")
-    results, gate = {}, threading.Event()
+    results, release = {}, threading.Event()
 
-    def remove(me, other, wait):
+    def remove(me, other, first):
         try:
             with db.user_session(me) as s:
-                if wait:
-                    gate.wait()
                 s.execute(text("delete from book_members where book_id = :b and user_id = :u"), {"b": b, "u": other})
-                if not wait:
-                    gate.set()
-                    time.sleep(0.5)
+                if first:
+                    release.wait(10)
             results[me] = "done"
         except DBAPIError as e:
             results[me] = "owner_required" if "owner_required" in str(e) else str(e)
 
-    threads = [threading.Thread(target=remove, args=(one, two, False)), threading.Thread(target=remove, args=(two, one, True))]
-    [x.start() for x in threads]
-    [x.join() for x in threads]
+    def advisory(granted):
+        with database.connect() as watch:
+            while not watch.execute(text("select count(*) from pg_locks where locktype = 'advisory' and granted = :g"),
+                                    {"g": granted}).scalar():
+                time.sleep(0.05)
+
+    first = threading.Thread(target=remove, args=(one, two, True))
+    first.start()
+    advisory(True)                                    # the first holds the book's lock
+    second = threading.Thread(target=remove, args=(two, one, False))
+    second.start()
+    advisory(False)                                   # the second waits for it
+    release.set()
+    first.join()
+    second.join()
     assert sorted(results.values()) == ["done", "owner_required"]
     with database.connect() as owner:
         assert owner.execute(text("select count(*) from book_members where book_id = :b and role = 'owner'"), {"b": b}).scalar() == 1
+
+
+def test_a_self_parented_category_moves_to_the_top_without_a_name_clash(database):
+    """An API that let a category be its own parent may have left one beside a sibling of the same name."""
+    from pathlib import Path
+    u = new_user("self_parent")
+    b = new_book(u)
+    new_category(u, b, "Food")
+    with database.connect() as owner:
+        owner.execute(text("alter table categories drop constraint categories_not_own_parent"))
+        owner.execute(text("insert into categories (id, book_id, name, kind, parent_id) values"
+                           " ('11111111-2222-3333-4444-555555555555', :b, 'Food', 'expense', '11111111-2222-3333-4444-555555555555')"),
+                      {"b": b})
+        fix = Path(__file__).resolve().parents[1] / "migrations" / "20261101210000_review_fixes.sql"
+        owner.execute(text(fix.read_text().replace("%", "%%")))
+        assert sorted(owner.execute(text("select name from categories where book_id = :b"), {"b": b}).scalars()) == \
+            ["Food", "Food (11111111)"]
 
 
 def test_a_budgeted_category_stays_an_expense():
