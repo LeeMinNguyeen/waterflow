@@ -757,6 +757,62 @@ def test_payee_suggestions(client):
     assert client.get(f"/v1/books/{other_bid}/payees", headers=auth(other), params={"q": "high"}).json() == []
 
 
+def test_usual_transactions(client):
+    """R-TXN-9: the add dialog offers the user's own usual transactions: the same account, category, payee and amount
+    at least 3 times in the last 60 days, the most frequent 5, ties to the latest; other members' never count."""
+    from datetime import date, timedelta
+    names = {k: f"{k}_{uuid.uuid4().hex[:8]}" for k in ("owner", "editor")}
+    owner, editor = (signed_up(client, names[k]) for k in ("owner", "editor"))
+    bid, accts = new_book_with_accounts(client, owner)
+    client.post(f"/v1/books/{bid}/members", headers=auth(owner), json={"username": names["editor"], "role": "editor"})
+    client.post(f"/v1/me/book-invites/{bid}/accept", headers=auth(editor))
+    coffee = add_category(client, owner, bid, "Cà phê")["id"]
+    move = add_category(client, owner, bid, "Di chuyển")["id"]
+    pay = add_category(client, owner, bid, "Lương", kind="income")["id"]
+    today = date.today()
+
+    def add(u, payee, amount, account="Cash", category=coffee, days_ago=0, type_="expense", times=1):
+        for _ in range(times):
+            r = client.post(f"/v1/books/{bid}/transactions", headers=auth(u), json={
+                "id": str(uuid.uuid4()), "type": type_, "occurred_on": (today - timedelta(days=days_ago)).isoformat(),
+                "category_id": category, "payee": payee,
+                "entries": [{"account_id": accts[account], "amount": -amount if type_ == "expense" else amount}]})
+            assert r.status_code == 201, r.text
+
+    def usual(u, type_="expense"):
+        r = client.get(f"/v1/books/{bid}/transactions/usual", headers=auth(u), params={"type": type_})
+        assert r.status_code == 200, r.text
+        return [(t["payee"], t["amount"], t["count"]) for t in r.json()]
+
+    add(owner, "Highlands", 55_000, times=4, days_ago=2)
+    add(owner, "Grab", 45_000, account="Bank", category=move, times=3, days_ago=1)
+    add(owner, "Phở", 65_000, times=2)                                         # twice isn't usual
+    add(owner, "Highlands", 60_000, times=2)                                   # another amount is another group
+    add(owner, "Old habit", 20_000, times=5, days_ago=70)                      # older than 60 days
+    add(editor, "Cơm", 35_000, times=5)                                        # someone else's habits
+    add(owner, "Công ty", 30_000_000, category=pay, type_="income", times=3)
+    assert usual(owner) == [("Highlands", 55_000, 4), ("Grab", 45_000, 3)]
+    first = client.get(f"/v1/books/{bid}/transactions/usual", headers=auth(owner), params={"type": "expense"}).json()[0]
+    assert (first["account_id"], first["category_id"], first["last_on"]) == (accts["Cash"], coffee, (today - timedelta(days=2)).isoformat())
+    assert usual(owner, "income") == [("Công ty", 30_000_000, 3)]
+    assert usual(editor) == [("Cơm", 35_000, 5)]
+
+    for i in range(6):                                                          # the top 5; equal counts, the latest first
+        add(owner, f"Shop {i}", 10_000 + i, times=3, days_ago=10 - i)
+    assert [p for p, _, _ in usual(owner)] == ["Highlands", "Grab", "Shop 5", "Shop 4", "Shop 3"]
+
+    bank = next(a for a in client.get(f"/v1/books/{bid}/accounts", headers=auth(owner)).json() if a["id"] == accts["Bank"])
+    assert client.patch(f"/v1/books/{bid}/accounts/{bank['id']}", headers=auth(owner),
+                        json={"version": bank["version"], "archived": True}).status_code == 200
+    assert "Grab" not in [p for p, _, _ in usual(owner)]                        # an archived account is left out
+    cat = next(c for c in client.get(f"/v1/books/{bid}/categories", headers=auth(owner)).json() if c["id"] == coffee)
+    client.delete(f"/v1/books/{bid}/categories/{coffee}", headers=auth(owner), params={"version": cat["version"]})
+    assert "Highlands" not in [p for p, _, _ in usual(owner)]                   # so is an archived category
+
+    assert client.get(f"/v1/books/{bid}/transactions/usual", headers=auth(signed_up(client)),
+                      params={"type": "expense"}).status_code == 404
+
+
 def test_transactions_and_two_browsers(client):
     u = signed_up(client)
     bid, accts = new_book_with_accounts(client, u)

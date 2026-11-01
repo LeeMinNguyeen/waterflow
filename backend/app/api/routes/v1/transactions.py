@@ -180,6 +180,35 @@ def suggest(book_id: UUID, type: Literal["expense", "income"], amount: Annotated
     return Suggestion(account_id=best[0], category_id=best[1], payee=best[2])
 
 
+class Usual(BaseModel):
+    account_id: UUID
+    category_id: UUID | None
+    payee: str | None
+    amount: int                                # in the account's currency, above zero
+    count: int
+    last_on: date
+
+
+USUAL = """
+select e.account_id, t.category_id, t.payee, abs(e.amount) as amount, count(*)::int as count, max(t.occurred_on) as last_on
+  from transactions t join entries e on e.transaction_id = t.id join books b on b.id = t.book_id
+  join accounts a on a.id = e.account_id left join categories c on c.id = t.category_id
+ where t.book_id = :b and t.type = cast(:ty as txn_type) and t.created_by = current_app_user()
+   and t.occurred_on >= (now() at time zone b.timezone)::date - 60
+   and a.archived_at is null and c.archived_at is null
+ group by e.account_id, t.category_id, t.payee, abs(e.amount)
+having count(*) >= 3
+ order by count(*) desc, max(t.occurred_on) desc, max(t.created_at) desc
+ limit 5"""
+
+
+@router.get("/usual")
+def usual(book_id: UUID, type: Literal["expense", "income"], db: Session = Depends(get_db)) -> list[Usual]:
+    """This user's own transactions of the type repeated at least 3 times in the last 60 days, the most frequent first."""
+    get_book(db, book_id)
+    return [Usual(**r) for r in db.execute(text(USUAL), {"b": book_id, "ty": type}).mappings()]
+
+
 @router.get("/{txn_id}")
 def read(book_id: UUID, txn_id: UUID, db: Session = Depends(get_db)) -> Transaction:
     get_book(db, book_id)

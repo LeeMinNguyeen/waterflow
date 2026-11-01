@@ -153,6 +153,73 @@ describe('filling in from my own history (waterflow#65)', () => {
   })
 })
 
+describe('your usual transactions (waterflow#121)', () => {
+  const bank: Account = { ...cash, id: 'bank', name: 'Bank', kind: 'checking', balance: 5_000_000 }
+  const coffee = { id: 'coffee', name: 'Coffee', parent_id: null, kind: 'expense', color: null, archived_at: null, version: 1 }
+  const move = { ...coffee, id: 'move', name: 'Transport' }
+  const usualOnes = [
+    { account_id: 'bank', category_id: 'coffee', payee: 'Highlands', amount: 55_000, count: 4, last_on: '2026-10-30' },
+    { account_id: 'cash', category_id: 'move', payee: null, amount: 45_000, count: 3, last_on: '2026-10-31' },
+  ]
+  function usual() {
+    return fakeApi({
+      'GET /v1/currencies': currencies,
+      'GET /v1/books': [book],
+      'GET /v1/books/b1/accounts': [cash, bank],
+      'GET /v1/books/b1/categories': [coffee, move],
+      'GET /v1/books/b1/transactions/usual': ({ url }: { url: string }) => (url.includes('type=expense') ? usualOnes : []),
+      'POST /v1/books/b1/transactions': ({ body }: { body: unknown }) => body,
+    })
+  }
+
+  it('offers them when adding an expense, and picking one fills in the form for a check', async () => {
+    const api = usual()
+    await renderApp(<TxnDialog book={book} txn={null} onClose={() => {}} />)
+    await userEvent.click(await screen.findByRole('button', { name: 'Highlands · ₫55,000' }))
+    expect(screen.getByLabelText(/^Amount/)).toHaveValue('55,000')
+    expect(screen.getByLabelText('Payee')).toHaveValue('Highlands')
+    expect(screen.getByRole('combobox', { name: /^Account/ })).toHaveTextContent('Bank')
+    expect(screen.getByRole('combobox', { name: 'Category' })).toHaveValue('Coffee')
+    expect(api.writes()).toHaveLength(0)
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(api.writes()).toHaveLength(1))
+    expect(api.writes()[0].body).toMatchObject({ type: 'expense', category_id: 'coffee', payee: 'Highlands', entries: [{ account_id: 'bank', amount: -55_000 }] })
+  })
+
+  it("names one without a payee by its category", async () => {
+    usual()
+    await renderApp(<TxnDialog book={book} txn={null} onClose={() => {}} />)
+    expect(await screen.findByRole('button', { name: 'Transport · ₫45,000' })).toBeInTheDocument()
+  })
+
+  it('is not offered when editing or for a transfer', async () => {
+    const api = usual()
+    const { unmount } = await renderApp(<TxnDialog book={book} txn={lunch} onClose={() => {}} />)
+    await screen.findByRole('button', { name: 'Save' })
+    expect(screen.queryByRole('button', { name: /Highlands ·/ })).not.toBeInTheDocument()
+    unmount()
+    await renderApp(<TxnDialog book={book} txn={null} onClose={() => {}} />)
+    await screen.findByRole('button', { name: /Highlands ·/ })
+    await userEvent.click(screen.getByRole('button', { name: 'Transfer' }))
+    expect(screen.queryByRole('button', { name: /Highlands ·/ })).not.toBeInTheDocument()
+    expect(api.calls.filter((c) => c.path.endsWith('/usual')).every((c) => !c.url.includes('transfer'))).toBe(true)
+  })
+
+  it('offers them on a phone too', async () => {
+    phone(true)
+    try {
+      const api = usual()
+      await renderApp(<TxnDialog book={book} txn={null} onClose={() => {}} />)
+      await userEvent.click(await screen.findByRole('button', { name: 'Highlands · ₫55,000' }))
+      expect(screen.getByLabelText('Amount')).toHaveValue('55,000')
+      await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+      await waitFor(() => expect(api.writes()[0].body).toMatchObject({ payee: 'Highlands', category_id: 'coffee', entries: [{ account_id: 'bank', amount: -55_000 }] }))
+    } finally {
+      phone(false)
+    }
+  })
+})
+
 describe("the book's payees while typing (waterflow#101)", () => {
   const bank: Account = { ...cash, id: 'bank', name: 'Bank', kind: 'checking', balance: 5_000_000 }
   const coffee = { id: 'coffee', name: 'Coffee', parent_id: null, kind: 'expense', color: null, archived_at: null, version: 1 }
