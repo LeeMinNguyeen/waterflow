@@ -3,7 +3,7 @@ import Button from '@mui/material/Button'
 import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link as RouterLink, useLocation, useNavigate, useSearchParams } from 'react-router'
 import { Centered } from '../components/Centered'
@@ -165,13 +165,15 @@ export function Reset() {
   const { t } = useTranslation()
   const [params] = useSearchParams()
   const { submit, error, busy } = useSignedInForm()
+  const leaving = useRef<Promise<void>>(Promise.resolve())
   useEffect(() => {
-    if (session.token()) void signOut()
+    if (session.token()) leaving.current = signOut()
   }, [])
   return (
     <PublicPage>
-      <Stack component="form" spacing={2} onSubmit={(e) => submit(e, (form) => {
+      <Stack component="form" spacing={2} onSubmit={(e) => submit(e, async (form) => {
         const { password } = newAccountBody(form)
+        await leaving.current
         return send<Token>('POST', '/v1/auth/reset', { token: params.get('token') ?? '', new_password: password })
       })}>
         <PublicHeader title={t('reset.title')} />

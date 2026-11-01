@@ -50,13 +50,8 @@ const opening = () => known(session.token() ? read(ACCOUNT) ?? read(SIGN_IN) : r
 
 // Whatever ends the session (Sign out, inactivity, an expired session, another tab, someone else signing in over it)
 // goes back to the sign-in language.
-let signedInAs = session.token()
-session.subscribe(() => {
-  const now = session.token()
-  if (now === signedInAs) return
-  const had = signedInAs
-  signedInAs = now
-  if (!had) return
+session.onChange((before) => {
+  if (!before) return
   write(ACCOUNT, null)
   show(known(read(SIGN_IN)))
 })

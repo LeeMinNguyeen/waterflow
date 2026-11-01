@@ -136,6 +136,24 @@ describe('a reset link', () => {
     expect(await screen.findByRole('heading', { level: 1 })).toHaveTextContent('Choose a new password')
   })
 
+  it('waits for that sign-out before resetting, so it never ends the new session (review #166)', async () => {
+    let finish = () => {}
+    const api = fakeApi({
+      'GET /v1/instance': { name: 'Nhà', signup: 'invite', setup_needed: false },
+      'POST /v1/auth/sign-out': () => new Promise<undefined>((done) => { finish = () => done(undefined) }),
+      'POST /v1/auth/reset': { token: 'new-token' },
+    })
+    session.set('alice-token')
+    await renderApp(<Reset />, { route: '/reset?token=t' })
+    await userEvent.type(await screen.findByLabelText(/^New password/), 'a long password')
+    await userEvent.type(screen.getByLabelText(/^Type it again|^Password again|again/i), 'a long password')
+    await userEvent.click(screen.getByRole('button', { name: /password/i }))
+    expect(api.writes().map((c) => c.path)).toEqual(['/v1/auth/sign-out'])
+    finish()
+    await waitFor(() => expect(session.token()).toBe('new-token'))
+    expect(api.writes().map((c) => c.path)).toEqual(['/v1/auth/sign-out', '/v1/auth/reset'])
+  })
+
   it('opens in the sign-in language, with the button to change it (waterflow#134)', async () => {
     fakeApi({ 'GET /v1/instance': { name: 'Nhà', signup: 'invite', setup_needed: false } })
     session.set(null)
