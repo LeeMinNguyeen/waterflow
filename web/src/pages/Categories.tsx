@@ -17,8 +17,8 @@ import Paper from '@mui/material/Paper'
 import Stack from '@mui/material/Stack'
 import Switch from '@mui/material/Switch'
 import Typography from '@mui/material/Typography'
-import { useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router'
 import { useErrorText } from '../components/errors'
@@ -136,7 +136,7 @@ export function Categories({ book }: { book: Book }) {
       </Menu>
       {budgetFor && <BudgetDialog book={book} category={budgetFor} onClose={() => setBudgetFor(null)} />}
       {dialog && all.data && (
-        <CategoryDialog key={dialog.category?.id ?? 'new'} book={book} all={all.data} category={dialog.category} parent={dialog.parent}
+        <CategoryDialog key={dialog.category?.id ?? 'new'} book={book} all={all.data} category={dialog.category && (all.data.find((c) => c.id === dialog.category!.id) ?? dialog.category)} parent={dialog.parent}
           editing={dialog.editing} onTransactions={(c) => navigate(`/books/${book.id}/transactions?category_id=${c.id}`)} onClose={() => setDialog(null)} />
       )}
     </Stack>

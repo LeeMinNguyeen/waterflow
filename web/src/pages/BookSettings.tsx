@@ -33,6 +33,14 @@ export function BookSettings({ book }: { book: Book }) {
   const [busy, setBusy] = useState(false)
   const [confirming, setConfirming] = useState(false)
   const [confirmName, setConfirmName] = useState('')
+  // A newer version (this save, or another owner's) shows as it is; what was said about the save stays.
+  const [shown, setShown] = useState(book.version)
+  if (shown !== book.version) {
+    setShown(book.version)
+    setName(book.name)
+    setCurrency(book.base_currency)
+    setTimezone(book.timezone)
+  }
   const owner = book.role === 'owner'
 
   async function save(e: FormEvent) {

@@ -52,6 +52,15 @@ describe('the Overview lists (waterflow#73, waterflow#74)', () => {
     expect(recent.getByRole('link', { name: 'See all' })).toBeInTheDocument()
   })
 
+  it('says so when a transaction under Recent was deleted meanwhile (review #166)', async () => {
+    dashServer({ recent_transactions: [txn(1)] }, {
+      'GET /v1/books/b1/transactions/t1': new Response(JSON.stringify({ detail: 'not_found' }), { status: 404 }),
+    })
+    await renderApp(<Dashboard book={book} />)
+    await userEvent.click((await cardOf('Recent')).getByText('Payee 1'))
+    expect(await screen.findByText('Not found.')).toBeInTheDocument()
+  })
+
   it('shows the pinned accounts', async () => {
     dashServer({ accounts: [1, 2, 3, 4, 5, 6, 7].map((i) => row(i, i === 3 || i === 6)) })
     await renderApp(<Dashboard book={book} />)

@@ -24,7 +24,8 @@ import { currentLanguage } from '../i18n'
 import { api, type Book, type Category, type Transaction } from '../lib/api'
 import { shiftDay, todayIn } from '../lib/labels'
 import { useFormatMoney, useHideAmounts } from '../lib/hideAmounts'
-import { useCategories, useCurrencies, useDashboard } from '../lib/queries'
+import { useCategories, useCurrencies, useDashboard, useInvalidateBook } from '../lib/queries'
+import { useToast } from '../lib/toast'
 import { BudgetDialog } from './BudgetDialog'
 
 // Credits some rate sources ask for (backend/app/jobs/fx_update.py); a proper name, not translated.
@@ -72,6 +73,8 @@ export function Dashboard({ book }: { book: Book }) {
   const lang = currentLanguage()
   const navigate = useNavigate()
   const openTxn = useOpenTxn()
+  const toast = useToast()
+  const invalidate = useInvalidateBook()
   const desktop = useMediaQuery(useTheme().breakpoints.up('md'))
   const chartColors = useChartColors()
   const dash = useDashboard(book.id)
@@ -113,7 +116,12 @@ export function Dashboard({ book }: { book: Book }) {
   const barMax = Math.max(1, ...bars.map((b) => b.spent))
 
   async function openRecent(id: string) {
-    openTxn(await api<Transaction>(`/v1/books/${book.id}/transactions/${id}`))
+    try {
+      openTxn(await api<Transaction>(`/v1/books/${book.id}/transactions/${id}`))
+    } catch (err) {
+      toast(errorText(err))
+      await invalidate(book.id)
+    }
   }
 
   // Recent transactions carry their category's name only: its colour, when that name means one colour.

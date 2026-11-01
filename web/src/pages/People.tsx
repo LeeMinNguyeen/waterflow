@@ -13,8 +13,8 @@ import MenuItem from '@mui/material/MenuItem'
 import Paper from '@mui/material/Paper'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
-import { useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router'
 import { useErrorText } from '../components/errors'
@@ -98,7 +98,8 @@ export function People({ book }: { book: Book }) {
           if (r.archived) setNotice({ info: t('people.archivedInstead') })
         })}>{t('people.delete')}</MenuItem>
       </Menu>
-      {dialog && <PersonDialog book={book} person={dialog === 'new' ? null : dialog} onClose={() => setDialog(null)} />}
+      {dialog && <PersonDialog book={book} person={dialog === 'new' ? null : contacts.data?.find((p) => p.id === dialog.id) ?? dialog}
+        onClose={() => setDialog(null)} />}
     </Stack>
   )
 }
