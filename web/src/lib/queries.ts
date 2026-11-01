@@ -1,5 +1,5 @@
 import { keepPreviousData, useInfiniteQuery, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { api, type Account, type Bill, type Book, type Budget, type Category, type Contact, type Currency, type Dashboard, type HistoryEntry, type Instance, type InstallmentPlan, type Me, type Member, type BookInvite, type Payee, type TxnPage } from './api'
 
 export const keys = {
@@ -38,7 +38,11 @@ export function useBills(bookId: string, accountId: string, enabled: boolean) {
 }
 
 export function usePayees(bookId: string, q: string, type: 'expense' | 'income' | null) {
-  const text = q.trim()
+  const [text, setText] = useState(q.trim())
+  useEffect(() => {
+    const timer = setTimeout(() => setText(q.trim()), 250)
+    return () => clearTimeout(timer)
+  }, [q])
   return useQuery({
     queryKey: ['books', bookId, 'payees', type, text],
     queryFn: () => api<Payee[]>(`/v1/books/${bookId}/payees?${new URLSearchParams({ q: text, type: type ?? '' })}`),
