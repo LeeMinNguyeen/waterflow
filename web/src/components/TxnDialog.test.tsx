@@ -279,6 +279,26 @@ describe('the sign of an amount (waterflow#137)', () => {
     expect(api.writes()).toHaveLength(0)
   })
 
+  it("shows a loan's opening debt as the amount owed, as the account form does, and saves it as a debt", async () => {
+    const loan: Account = { ...bank, id: 'loan', name: 'Loan', kind: 'loan' }
+    const api = fakeApi({
+      'GET /v1/currencies': currencies,
+      'GET /v1/books/b1/accounts': [loan],
+      'GET /v1/books/b1/categories': [],
+      'PUT /v1/books/b1/transactions/t1': ({ body }: { body: unknown }) => body,
+    })
+    const owed: Transaction = { ...opening, entries: [{ account_id: 'loan', amount: -5_000_000, currency: 'VND' }] }
+    await renderApp(<TxnDialog book={book} txn={owed} onClose={() => {}} />)
+    const amount = await screen.findByLabelText(/^Amount owed/)
+    await waitFor(() => expect(amount).toHaveValue('5,000,000'))
+    await userEvent.clear(amount)
+    await userEvent.type(amount, '6000000')
+    expect(amount).toHaveValue('6,000,000')
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(api.writes()).toHaveLength(1))
+    expect(api.writes()[0].body).toMatchObject({ entries: [{ account_id: 'loan', amount: -6_000_000 }] })
+  })
+
   it('keeps the minus of an adjustment, as before', async () => {
     const api = bankServer()
     await renderApp(<TxnDialog book={book} txn={adjustment} onClose={() => {}} />)

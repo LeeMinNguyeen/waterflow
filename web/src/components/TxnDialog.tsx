@@ -18,7 +18,7 @@ import { useTheme } from '@mui/material/styles'
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { currentLanguage } from '../i18n'
-import { api, ApiError, categoryKindFor, send, type Account, type Book, type Entry, type Suggestion, type Transaction, type TxnType } from '../lib/api'
+import { api, ApiError, categoryKindFor, liabilityKinds, send, type Account, type Book, type Entry, type Suggestion, type Transaction, type TxnType } from '../lib/api'
 import { categoryTree } from '../lib/categories'
 import { timeIn, todayIn } from '../lib/labels'
 import { amountText, formatMoney, parseAmount } from '../lib/money'
@@ -38,6 +38,12 @@ import { useToast } from '../lib/toast'
 
 const mainTypes: TxnType[] = ['expense', 'income', 'transfer']
 const otherTypes: TxnType[] = ['refund', 'adjustment']
+const signedTypes: TxnType[] = ['adjustment', 'opening_balance']
+
+const negated = (text: string) => {
+  const t = text.trim()
+  return t === '' || t === '-' ? text : t.startsWith('-') ? t.slice(1) : `-${t}`
+}
 
 type Form = {
   type: TxnType
@@ -65,7 +71,7 @@ export function TxnDialog(props: Props) {
 }
 
 // Amounts are typed as positive numbers; the type decides the sign (an expense
-// is money out). Adjustments take a sign.
+// is money out). Adjustments and opening balances take a sign.
 function TxnForm({ book, txn: initial, defaults, onClose, minorOf }: Props & { minorOf: (currency: string) => number }) {
   const { t } = useTranslation()
   const toast = useToast()
@@ -109,7 +115,7 @@ function TxnForm({ book, txn: initial, defaults, onClose, minorOf }: Props & { m
     [categories.data, kind, form.category],
   )
 
-  const signed = form.type === 'adjustment' || form.type === 'opening_balance'
+  const signed = signedTypes.includes(form.type)
   const typedAmount = parseAmount(form.amount, minor(account), lang)
   const typedReceived = crossCurrency ? parseAmount(form.amountReceived, minor(form.toAccount), lang) : null
   const minus = !signed && (typedAmount ?? 0) < 0
@@ -247,6 +253,8 @@ function TxnForm({ book, txn: initial, defaults, onClose, minorOf }: Props & { m
   const noAccounts = accounts.isSuccess && open.length === 0
   const readOnly = book.role === 'viewer'
   const openingBalance = form.type === 'opening_balance'
+  // As the account form shows it: what a credit card or loan owes is positive.
+  const owedOpening = openingBalance && !!from && liabilityKinds.includes(from.kind)
   const accountLabel = (a: Account) => `${a.name} · ${formatMoney(a.balance, a.currency, minor(a.id), lang)}`
   const people = open.filter((a) => a.kind === 'person')
   const accountOptions = [
@@ -298,14 +306,15 @@ function TxnForm({ book, txn: initial, defaults, onClose, minorOf }: Props & { m
           {transfer && open.length < 2 && !noAccounts && <Alert severity="info">{t('txn.needTwoAccounts')}</Alert>}
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
             <AmountField
-              label={t('txn.amount')}
+              label={t(owedOpening ? 'accounts.amountOwed' : 'txn.amount')}
               required
               autoFocus={!txn}
-              value={form.amount}
-              onChange={(v) => set({ amount: v })}
+              value={owedOpening ? negated(form.amount) : form.amount}
+              onChange={(v) => set({ amount: owedOpening ? negated(v) : v })}
               minorUnit={minor(account)}
               error={minus}
-              helperText={minus ? t('txn.noMinus') : form.type === 'adjustment' ? t('txn.adjustmentHint') : openingBalance ? t('txn.openingHint') : from?.currency}
+              helperText={minus ? t('txn.noMinus') : form.type === 'adjustment' ? t('txn.adjustmentHint')
+                : openingBalance && !owedOpening ? t('txn.openingHint') : from?.currency}
             />
             <DateField label={t('txn.date')} required value={form.date} onChange={(date) => set({ date })} sx={{ maxWidth: { sm: 190 } }} />
             <TimeField label={t('txn.time')} required value={form.time} onChange={(time) => set({ time })} sx={{ maxWidth: { sm: 110 } }} />
@@ -413,7 +422,7 @@ function toForm(txn: Transaction | null | undefined, book: Book, minorOf: (curre
     time: txn.occurred_time.slice(0, 5),
     account: transfer ? out.account_id : txn.entries[0].account_id,
     toAccount: transfer && into ? into.account_id : '',
-    amount: text(transfer ? out : txn.entries[0], txn.type === 'adjustment' || txn.type === 'opening_balance'),
+    amount: text(transfer ? out : txn.entries[0], signedTypes.includes(txn.type)),
     amountReceived: transfer && into ? text(into) : '',
     category: txn.category_id ?? '',
     payee: txn.payee ?? '',

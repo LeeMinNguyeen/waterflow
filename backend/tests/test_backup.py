@@ -227,6 +227,12 @@ def test_a_backup_in_the_same_second_keeps_the_one_before(source, tmp_path, monk
     assert later != first and os.stat(first).st_ino == inode
     assert sorted(os.listdir(bucket)) == [f"waterflow-{second:%Y%m%dT%H%M%SZ}.dump",
                                           f"waterflow-{second + timedelta(seconds=1):%Y%m%dT%H%M%SZ}.dump"]
+    # A .partial means another backup is still writing that name.
+    writing = bucket / f"waterflow-{second + timedelta(seconds=2):%Y%m%dT%H%M%SZ}.dump.partial"
+    writing.write_text("x")
+    third, _, _ = job.run_backup(libpq_url(SOURCE), str(bucket))
+    assert os.path.basename(third) == f"waterflow-{second + timedelta(seconds=3):%Y%m%dT%H%M%SZ}.dump"
+    assert writing.read_text() == "x"
 
 
 @pytest.mark.parametrize("url", [
