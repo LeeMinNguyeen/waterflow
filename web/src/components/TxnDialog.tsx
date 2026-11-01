@@ -27,7 +27,7 @@ import { useTheme } from '@mui/material/styles'
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { currentLanguage } from '../i18n'
-import { api, ApiError, categoryKindFor, send, type Account, type Book, type Entry, type Suggestion, type Transaction, type TxnType } from '../lib/api'
+import { api, ApiError, categoryKindFor, liabilityKinds, send, type Account, type Book, type Entry, type Suggestion, type Transaction, type TxnType } from '../lib/api'
 import { categoryTree } from '../lib/categories'
 import { shiftDay, timeIn, todayIn } from '../lib/labels'
 import { amountText, formatMoney, parseAmount } from '../lib/money'
@@ -49,6 +49,12 @@ import { useToast } from '../lib/toast'
 
 const mainTypes: TxnType[] = ['expense', 'income', 'transfer']
 const otherTypes: TxnType[] = ['refund', 'adjustment']
+const signedTypes: TxnType[] = ['adjustment', 'opening_balance']
+
+const negated = (text: string) => {
+  const t = text.trim()
+  return t === '' || t === '-' ? text : t.startsWith('-') ? t.slice(1) : `-${t}`
+}
 
 type Form = {
   type: TxnType
@@ -87,7 +93,7 @@ export function TxnDialog(props: Props) {
 }
 
 // Amounts are typed as positive numbers; the type decides the sign (an expense
-// is money out). Adjustments take a sign.
+// is money out). Adjustments and opening balances take a sign.
 function TxnForm({ book, txn: initial, defaults, onClose, minorOf, carry, onSwitchBook }: FormProps) {
   const { t } = useTranslation()
   const toast = useToast()
@@ -137,17 +143,23 @@ function TxnForm({ book, txn: initial, defaults, onClose, minorOf, carry, onSwit
     [categories.data, kind, form.category],
   )
 
+  const signed = signedTypes.includes(form.type)
+  const typedAmount = parseAmount(form.amount, minor(account), lang)
+  const typedReceived = crossCurrency ? parseAmount(form.amountReceived, minor(form.toAccount), lang) : null
+  const minus = !signed && (typedAmount ?? 0) < 0
+  const receivedMinus = (typedReceived ?? 0) < 0
+
   function money(): { account_id: string; amount: number }[] | null {
-    const a = parseAmount(form.amount, minor(account), lang)
+    const a = typedAmount
     if (a === null || a === 0 || !account) return null
-    if (form.type === 'adjustment') return [{ account_id: account, amount: a }]
-    const abs = Math.abs(a)
-    if (form.type === 'expense') return [{ account_id: account, amount: -abs }]
-    if (!transfer) return [{ account_id: account, amount: abs }]
+    if (signed) return [{ account_id: account, amount: a }]
+    if (a < 0) return null
+    if (form.type === 'expense') return [{ account_id: account, amount: -a }]
+    if (!transfer) return [{ account_id: account, amount: a }]
     if (!form.toAccount || form.toAccount === account) return null
-    const received = crossCurrency ? parseAmount(form.amountReceived, minor(form.toAccount), lang) : abs
-    if (received === null || received === 0) return null
-    return [{ account_id: account, amount: -abs }, { account_id: form.toAccount, amount: Math.abs(received) }]
+    const received = crossCurrency ? typedReceived : a
+    if (received === null || received <= 0) return null
+    return [{ account_id: account, amount: -a }, { account_id: form.toAccount, amount: received }]
   }
   const entries = money()
 
@@ -269,6 +281,8 @@ function TxnForm({ book, txn: initial, defaults, onClose, minorOf, carry, onSwit
   const noAccounts = accounts.isSuccess && open.length === 0
   const readOnly = book.role === 'viewer'
   const openingBalance = form.type === 'opening_balance'
+  // As the account form shows it: what a credit card or loan owes is positive.
+  const owedOpening = openingBalance && !!from && liabilityKinds.includes(from.kind)
   const accountLabel = (a: Account) => `${a.name} · ${formatMoney(a.balance, a.currency, minor(a.id), lang)}`
   const people = open.filter((a) => a.kind === 'person')
   const accountOptions = [
@@ -362,13 +376,15 @@ function TxnForm({ book, txn: initial, defaults, onClose, minorOf, carry, onSwit
             <Stack direction="row" sx={{ alignItems: 'baseline', gap: 0.5, borderBottom: 1, borderColor: 'divider', pb: 0.5 }}>
               {sign && <Typography aria-hidden sx={{ fontSize: 40, lineHeight: '48px', fontWeight: 500, color: tone }}>{sign}</Typography>}
               <AmountField
-                ariaLabel={t('txn.amount')}
+                ariaLabel={t(owedOpening ? 'accounts.amountOwed' : 'txn.amount')}
                 inputRef={amountRef}
-                value={form.amount}
-                onChange={(v) => set({ amount: v })}
+                value={owedOpening ? negated(form.amount) : form.amount}
+                onChange={(v) => set({ amount: owedOpening ? negated(v) : v })}
                 minorUnit={minor(account)}
                 disabled={readOnly}
-                helperText={form.type === 'adjustment' ? t('txn.adjustmentHint') : undefined}
+                error={minus}
+                helperText={minus ? t('txn.noMinus') : form.type === 'adjustment' ? t('txn.adjustmentHint')
+                  : openingBalance && !owedOpening ? t('txn.openingHint') : undefined}
                 sx={{ '& .MuiOutlinedInput-notchedOutline': { border: 0 }, '& .MuiOutlinedInput-root.Mui-focused': { boxShadow: 'none' },
                   '& .MuiOutlinedInput-input': { p: 0, fontSize: 40, lineHeight: '48px', height: 48, fontWeight: 500, color: tone,
                     fontVariantNumeric: 'tabular-nums' } }}
@@ -394,7 +410,8 @@ function TxnForm({ book, txn: initial, defaults, onClose, minorOf, carry, onSwit
             </Box>
             {crossCurrency && (
               <AmountField label={`${t('txn.amountReceived')} (${to?.currency})`} required value={form.amountReceived}
-                onChange={(v) => set({ amountReceived: v })} minorUnit={minor(form.toAccount)} unit={to?.currency} disabled={readOnly} />
+                onChange={(v) => set({ amountReceived: v })} minorUnit={minor(form.toAccount)} unit={to?.currency} disabled={readOnly}
+                error={receivedMinus} helperText={receivedMinus ? t('txn.noMinus') : undefined} />
             )}
             <TextField label={t('txn.note')} value={form.note} onChange={(e) => set({ note: e.target.value })} multiline minRows={1} maxRows={4}
               placeholder={t('txn.noteHint')} disabled={readOnly} />
@@ -516,14 +533,16 @@ function TxnForm({ book, txn: initial, defaults, onClose, minorOf, carry, onSwit
           {transfer && open.length < 2 && !noAccounts && <Alert severity="info">{t('txn.needTwoAccounts')}</Alert>}
           <AmountField
             big
-            label={t('txn.amount')}
+            label={t(owedOpening ? 'accounts.amountOwed' : 'txn.amount')}
             required
             inputRef={amountRef}
-            value={form.amount}
-            onChange={(v) => set({ amount: v })}
+            value={owedOpening ? negated(form.amount) : form.amount}
+            onChange={(v) => set({ amount: owedOpening ? negated(v) : v })}
             minorUnit={minor(account)}
             unit={from?.currency ?? book.base_currency}
-            helperText={form.type === 'adjustment' ? t('txn.adjustmentHint') : undefined}
+            error={minus}
+            helperText={minus ? t('txn.noMinus') : form.type === 'adjustment' ? t('txn.adjustmentHint')
+              : openingBalance && !owedOpening ? t('txn.openingHint') : undefined}
           />
           <Box sx={two}>
             <TextField
@@ -561,6 +580,8 @@ function TxnForm({ book, txn: initial, defaults, onClose, minorOf, carry, onSwit
               onChange={(v) => set({ amountReceived: v })}
               minorUnit={minor(form.toAccount)}
               unit={to?.currency}
+              error={receivedMinus}
+              helperText={receivedMinus ? t('txn.noMinus') : undefined}
             />
           )}
           {transfer && kind && (
@@ -628,7 +649,7 @@ function toForm(txn: Transaction | null | undefined, book: Book, minorOf: (curre
     time: txn.occurred_time.slice(0, 5),
     account: transfer ? out.account_id : txn.entries[0].account_id,
     toAccount: transfer && into ? into.account_id : '',
-    amount: text(transfer ? out : txn.entries[0], txn.type === 'adjustment'),
+    amount: text(transfer ? out : txn.entries[0], signedTypes.includes(txn.type)),
     amountReceived: transfer && into ? text(into) : '',
     category: txn.category_id ?? '',
     payee: txn.payee ?? '',

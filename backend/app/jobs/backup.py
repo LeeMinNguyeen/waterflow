@@ -114,6 +114,24 @@ def prune(backup_dir: str, now: datetime) -> list[str]:
     return old
 
 
+def _reserve(backup_dir: str, now: datetime) -> tuple[str, int]:
+    """The first free second's dump path and its open .partial: a backup never replaces another, even one running."""
+    while True:
+        final = os.path.join(backup_dir, f"waterflow-{now:%Y%m%dT%H%M%SZ}.dump")
+        now += timedelta(seconds=1)
+        if os.path.exists(final):
+            continue
+        try:
+            # Owner-only: a dump holds password hashes and two-factor secrets.
+            fd = os.open(final + ".partial", os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        except FileExistsError:
+            continue
+        if not os.path.exists(final):
+            return final, fd
+        os.close(fd)
+        os.remove(final + ".partial")
+
+
 def run_backup(database_url: str, backup_dir: str) -> tuple[str, dict[str, int], list[str]]:
     """Writes one dump into backup_dir, then prunes. Returns its path, its table count per schema
     and the names of the old dumps deleted."""
@@ -136,11 +154,9 @@ def run_backup(database_url: str, backup_dir: str) -> tuple[str, dict[str, int],
         tables = {s: toc.count(f" TABLE DATA {s} ") for s in SCHEMAS}
         if not tables["public"]:
             raise BackupError("the dump has no tables in schema public: wrong database?")
-        final = os.path.join(backup_dir, name)
+        final, fd = _reserve(backup_dir, now)
         partial = final + ".partial"
         try:
-            # Owner-only: a dump holds password hashes and two-factor secrets.
-            fd = os.open(partial, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
             with open(local, "rb") as src, os.fdopen(fd, "wb") as dst:
                 shutil.copyfileobj(src, dst)
                 dst.flush()
