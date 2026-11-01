@@ -135,7 +135,8 @@ def snapshot(database):
 
 
 def test_restore_commands_documented():
-    assert len(RESTORE) == 4 and RESTORE[0].startswith("psql") and RESTORE[3].startswith("pg_restore --no-owner")
+    assert len(RESTORE) == 5 and RESTORE[0].startswith("psql") and RESTORE[3].startswith("pg_restore --no-owner")
+    assert "delete from sessions" in RESTORE[4]
 
 
 def test_backup_restores_everything(source, target, tmp_path):
@@ -287,6 +288,23 @@ def test_restore_requested_from_the_web(live, tmp_path):
     assert len(list(backups.glob("waterflow-*.dump"))) == 1                 # what it replaced
     assert gone in (backups / "purged_accounts.jsonl").read_text()
     assert web_restore.restore_if_requested(libpq_url(name), str(backups)) is None
+
+
+def test_a_restore_signs_everyone_out(live, tmp_path):
+    """Sessions, remembered devices and reset links in the backup would work again, even ones ended after it."""
+    from app.jobs import backup, restore as web_restore
+    name, _ = live
+    who = "(select id from users where username = 'backup_user')"
+    sql(name, f"insert into sessions (token_sha256, user_id) values (sha256('s'), {who})",
+        f"insert into remembered_devices (token_sha256, user_id) values (sha256('d'), {who})",
+        f"insert into password_resets (token_sha256, user_id, expires_at) values (sha256('r'), {who}, now() + interval '1 day')")
+    signed_in = tmp_path / "with-sessions"
+    signed_in.mkdir()
+    dump, _, _ = backup.run_backup(libpq_url(name), str(signed_in))
+    backups = requested(tmp_path, Path(dump).read_bytes())
+    assert web_restore.restore_if_requested(libpq_url(name), str(backups)) == "done"
+    assert sql(name, "select (select count(*) from sessions) + (select count(*) from remembered_devices)"
+                     " + (select count(*) from password_resets)") == [(0,)]
 
 
 def test_a_failed_restore_puts_the_database_back(live, tmp_path, monkeypatch):

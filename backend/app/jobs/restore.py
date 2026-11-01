@@ -105,9 +105,16 @@ def _repurge(url: str, purge_log: str) -> None:
             conn.execute("select repurge_accounts(%s::uuid[])", (ids,))
 
 
+def _sign_everyone_out(url: str) -> None:
+    """The backup's sessions, remembered devices and reset links would work again, even ones ended after it."""
+    with psycopg.connect(url, autocommit=True) as conn:
+        conn.execute("delete from sessions; delete from remembered_devices; delete from password_resets")
+
+
 def _apply(url: str, path: str, purged: Path | None, purge_log: str) -> None:
     _empty(url)
     _load(url, path)
+    _sign_everyone_out(url)
     if purged and purged.exists():
         with open(purge_log, "a") as log:
             log.write(purged.read_text().rstrip("\n") + "\n")

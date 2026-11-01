@@ -829,6 +829,16 @@ def test_admin_restores_a_backup_from_the_web(client, admin, restore_dir, a_back
     assert client.get("/v1/admin/restore", headers=bearer(someone)).json() == {"detail": "admin_only"}
 
 
+@pytest.mark.parametrize("path", ["/v1/setup/restore", "/v1/admin/restore"])
+def test_an_oversized_restore_is_refused_before_it_is_read(client, monkeypatch, path):
+    """Before anything checks who's asking: the whole upload used to land on disk first."""
+    from app.api.routes.v1 import restore
+    monkeypatch.setattr(restore, "MAX_DUMP", 1000)
+    monkeypatch.setattr(restore, "MAX_PURGED", 100)
+    r = client.post(path, files={"file": ("big.dump", b"x" * (3 * 2**20))}, data={"setup_code": "WRONG", "password": "x"})
+    assert (r.status_code, r.json()) == (413, {"detail": "restore_too_large"})
+
+
 def test_restoring_asks_for_the_two_factor_code(client, admin, restore_dir, a_backup):
     _, token = admin
     secret = client.post("/v1/auth/two-factor/setup", headers=bearer(token)).json()["secret"]
