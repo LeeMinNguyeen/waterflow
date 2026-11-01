@@ -233,6 +233,8 @@
     "payee": "Người nhận / nơi chi",
     "note": "Ghi chú",
     "adjustmentHint": "Nhập số âm để giảm số dư.",
+    "openingHint": "Dưới 0: số tiền tài khoản đang nợ.",
+    "noMinus": "Loại giao dịch đã cho biết tiền vào hay ra: không cần dấu trừ.",
     "save": "Lưu",
     "delete": "Xóa",
     "deleteConfirm": "Xóa giao dịch này?",

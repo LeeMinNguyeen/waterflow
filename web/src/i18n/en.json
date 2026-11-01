@@ -233,6 +233,8 @@
     "payee": "Payee",
     "note": "Note",
     "adjustmentHint": "Enter a negative number to lower the balance.",
+    "openingHint": "Below zero: what the account owed.",
+    "noMinus": "The type says which way the money goes: no minus needed.",
     "save": "Save",
     "delete": "Delete",
     "deleteConfirm": "Delete this transaction?",
