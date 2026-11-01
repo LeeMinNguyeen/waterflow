@@ -21,7 +21,7 @@ import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router'
 import { send, type Book, type Member, type Role } from '../lib/api'
 import { personName } from '../lib/people'
-import { keys, useInvalidateAfterChange, useMembers } from '../lib/queries'
+import { keys, useMembers } from '../lib/queries'
 import { useErrorText } from './errors'
 import { DialogFooter } from './DialogFooter'
 
@@ -32,7 +32,6 @@ export function BookMembers({ book }: { book: Book }) {
   const errorText = useErrorText()
   const navigate = useNavigate()
   const qc = useQueryClient()
-  const refetch = useInvalidateAfterChange()
   const members = useMembers(book.id)
   const owner = book.role === 'owner'
   const [username, setUsername] = useState('')
@@ -52,7 +51,7 @@ export function BookMembers({ book }: { book: Book }) {
       return false
     } finally {
       setBusy(false)
-      await refetch(book.id, keys.members(book.id))
+      await qc.invalidateQueries({ queryKey: keys.members(book.id) })
     }
   }
 

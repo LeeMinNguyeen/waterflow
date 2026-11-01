@@ -18,6 +18,7 @@ import Stack from '@mui/material/Stack'
 import Switch from '@mui/material/Switch'
 import Typography from '@mui/material/Typography'
 import { useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router'
 import { useErrorText } from '../components/errors'
@@ -26,7 +27,7 @@ import { categoryTree } from '../lib/categories'
 import { BudgetBar } from '../components/BudgetBar'
 import { currentLanguage } from '../i18n'
 import { useFormatMoney } from '../lib/hideAmounts'
-import { useBudgets, useCategories, useCurrencies, useInvalidateAfterChange } from '../lib/queries'
+import { useBudgets, useCategories, useCurrencies } from '../lib/queries'
 import { BudgetDialog } from './BudgetDialog'
 import { CategoryDialog } from './CategoryDialog'
 import { PageHeader } from '../components/Page'
@@ -39,7 +40,7 @@ export function Categories({ book }: { book: Book }) {
   const { t } = useTranslation()
   const errorText = useErrorText()
   const navigate = useNavigate()
-  const refetch = useInvalidateAfterChange()
+  const qc = useQueryClient()
   const [showArchived, setShowArchived] = useState(false)
   const categories = useCategories(book.id, showArchived)
   const all = useCategories(book.id, true)
@@ -67,7 +68,7 @@ export function Categories({ book }: { book: Book }) {
     } catch (err) {
       setNotice({ error: err })
     }
-    await refetch(book.id, ['books', book.id, 'categories'])
+    await qc.invalidateQueries({ queryKey: ['books', book.id, 'categories'] })
   }
   const archive = (c: Category, archived: boolean) =>
     act(() => send('PATCH', `/v1/books/${book.id}/categories/${c.id}`, { version: c.version, archived }))

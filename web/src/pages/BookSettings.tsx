@@ -17,7 +17,7 @@ import { CurrencyPicker } from '../components/CurrencyPicker'
 import { useErrorText } from '../components/errors'
 import { TimezonePicker } from '../components/TimezonePicker'
 import { send, type Book } from '../lib/api'
-import { keys, useInvalidateAfterChange } from '../lib/queries'
+import { keys } from '../lib/queries'
 import { DialogFooter } from '../components/DialogFooter'
 
 // Settings and delete: owners only.
@@ -33,7 +33,6 @@ export function BookSettings({ book }: { book: Book }) {
   const [busy, setBusy] = useState(false)
   const [confirming, setConfirming] = useState(false)
   const [confirmName, setConfirmName] = useState('')
-  const refetch = useInvalidateAfterChange()
   // A newer version (this save, or another owner's) shows as it is; what was said about the save stays.
   const [shown, setShown] = useState(book.version)
   if (shown !== book.version) {
@@ -60,7 +59,7 @@ export function BookSettings({ book }: { book: Book }) {
       setStatus({ error: err })
     } finally {
       setBusy(false)
-      await refetch(book.id, keys.books)
+      await qc.invalidateQueries({ queryKey: keys.books })
     }
   }
 

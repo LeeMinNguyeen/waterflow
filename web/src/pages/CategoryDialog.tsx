@@ -13,14 +13,15 @@ import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import { useRef, useState, type FormEvent } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { BudgetBar } from '../components/BudgetBar'
 import { useErrorText } from '../components/errors'
 import { currentLanguage } from '../i18n'
-import { send, type Book, type Category, type CategoryKind } from '../lib/api'
+import { ApiError, send, type Book, type Category, type CategoryKind } from '../lib/api'
 import { categoryTree } from '../lib/categories'
 import { useFormatMoney } from '../lib/hideAmounts'
-import { useBudgets, useCurrencies, useInvalidateAfterChange } from '../lib/queries'
+import { useBudgets, useCurrencies } from '../lib/queries'
 import { newId } from '../lib/uuid'
 import { CategoryPicker } from '../components/CategoryPicker'
 import { DialogFooter } from '../components/DialogFooter'
@@ -47,7 +48,7 @@ export function CategoryDialog({ book, all, category, parent, editing: startEdit
   const { t } = useTranslation()
   const toast = useToast()
   const errorText = useErrorText()
-  const refetch = useInvalidateAfterChange()
+  const qc = useQueryClient()
   const budgets = useBudgets(book.id)
   const currencies = useCurrencies()
   const id = useRef(category?.id ?? newId())
@@ -59,10 +60,13 @@ export function CategoryDialog({ book, all, category, parent, editing: startEdit
   const [color, setColor] = useState(category?.color ?? parent?.color ?? '')
   const [error, setError] = useState<unknown>(null)
   const [busy, setBusy] = useState(false)
-  // After a 409 the list reloads: the form shows the category as it is now, and saves with that version.
+  // After a 409 the list reloads: the form then shows the category as it is now, and saves with that version. A
+  // refetch while the user types leaves the form alone.
   const [shown, setShown] = useState(category?.version)
-  if (category && shown !== category.version) {
+  const [conflict, setConflict] = useState(false)
+  if (category && shown !== category.version && (conflict || !editing)) {
     setShown(category.version)
+    setConflict(false)
     setName(category.name)
     setKind(category.kind)
     setParentId(category.parent_id ?? '')
@@ -108,9 +112,10 @@ export function CategoryDialog({ book, all, category, parent, editing: startEdit
       onClose()
     } catch (err) {
       setError(err)
+      if (err instanceof ApiError && err.code === 'conflict') setConflict(true)
     } finally {
       setBusy(false)
-      await refetch(book.id, ['books', book.id, 'categories'])
+      await qc.invalidateQueries({ queryKey: ['books', book.id, 'categories'] })
     }
   }
 

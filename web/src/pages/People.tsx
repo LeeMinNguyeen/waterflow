@@ -14,13 +14,14 @@ import Paper from '@mui/material/Paper'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import { useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router'
 import { useErrorText } from '../components/errors'
 import { currentLanguage } from '../i18n'
 import { send, type Book, type Contact } from '../lib/api'
 import { useFormatMoney } from '../lib/hideAmounts'
-import { useContacts, useCurrencies, useInvalidateAfterChange } from '../lib/queries'
+import { useContacts, useCurrencies } from '../lib/queries'
 import { PersonDialog } from './PersonDialog'
 import { PageHeader } from '../components/Page'
 
@@ -28,7 +29,7 @@ export function People({ book }: { book: Book }) {
   const formatMoney = useFormatMoney()
   const { t } = useTranslation()
   const errorText = useErrorText()
-  const refetch = useInvalidateAfterChange()
+  const qc = useQueryClient()
   const lang = currentLanguage()
   const contacts = useContacts(book.id, true)
   const currencies = useCurrencies()
@@ -47,7 +48,7 @@ export function People({ book }: { book: Book }) {
     } catch (err) {
       setNotice({ error: err })
     }
-    await refetch(book.id, ['books', book.id, 'contacts'])
+    await qc.invalidateQueries({ queryKey: ['books', book.id, 'contacts'] })
   }
 
   const standing = (p: Contact) => {

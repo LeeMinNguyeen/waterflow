@@ -5,12 +5,12 @@ import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
 import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
+import { useQueryClient } from '@tanstack/react-query'
 import { useRef, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { CurrencyPicker } from '../components/CurrencyPicker'
 import { useErrorText } from '../components/errors'
-import { send, type Book, type Contact } from '../lib/api'
-import { useInvalidateAfterChange } from '../lib/queries'
+import { ApiError, send, type Book, type Contact } from '../lib/api'
 import { newId } from '../lib/uuid'
 import { DialogFooter } from '../components/DialogFooter'
 import { useToast } from '../lib/toast'
@@ -20,15 +20,18 @@ export function PersonDialog({ book, person, onClose }: { book: Book; person: Co
   const { t } = useTranslation()
   const toast = useToast()
   const errorText = useErrorText()
-  const refetch = useInvalidateAfterChange()
+  const qc = useQueryClient()
   const id = useRef(person?.id ?? newId())
   const [name, setName] = useState(person?.name ?? '')
   const [note, setNote] = useState(person?.note ?? '')
   const [currency, setCurrency] = useState<string | null>(person?.currency ?? book.base_currency)
-  // After a 409 the list reloads: the form shows the person as they are now, and saves with that version.
+  // After a 409 the list reloads: the form then shows the person as they are now, and saves with that version. A
+  // refetch while the user types leaves the form alone.
   const [shown, setShown] = useState(person?.version)
-  if (person && shown !== person.version) {
+  const [conflict, setConflict] = useState(false)
+  if (person && shown !== person.version && conflict) {
     setShown(person.version)
+    setConflict(false)
     setName(person.name)
     setNote(person.note ?? '')
   }
@@ -46,9 +49,10 @@ export function PersonDialog({ book, person, onClose }: { book: Book; person: Co
       onClose()
     } catch (err) {
       setError(err)
+      if (err instanceof ApiError && err.code === 'conflict') setConflict(true)
     } finally {
       setBusy(false)
-      await refetch(book.id, ['books', book.id, 'contacts'])
+      await qc.invalidateQueries({ queryKey: ['books', book.id, 'contacts'] })
     }
   }
 

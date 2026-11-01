@@ -1,4 +1,4 @@
-import { keepPreviousData, useInfiniteQuery, useQuery, useQueryClient, type QueryClient, type QueryKey } from '@tanstack/react-query'
+import { keepPreviousData, useInfiniteQuery, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
 import { api, type Account, type Bill, type Book, type Budget, type Category, type Contact, type Currency, type Dashboard, type HistoryEntry, type Instance, type InstallmentPlan, type Me, type Member, type BookInvite, type Payee, type TxnPage, type Usual } from './api'
 
@@ -129,16 +129,6 @@ export function useInvalidateBook() {
       qc.invalidateQueries({ queryKey: ['books', bookId, 'budgets'] }),
       qc.invalidateQueries({ queryKey: ['books', bookId, 'installments'] }),
     ])
-  }
-}
-
-// The user's own change to part of a book: the change marker is noted first, as useInvalidateBook does, then those
-// queries refetch.
-export function useInvalidateAfterChange() {
-  const qc = useQueryClient()
-  return async (bookId: string, ...queryKeys: QueryKey[]) => {
-    await noteMarker(qc, bookId)
-    await Promise.all(queryKeys.map((queryKey) => qc.invalidateQueries({ queryKey })))
   }
 }
 
