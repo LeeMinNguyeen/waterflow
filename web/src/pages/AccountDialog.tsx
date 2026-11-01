@@ -173,8 +173,8 @@ function AccountForm({ book, account, editing: startEditing = false, onTransacti
           last4: (last4Kinds.includes(form.kind) && form.last4) || null,
           in_net_worth: form.inNetWorth,
           contact_id: contactId,
-          opening_balance: owed ? -Math.abs(opening ?? 0) : (opening ?? 0),
-          opened_on: form.openedOn || null, // none: today
+          opening_balance: ledgerBalance(form.kind, opening ?? 0),
+          opened_on: form.openedOn || todayIn(book.timezone),
           ...details(),
         })
       }

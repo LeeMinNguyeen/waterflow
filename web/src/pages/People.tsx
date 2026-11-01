@@ -13,7 +13,6 @@ import MenuItem from '@mui/material/MenuItem'
 import Paper from '@mui/material/Paper'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
-import { useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router'
@@ -21,7 +20,7 @@ import { useErrorText } from '../components/errors'
 import { currentLanguage } from '../i18n'
 import { send, type Book, type Contact } from '../lib/api'
 import { useFormatMoney } from '../lib/hideAmounts'
-import { useContacts, useCurrencies } from '../lib/queries'
+import { useContacts, useCurrencies, useInvalidateAfterChange } from '../lib/queries'
 import { PersonDialog } from './PersonDialog'
 import { PageHeader } from '../components/Page'
 
@@ -29,7 +28,7 @@ export function People({ book }: { book: Book }) {
   const formatMoney = useFormatMoney()
   const { t } = useTranslation()
   const errorText = useErrorText()
-  const qc = useQueryClient()
+  const refetch = useInvalidateAfterChange()
   const lang = currentLanguage()
   const contacts = useContacts(book.id, true)
   const currencies = useCurrencies()
@@ -48,7 +47,7 @@ export function People({ book }: { book: Book }) {
     } catch (err) {
       setNotice({ error: err })
     }
-    await qc.invalidateQueries({ queryKey: ['books', book.id, 'contacts'] })
+    await refetch(book.id, ['books', book.id, 'contacts'])
   }
 
   const standing = (p: Contact) => {
@@ -98,7 +97,8 @@ export function People({ book }: { book: Book }) {
           if (r.archived) setNotice({ info: t('people.archivedInstead') })
         })}>{t('people.delete')}</MenuItem>
       </Menu>
-      {dialog && <PersonDialog book={book} person={dialog === 'new' ? null : dialog} onClose={() => setDialog(null)} />}
+      {dialog && <PersonDialog book={book} person={dialog === 'new' ? null : contacts.data?.find((p) => p.id === dialog.id) ?? dialog}
+        onClose={() => setDialog(null)} />}
     </Stack>
   )
 }

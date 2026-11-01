@@ -5,12 +5,12 @@ import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
 import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
-import { useQueryClient } from '@tanstack/react-query'
 import { useRef, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { CurrencyPicker } from '../components/CurrencyPicker'
 import { useErrorText } from '../components/errors'
 import { send, type Book, type Contact } from '../lib/api'
+import { useInvalidateAfterChange } from '../lib/queries'
 import { newId } from '../lib/uuid'
 import { DialogFooter } from '../components/DialogFooter'
 import { useToast } from '../lib/toast'
@@ -20,11 +20,18 @@ export function PersonDialog({ book, person, onClose }: { book: Book; person: Co
   const { t } = useTranslation()
   const toast = useToast()
   const errorText = useErrorText()
-  const qc = useQueryClient()
+  const refetch = useInvalidateAfterChange()
   const id = useRef(person?.id ?? newId())
   const [name, setName] = useState(person?.name ?? '')
   const [note, setNote] = useState(person?.note ?? '')
   const [currency, setCurrency] = useState<string | null>(person?.currency ?? book.base_currency)
+  // After a 409 the list reloads: the form shows the person as they are now, and saves with that version.
+  const [shown, setShown] = useState(person?.version)
+  if (person && shown !== person.version) {
+    setShown(person.version)
+    setName(person.name)
+    setNote(person.note ?? '')
+  }
   const [error, setError] = useState<unknown>(null)
   const [busy, setBusy] = useState(false)
 
@@ -41,7 +48,7 @@ export function PersonDialog({ book, person, onClose }: { book: Book; person: Co
       setError(err)
     } finally {
       setBusy(false)
-      await qc.invalidateQueries({ queryKey: ['books', book.id, 'contacts'] })
+      await refetch(book.id, ['books', book.id, 'contacts'])
     }
   }
 
