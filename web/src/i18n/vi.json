@@ -238,9 +238,11 @@
     "openingHint": "Dưới 0: số tiền tài khoản đang nợ.",
     "noMinus": "Loại giao dịch đã cho biết tiền vào hay ra: không cần dấu trừ.",
     "save": "Lưu",
+    "saveAndAdd": "Lưu và thêm tiếp",
     "delete": "Xóa",
     "deleteConfirm": "Xóa giao dịch này?",
     "history": "Lịch sử chỉnh sửa",
+    "duplicate": "Sao chép",
     "historyTitle": "Lịch sử chỉnh sửa",
     "actions": {
       "created": "Tạo",

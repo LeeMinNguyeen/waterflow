@@ -1,5 +1,6 @@
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import CloseIcon from '@mui/icons-material/Close'
+import ContentCopyIcon from '@mui/icons-material/ContentCopy'
 import DeleteIcon from '@mui/icons-material/DeleteOutlined'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import HistoryIcon from '@mui/icons-material/History'
@@ -76,6 +77,7 @@ type FormProps = Props & {
   minorOf: (currency: string) => number
   carry?: Partial<Form>
   onSwitchBook?: (book: Book, carry: Partial<Form>) => void
+  onDuplicate?: (carry: Partial<Form>) => void
 }
 
 // The form needs each currency's decimals to show saved amounts, so it waits for them. A new transaction can go
@@ -83,18 +85,21 @@ type FormProps = Props & {
 export function TxnDialog(props: Props) {
   const currencies = useCurrencies()
   const [into, setInto] = useState<{ book: Book; carry: Partial<Form> } | null>(null)
+  const [copy, setCopy] = useState<Partial<Form> | null>(null)
   if (!currencies.data) return null
   const map = currencies.data
   const book = into?.book ?? props.book
+  const txn = copy ? null : props.txn
   return (
-    <TxnForm key={book.id} {...props} book={book} carry={into?.carry} minorOf={(code) => map.get(code)?.minor_unit ?? 0}
-      onSwitchBook={props.txn ? undefined : (b, carry) => setInto({ book: b, carry })} />
+    <TxnForm key={copy ? `${book.id}:copy` : book.id} {...props} txn={txn} book={book} carry={into?.carry ?? copy ?? undefined}
+      minorOf={(code) => map.get(code)?.minor_unit ?? 0}
+      onSwitchBook={txn ? undefined : (b, carry) => setInto({ book: b, carry })} onDuplicate={setCopy} />
   )
 }
 
 // Amounts are typed as positive numbers; the type decides the sign (an expense
 // is money out). Adjustments and opening balances take a sign.
-function TxnForm({ book, txn: initial, defaults, onClose, minorOf, carry, onSwitchBook }: FormProps) {
+function TxnForm({ book, txn: initial, defaults, onClose, minorOf, carry, onSwitchBook, onDuplicate }: FormProps) {
   const { t } = useTranslation()
   const toast = useToast()
   const errorText = useErrorText()
@@ -119,8 +124,12 @@ function TxnForm({ book, txn: initial, defaults, onClose, minorOf, carry, onSwit
   const [planEdit, setPlanEdit] = useState<PlanForm | null>(null) // null: as saved
   const planId = useRef(newId())
   const set = (patch: Partial<Form>) => setForm((f) => ({ ...f, ...patch }))
-  // What the user set themselves, which a suggestion never overwrites; an account given by the caller counts.
-  const touched = useRef(new Set<'account' | 'category' | 'payee'>(defaults?.account ? ['account'] : []))
+  // What the user set themselves, which a suggestion never overwrites; an account given by the caller, and anything
+  // carried into a new form, count.
+  const touched = useRef(new Set<'account' | 'category' | 'payee'>([
+    ...(defaults?.account ? ['account' as const] : []),
+    ...(['account', 'category', 'payee'] as const).filter((field) => carry?.[field]),
+  ]))
   const choose = (field: 'account' | 'category' | 'payee', value: string) => {
     touched.current.add(field)
     set({ [field]: value })
@@ -245,8 +254,23 @@ function TxnForm({ book, txn: initial, defaults, onClose, minorOf, carry, onSwit
     await invalidate(book.id)
   }
 
-  async function submit(e: FormEvent) {
+  function submit(e: FormEvent) {
     e.preventDefault()
+    void save(false)
+  }
+
+  function startAnother() {
+    id.current = newId()
+    planId.current = newId()
+    setPlanEdit(null)
+    setSuggestion(null)
+    touched.current.delete('category')
+    touched.current.delete('payee')
+    setForm((f) => ({ ...f, amount: '', amountReceived: '', category: '', payee: '', note: '' }))
+    amountRef.current?.focus()
+  }
+
+  async function save(again: boolean) {
     if (!entries || !form.time) return
     setBusy(true)
     setError(null)
@@ -265,7 +289,8 @@ function TxnForm({ book, txn: initial, defaults, onClose, minorOf, carry, onSwit
       await savePlan()
       await invalidate(book.id)
       toast(t('toast.txnSaved'))
-      onClose()
+      if (again && !txn) startAnother()
+      else onClose()
     } catch (err) {
       if (err instanceof ApiError && err.status === 409 && txn) await reload(err)
       else setError(err)
@@ -293,6 +318,16 @@ function TxnForm({ book, txn: initial, defaults, onClose, minorOf, carry, onSwit
 
   const noAccounts = accounts.isSuccess && open.length === 0
   const readOnly = book.role === 'viewer'
+  const canDuplicate = !!txn && !!onDuplicate && !readOnly && !signedTypes.includes(txn.type)
+  function duplicate() {
+    if (!txn) return
+    const saved: Partial<Form> = toForm(txn, book, minorOf)
+    delete saved.date
+    delete saved.time
+    const live = (accountId?: string) => (accountId && !byId.get(accountId)?.archived_at ? accountId : '')
+    const category = categories.data?.find((c) => c.id === saved.category)
+    onDuplicate?.({ ...saved, account: live(saved.account), toAccount: live(saved.toAccount), category: category && !category.archived_at ? category.id : '' })
+  }
   const openingBalance = form.type === 'opening_balance'
   // As the account form shows it: what a credit card or loan owes is positive.
   const owedOpening = openingBalance && !!from && liabilityKinds.includes(from.kind)
@@ -472,10 +507,16 @@ function TxnForm({ book, txn: initial, defaults, onClose, minorOf, carry, onSwit
               sx={{ minHeight: 52, borderRadius: 999, fontSize: 16, fontWeight: 600 }}>
               {t('txn.save')}
             </Button>
+            {!txn && (
+              <Button fullWidth disabled={!ready || busy} onClick={() => void save(true)} sx={{ mt: 0.5, minHeight: 44, fontWeight: 600 }}>
+                {t('txn.saveAndAdd')}
+              </Button>
+            )}
           </Box>
         )}
         <Menu anchorEl={actions} open={!!actions} onClose={() => setActions(null)}>
           <MenuItem onClick={() => { setActions(null); setShowHistory(true) }}>{t('txn.history')}</MenuItem>
+          {canDuplicate && <MenuItem onClick={() => { setActions(null); duplicate() }}>{t('txn.duplicate')}</MenuItem>}
           {!readOnly && <MenuItem onClick={() => { setActions(null); setConfirmDelete(true) }}>{t('txn.delete')}</MenuItem>}
         </Menu>
         <Sheet open={sheet === 'book'} title={t('book.switch')} onClose={() => setSheet(null)}>
@@ -516,7 +557,7 @@ function TxnForm({ book, txn: initial, defaults, onClose, minorOf, carry, onSwit
 
   return (
     <Dialog open onClose={onClose} fullWidth maxWidth="sm"
-      slotProps={{ paper: { component: 'form', onSubmit: submit, sx: { maxWidth: 520 } }, transition: { onEntered: focusAmount } }}>
+      slotProps={{ paper: { component: 'form', onSubmit: submit }, transition: { onEntered: focusAmount } }}>
       <DialogTitle sx={{ pr: 7 }}>
         {t(txn ? 'txn.edit' : 'txn.add')}
         <IconButton size="small" aria-label={t('common.close')} onClick={onClose} sx={{ position: 'absolute', right: 16, top: 18 }}>
@@ -635,6 +676,11 @@ function TxnForm({ book, txn: initial, defaults, onClose, minorOf, carry, onSwit
             <Button startIcon={<HistoryIcon />} onClick={() => setShowHistory(true)}>
               {t('txn.history')}
             </Button>
+            {canDuplicate && (
+              <Button startIcon={<ContentCopyIcon />} onClick={duplicate}>
+                {t('txn.duplicate')}
+              </Button>
+            )}
             {!readOnly && (
               <Button color="error" startIcon={<DeleteIcon />} onClick={() => setConfirmDelete(true)}>
                 {t('txn.delete')}
@@ -644,6 +690,11 @@ function TxnForm({ book, txn: initial, defaults, onClose, minorOf, carry, onSwit
         )}
         <Box sx={{ flex: 1 }} />
         <Button onClick={onClose}>{t('common.cancel')}</Button>
+        {!readOnly && !txn && (
+          <Button variant="outlined" disabled={!ready || busy} onClick={() => void save(true)}>
+            {t('txn.saveAndAdd')}
+          </Button>
+        )}
         {!readOnly && (
           <Button type="submit" variant="contained" loading={busy} disabled={!ready}>
             {t('txn.save')}

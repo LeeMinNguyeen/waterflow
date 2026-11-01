@@ -238,9 +238,11 @@
     "openingHint": "Below zero: what the account owed.",
     "noMinus": "The type says which way the money goes: no minus needed.",
     "save": "Save",
+    "saveAndAdd": "Save and add another",
     "delete": "Delete",
     "deleteConfirm": "Delete this transaction?",
     "history": "Edit history",
+    "duplicate": "Duplicate",
     "historyTitle": "Edit history",
     "actions": {
       "created": "Created",
