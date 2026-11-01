@@ -234,3 +234,57 @@ describe('after saving', () => {
     expect(screen.queryByText('Transaction saved')).not.toBeInTheDocument()
   })
 })
+
+describe('the sign of an amount (waterflow#137)', () => {
+  const bank: Account = { ...cash, id: 'bank', name: 'Bank', kind: 'checking', balance: -5_000_000 }
+  const opening: Transaction = { ...lunch, type: 'opening_balance', payee: null, entries: [{ account_id: 'bank', amount: -5_000_000, currency: 'VND' }] }
+  const adjustment: Transaction = { ...lunch, type: 'adjustment', payee: null, entries: [{ account_id: 'bank', amount: -30_000, currency: 'VND' }] }
+  function bankServer() {
+    return fakeApi({
+      'GET /v1/currencies': currencies,
+      'GET /v1/books/b1/accounts': [bank],
+      'GET /v1/books/b1/categories': [],
+      'POST /v1/books/b1/transactions': ({ body }: { body: unknown }) => body,
+      'PUT /v1/books/b1/transactions/t1': ({ body }: { body: unknown }) => body,
+    })
+  }
+
+  it('shows the minus of an opening balance, and keeps it when saved unchanged', async () => {
+    const api = bankServer()
+    await renderApp(<TxnDialog book={book} txn={opening} onClose={() => {}} />)
+    expect(await screen.findByLabelText(/^Amount/)).toHaveValue('-5,000,000')
+    expect(screen.getByText('Below zero: what the account owed.')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(api.writes()).toHaveLength(1))
+    expect(api.writes()[0].body).toMatchObject({ type: 'opening_balance', entries: [{ account_id: 'bank', amount: -5_000_000 }] })
+  })
+
+  it('saves a minus typed on an opening balance', async () => {
+    const api = bankServer()
+    await renderApp(<TxnDialog book={book} txn={opening} onClose={() => {}} />)
+    const amount = await screen.findByLabelText(/^Amount/)
+    await userEvent.clear(amount)
+    await userEvent.type(amount, '-200000')
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(api.writes()).toHaveLength(1))
+    expect(api.writes()[0].body).toMatchObject({ entries: [{ account_id: 'bank', amount: -200_000 }] })
+  })
+
+  it('refuses a minus on an expense, and says why', async () => {
+    const api = bankServer()
+    await renderApp(<TxnDialog book={book} txn={null} defaults={{ account: 'bank' }} onClose={() => {}} />)
+    await userEvent.type(await screen.findByLabelText(/^Amount/), '-45000')
+    expect(screen.getByText('The type says which way the money goes: no minus needed.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+    expect(api.writes()).toHaveLength(0)
+  })
+
+  it('keeps the minus of an adjustment, as before', async () => {
+    const api = bankServer()
+    await renderApp(<TxnDialog book={book} txn={adjustment} onClose={() => {}} />)
+    expect(await screen.findByLabelText(/^Amount/)).toHaveValue('-30,000')
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(api.writes()).toHaveLength(1))
+    expect(api.writes()[0].body).toMatchObject({ type: 'adjustment', entries: [{ account_id: 'bank', amount: -30_000 }] })
+  })
+})

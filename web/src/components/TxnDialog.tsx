@@ -109,17 +109,23 @@ function TxnForm({ book, txn: initial, defaults, onClose, minorOf }: Props & { m
     [categories.data, kind, form.category],
   )
 
+  const signed = form.type === 'adjustment' || form.type === 'opening_balance'
+  const typedAmount = parseAmount(form.amount, minor(account), lang)
+  const typedReceived = crossCurrency ? parseAmount(form.amountReceived, minor(form.toAccount), lang) : null
+  const minus = !signed && (typedAmount ?? 0) < 0
+  const receivedMinus = (typedReceived ?? 0) < 0
+
   function money(): { account_id: string; amount: number }[] | null {
-    const a = parseAmount(form.amount, minor(account), lang)
+    const a = typedAmount
     if (a === null || a === 0 || !account) return null
-    if (form.type === 'adjustment') return [{ account_id: account, amount: a }]
-    const abs = Math.abs(a)
-    if (form.type === 'expense') return [{ account_id: account, amount: -abs }]
-    if (!transfer) return [{ account_id: account, amount: abs }]
+    if (signed) return [{ account_id: account, amount: a }]
+    if (a < 0) return null
+    if (form.type === 'expense') return [{ account_id: account, amount: -a }]
+    if (!transfer) return [{ account_id: account, amount: a }]
     if (!form.toAccount || form.toAccount === account) return null
-    const received = crossCurrency ? parseAmount(form.amountReceived, minor(form.toAccount), lang) : abs
-    if (received === null || received === 0) return null
-    return [{ account_id: account, amount: -abs }, { account_id: form.toAccount, amount: Math.abs(received) }]
+    const received = crossCurrency ? typedReceived : a
+    if (received === null || received <= 0) return null
+    return [{ account_id: account, amount: -a }, { account_id: form.toAccount, amount: received }]
   }
   const entries = money()
 
@@ -298,7 +304,8 @@ function TxnForm({ book, txn: initial, defaults, onClose, minorOf }: Props & { m
               value={form.amount}
               onChange={(v) => set({ amount: v })}
               minorUnit={minor(account)}
-              helperText={form.type === 'adjustment' ? t('txn.adjustmentHint') : from?.currency}
+              error={minus}
+              helperText={minus ? t('txn.noMinus') : form.type === 'adjustment' ? t('txn.adjustmentHint') : openingBalance ? t('txn.openingHint') : from?.currency}
             />
             <DateField label={t('txn.date')} required value={form.date} onChange={(date) => set({ date })} sx={{ maxWidth: { sm: 190 } }} />
             <TimeField label={t('txn.time')} required value={form.time} onChange={(time) => set({ time })} sx={{ maxWidth: { sm: 110 } }} />
@@ -333,6 +340,8 @@ function TxnForm({ book, txn: initial, defaults, onClose, minorOf }: Props & { m
               value={form.amountReceived}
               onChange={(v) => set({ amountReceived: v })}
               minorUnit={minor(form.toAccount)}
+              error={receivedMinus}
+              helperText={receivedMinus ? t('txn.noMinus') : undefined}
             />
           )}
           {kind && (
@@ -404,7 +413,7 @@ function toForm(txn: Transaction | null | undefined, book: Book, minorOf: (curre
     time: txn.occurred_time.slice(0, 5),
     account: transfer ? out.account_id : txn.entries[0].account_id,
     toAccount: transfer && into ? into.account_id : '',
-    amount: text(transfer ? out : txn.entries[0], txn.type === 'adjustment'),
+    amount: text(transfer ? out : txn.entries[0], txn.type === 'adjustment' || txn.type === 'opening_balance'),
     amountReceived: transfer && into ? text(into) : '',
     category: txn.category_id ?? '',
     payee: txn.payee ?? '',
