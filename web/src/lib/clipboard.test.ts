@@ -19,4 +19,23 @@ describe('copying on a server reached over plain http (review #166)', () => {
     expect(await copyText('abc')).toBe(true)
     expect(writeText).toHaveBeenCalledWith('abc')
   })
+
+  it('selects the text beside the focused button, and gives the focus back', async () => {
+    vi.stubGlobal('navigator', { ...navigator, clipboard: undefined })
+    const box = document.body.appendChild(document.createElement('div'))
+    const button = box.appendChild(document.createElement('button'))
+    button.focus()
+    let selected = ''
+    let where: Element | null = null
+    document.execCommand = vi.fn(() => {
+      const area = document.activeElement as HTMLTextAreaElement
+      selected = area.value.slice(area.selectionStart, area.selectionEnd)
+      where = area.parentElement
+      return true
+    })
+    expect(await copyText('codes')).toBe(true)
+    expect([selected, where]).toEqual(['codes', box])
+    expect(document.activeElement).toBe(button)
+    box.remove()
+  })
 })

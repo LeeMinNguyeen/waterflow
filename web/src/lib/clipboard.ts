@@ -9,16 +9,21 @@ export async function copyText(text: string): Promise<boolean> {
       // refused (no focus, no permission): try the other way
     }
   }
+  // Beside the focused element, so a dialog's focus trap lets the text area keep the focus its selection needs.
+  const before = document.activeElement instanceof HTMLElement ? document.activeElement : null
   const area = Object.assign(document.createElement('textarea'), { value: text, readOnly: true })
   area.style.position = 'fixed'
   area.style.opacity = '0'
-  document.body.appendChild(area)
+  ;(before?.parentElement ?? document.body).appendChild(area)
+  area.focus()
   area.select()
+  area.setSelectionRange(0, text.length)
   try {
     return document.execCommand('copy')
   } catch {
     return false
   } finally {
     area.remove()
+    before?.focus()
   }
 }
