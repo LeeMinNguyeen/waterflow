@@ -102,6 +102,16 @@ describe('colour for meaning (waterflow#143)', () => {
     expect(budgets.getByRole('progressbar', { name: 'Groceries · Monthly' }).firstElementChild).toHaveStyle({ backgroundColor: '#D97757' })
   })
 
+  it("opens a budget's dialog from its bar, to change it (waterflow#139)", async () => {
+    dashServer({ budgets: [{ budget_id: 'bu1', category_id: 'c1', category: 'Food & drink', period: 'monthly', period_start: '2026-10-01',
+      period_end: '2026-10-31', budget: 1_500_000, spent: 600_000, remaining: 900_000, percent_used: 40, not_converted: 0 }] },
+    { 'GET /v1/books/b1/categories': [food], 'GET /v1/books/b1/budgets': [] })
+    await renderApp(<Dashboard book={book} />)
+    const budgets = await cardOf('Budgets')
+    await userEvent.click(budgets.getByRole('button', { name: /Food & drink · Monthly/ }))
+    expect(await screen.findByRole('dialog', { name: 'Budgets · Food & drink' })).toBeInTheDocument()
+  })
+
   it('shows spending red with its minus, income green with its plus, and a transfer plain', async () => {
     dashServer({ recent_transactions: [
       { ...txn(1), payee: 'Phở Thìn', amount: -85_000 },

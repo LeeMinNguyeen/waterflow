@@ -109,7 +109,8 @@ export function Categories({ book }: { book: Book }) {
                       <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: c.color ?? 'text.disabled', mr: 1.5, flexShrink: 0 }} />
                       <ListItemText primary={c.name} secondary={shown.get(c.id) && (
                         <BudgetBar label={t(`budget.periods.${shown.get(c.id)!.period}`)} spent={shown.get(c.id)!.progress!.spent}
-                          budget={shown.get(c.id)!.amount} percent={shown.get(c.id)!.progress!.percent_used} color={c.color} format={money} />
+                          budget={shown.get(c.id)!.amount} percent={shown.get(c.id)!.progress!.percent_used} color={c.color} format={money}
+                          onClick={() => setBudgetFor(c)} />
                       )} slotProps={{ secondary: { component: 'div' } }} sx={{ pr: 1 }} />
                       {c.archived_at && <Chip size="small" label={t('cat.archived')} />}
                     </ListItemButton>
