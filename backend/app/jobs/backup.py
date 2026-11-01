@@ -77,7 +77,8 @@ def _split(url: str) -> tuple[str, str]:
 def _scrub(message: str, url: str) -> str:
     """Hide the URL and its password, encoded or not, in a message."""
     raw = url.partition("://")[2].rpartition("@")[0].partition(":")[2]
-    secrets = {url, raw, unquote(raw)}
+    # An unencoded @ in the password splits it, and libpq then quotes the part after it as the host.
+    secrets = {url, raw, unquote(raw), *raw.split("@")}
     with contextlib.suppress(Exception):
         secrets.add(conninfo_to_dict(url).get("password") or "")
     for secret in sorted(filter(None, secrets), key=len, reverse=True):

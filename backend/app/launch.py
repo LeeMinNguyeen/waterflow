@@ -80,8 +80,10 @@ def wait_for(url: str, seconds: int = 120) -> None:
             return
         except psycopg.OperationalError as e:
             if time.monotonic() > deadline:
-                raise SystemExit(f"the database isn't reachable: {str(e).splitlines()[0]}") from None
+                raise SystemExit(f"the database isn't reachable: {backup._scrub(str(e).splitlines()[0], url)}") from None
             time.sleep(2)
+        except psycopg.Error as e:       # a URL psycopg can't read: its message may quote the password
+            raise SystemExit(f"ADMIN_DATABASE_URL can't be read: {backup._scrub(str(e).splitlines()[0], url)}") from None
 
 
 def print_setup_code(code: str) -> None:
