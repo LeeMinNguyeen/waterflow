@@ -599,14 +599,14 @@ def test_an_update_whose_backup_fails_stops_with_a_plain_reason(monkeypatch):
         raise backup.BackupError("pg_dump failed: pg_dump: error: aborting because of server version mismatch")
     monkeypatch.setattr(backup, "run_backup", mismatch)
     with pytest.raises(SystemExit) as stopped:
-        launch.backup_before_updating("postgresql://u:p@db/x", "/tmp")
+        launch.backup_before_updating("postgresql://u:secret-pw@db/x", "/tmp")
     assert "nothing was updated" in str(stopped.value) and "Own database" in str(stopped.value)
 
     def full(*_):
         raise backup.BackupError("no space left on device")
     monkeypatch.setattr(backup, "run_backup", full)
     with pytest.raises(SystemExit) as stopped:
-        launch.backup_before_updating("postgresql://u:p@db/x", "/tmp")
+        launch.backup_before_updating("postgresql://u:secret-pw@db/x", "/tmp")
     assert "no space left" in str(stopped.value) and "Own database" not in str(stopped.value)
 
 
