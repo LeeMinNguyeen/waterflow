@@ -283,6 +283,15 @@ function TxnForm({ book, txn: initial, defaults, onClose, minorOf, carry, onSwit
   const openingBalance = form.type === 'opening_balance'
   // As the account form shows it: what a credit card or loan owes is positive.
   const owedOpening = openingBalance && !!from && liabilityKinds.includes(from.kind)
+  const amountField = {
+    value: owedOpening ? negated(form.amount) : form.amount,
+    onChange: (v: string) => set({ amount: owedOpening ? negated(v) : v }),
+    minorUnit: minor(account),
+    error: minus,
+  }
+  const amountHint = minus ? t('txn.noMinus') : form.type === 'adjustment' ? t('txn.adjustmentHint')
+    : openingBalance && !owedOpening ? t('txn.openingHint') : undefined
+  const waitingForAccount = openingBalance && !from
   const accountLabel = (a: Account) => `${a.name} · ${formatMoney(a.balance, a.currency, minor(a.id), lang)}`
   const people = open.filter((a) => a.kind === 'person')
   const accountOptions = [
@@ -378,13 +387,9 @@ function TxnForm({ book, txn: initial, defaults, onClose, minorOf, carry, onSwit
               <AmountField
                 ariaLabel={t(owedOpening ? 'accounts.amountOwed' : 'txn.amount')}
                 inputRef={amountRef}
-                value={owedOpening ? negated(form.amount) : form.amount}
-                onChange={(v) => set({ amount: owedOpening ? negated(v) : v })}
-                minorUnit={minor(account)}
-                disabled={readOnly}
-                error={minus}
-                helperText={minus ? t('txn.noMinus') : form.type === 'adjustment' ? t('txn.adjustmentHint')
-                  : openingBalance && !owedOpening ? t('txn.openingHint') : undefined}
+                {...amountField}
+                disabled={readOnly || waitingForAccount}
+                helperText={amountHint ?? (owedOpening ? t('accounts.amountOwed') : undefined)}
                 sx={{ '& .MuiOutlinedInput-notchedOutline': { border: 0 }, '& .MuiOutlinedInput-root.Mui-focused': { boxShadow: 'none' },
                   '& .MuiOutlinedInput-input': { p: 0, fontSize: 40, lineHeight: '48px', height: 48, fontWeight: 500, color: tone,
                     fontVariantNumeric: 'tabular-nums' } }}
@@ -536,13 +541,10 @@ function TxnForm({ book, txn: initial, defaults, onClose, minorOf, carry, onSwit
             label={t(owedOpening ? 'accounts.amountOwed' : 'txn.amount')}
             required
             inputRef={amountRef}
-            value={owedOpening ? negated(form.amount) : form.amount}
-            onChange={(v) => set({ amount: owedOpening ? negated(v) : v })}
-            minorUnit={minor(account)}
+            {...amountField}
+            disabled={waitingForAccount}
             unit={from?.currency ?? book.base_currency}
-            error={minus}
-            helperText={minus ? t('txn.noMinus') : form.type === 'adjustment' ? t('txn.adjustmentHint')
-              : openingBalance && !owedOpening ? t('txn.openingHint') : undefined}
+            helperText={amountHint}
           />
           <Box sx={two}>
             <TextField
