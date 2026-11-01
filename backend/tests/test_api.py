@@ -110,6 +110,21 @@ def test_web_app_files_and_routes(client, tmp_path, monkeypatch):
     assert client.get("/../../etc/passwd").text == "<html>app</html>"        # never outside the web app's folder
 
 
+def test_home_screen_manifest(client, tmp_path, monkeypatch):
+    """The web app's manifest is served as application/manifest+json, which phones need to offer adding it."""
+    from pathlib import Path
+    from app.core import settings
+    manifest = Path(__file__).resolve().parents[2] / "web" / "public" / "manifest.webmanifest"
+    (tmp_path / "index.html").write_text("<html>app</html>")
+    (tmp_path / "manifest.webmanifest").write_bytes(manifest.read_bytes())
+    monkeypatch.setattr(settings, "settings", settings.Settings(web_dir=tmp_path))
+    import app.api.main as main
+    monkeypatch.setattr(main, "settings", settings.settings)
+    r = client.get("/manifest.webmanifest")
+    assert r.headers["content-type"].startswith("application/manifest+json")
+    assert r.json()["name"] == "Waterflow"
+
+
 def test_currencies(client):
     ccy = {c["code"]: c for c in client.get("/v1/currencies", headers=auth(signed_up(client))).json()}
     assert ccy["VND"]["minor_unit"] == 0 and ccy["KWD"]["minor_unit"] == 3 and len(ccy) == 155
