@@ -600,6 +600,17 @@ def test_a_bad_database_url_never_prints_its_password():
         assert secret not in str(stopped.value)
 
 
+@pytest.mark.parametrize("password", ["cd@SECRET/XY", "cd@SE:CRET", "cd@SECRET:54x", "cd@SECRET,XYZW", "cd@SECRET?XY",
+                                      "cd@SECR%41ET", "Tr0ub4dor&3horse?", "SECRET#XY"])
+def test_an_ambiguous_database_url_is_refused_before_it_is_read(monkeypatch, password):
+    """libpq and urlsplit would read part of such a password as the host, port or query, and quote it."""
+    from app import launch
+    monkeypatch.setenv("ADMIN_DATABASE_URL", f"postgresql://u:{password}@127.0.0.1:5432/x")
+    with pytest.raises(SystemExit) as stopped:
+        launch.admin_url()
+    assert not any(piece in str(stopped.value) for piece in ("SECRET", "SECR", "CRET", "XY", "Tr0ub4dor", "horse"))
+
+
 def test_the_access_log_leaves_out_query_strings(client, caplog):
     """Reset links (/reset?token=) and invite links (/join?code=) carry their secret in the query string."""
     import app.api.main  # noqa: F401  (adds the access log's filter)

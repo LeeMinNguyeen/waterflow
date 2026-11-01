@@ -54,6 +54,10 @@ def login_passwords() -> dict[str, str]:
 def admin_url() -> str:
     own = os.environ.get("ADMIN_DATABASE_URL", "").strip()
     if own:
+        # An unencoded @ / ? # in the password makes libpq and urlsplit read part of it as the host, port or query,
+        # and quote it in their errors: refused before anything reads the URL, with nothing of it in the message.
+        if any(c in own.partition("://")[2].rpartition("@")[0] for c in "@/?#"):
+            raise SystemExit("ADMIN_DATABASE_URL: percent-encode @ / ? # in the password (%40 %2F %3F %23)")
         return own.replace("postgresql+psycopg://", "postgresql://")
     password = POSTGRES_PASSWORD.read_text().strip()
     return f"postgresql://postgres:{password}@db:5432/postgres?sslmode=disable"
