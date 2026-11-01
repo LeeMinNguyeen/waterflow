@@ -102,7 +102,8 @@ export function BookMembers({ book }: { book: Book }) {
             />
             {owner ? (
               <TextField select size="small" value={m.role} disabled={busy} sx={{ width: 160, flexShrink: 0, mr: 5 }}
-                aria-label={t('members.roleLabel')} onChange={(e) => changeRole(m, e.target.value as Role)}>
+                slotProps={{ htmlInput: { 'aria-label': t('members.roleOf', { name: m.name }) } }}
+                onChange={(e) => changeRole(m, e.target.value as Role)}>
                 {ROLES.map((r) => <MenuItem key={r} value={r}>{t(`members.role.${r}`)}</MenuItem>)}
               </TextField>
             ) : (

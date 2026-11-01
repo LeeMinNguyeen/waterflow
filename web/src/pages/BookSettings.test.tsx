@@ -43,3 +43,18 @@ describe('book settings once the book reloads with a new version (review #166)',
     expect(screen.getByText(/changed somewhere else/)).toBeInTheDocument()
   })
 })
+
+describe('members (review #166)', () => {
+  it("names each member's role select after the member", async () => {
+    fakeApi({
+      'GET /v1/currencies': currencies,
+      'GET /v1/books': [book],
+      'GET /v1/books/b1/members': [
+        { user_id: 'u1', name: 'lan', display_name: null, role: 'owner', pending: false, me: true },
+        { user_id: 'u2', name: 'bob', display_name: null, role: 'editor', pending: false, me: false },
+      ],
+    })
+    await renderApp(<BookSettings book={book} />)
+    expect(await screen.findByRole('combobox', { name: /bob/ })).toBeInTheDocument()
+  })
+})

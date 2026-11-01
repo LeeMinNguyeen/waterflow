@@ -11,7 +11,7 @@ import useMediaQuery from '@mui/material/useMediaQuery'
 import { useTheme } from '@mui/material/styles'
 import { Fragment, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useNavigate } from 'react-router'
+import { Link as RouterLink, useNavigate } from 'react-router'
 import { Bar } from '../components/Bar'
 import { BudgetBar } from '../components/BudgetBar'
 import { CashflowChart } from '../components/charts/CashflowChart'
@@ -174,8 +174,9 @@ export function Dashboard({ book }: { book: Book }) {
         const name = b.id ? nameOf.get(b.id) ?? '' : t('dash.uncategorized')
         const color = b.id ? colorOf.get(b.id) : null
         return (
-          <Box key={b.id ?? 'none'} onClick={() => b.id && navigate(`/books/${book.id}/transactions?category_id=${b.id}`)}
-            sx={{ py: 1.125, cursor: b.id ? 'pointer' : undefined }}>
+          <Box key={b.id ?? 'none'} {...(b.id && { component: RouterLink, to: `/books/${book.id}/transactions?category_id=${b.id}` })}
+            sx={{ display: 'block', py: 1.125, color: 'inherit', textDecoration: 'none', borderRadius: 1,
+              '&:focus-visible': { outline: 2, outlineColor: 'primary.main', outlineOffset: 2 } }}>
             <Stack direction="row" spacing={1.25} sx={{ alignItems: 'center', mb: 1 }}>
               <Dot color={color} />
               <Typography noWrap sx={{ flex: 1, minWidth: 0 }}>{name}</Typography>

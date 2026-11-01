@@ -561,6 +561,7 @@
     "intro": "People on this server who keep this book with you. They see everything in it.",
     "username": "Username",
     "roleLabel": "Role",
+    "roleOf": "{{name}}’s role",
     "invite": "Invite",
     "invited": "Invited {{name}}. They'll see the invite when they sign in.",
     "roles": "Owner: everything, including members and settings. Editor: adds and changes accounts, transactions, categories and budgets. Viewer: can only look.",
@@ -635,6 +636,7 @@
   },
   "toast": {
     "budgetAdded": "Budget added",
+    "copied": "Copied",
     "budgetSaved": "Budget saved",
     "txnSaved": "Transaction saved",
     "txnDeleted": "Transaction deleted",
