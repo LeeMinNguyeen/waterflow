@@ -114,6 +114,13 @@ def prune(backup_dir: str, now: datetime) -> list[str]:
     return old
 
 
+def _free_path(backup_dir: str, now: datetime) -> str:
+    """This second's dump name, or the next free second's: a backup never replaces another."""
+    while os.path.exists(path := os.path.join(backup_dir, f"waterflow-{now:%Y%m%dT%H%M%SZ}.dump")):
+        now += timedelta(seconds=1)
+    return path
+
+
 def run_backup(database_url: str, backup_dir: str) -> tuple[str, dict[str, int], list[str]]:
     """Writes one dump into backup_dir, then prunes. Returns its path, its table count per schema
     and the names of the old dumps deleted."""
@@ -136,7 +143,7 @@ def run_backup(database_url: str, backup_dir: str) -> tuple[str, dict[str, int],
         tables = {s: toc.count(f" TABLE DATA {s} ") for s in SCHEMAS}
         if not tables["public"]:
             raise BackupError("the dump has no tables in schema public: wrong database?")
-        final = os.path.join(backup_dir, name)
+        final = _free_path(backup_dir, now)
         partial = final + ".partial"
         try:
             # Owner-only: a dump holds password hashes and two-factor secrets.

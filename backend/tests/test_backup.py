@@ -208,6 +208,27 @@ def test_old_dumps_are_deleted_after_a_good_one(source, tmp_path):
     assert run_job(libpq_url("no_such_db"), bucket).returncode == 1 and old in os.listdir(bucket)
 
 
+def test_a_backup_in_the_same_second_keeps_the_one_before(source, tmp_path, monkeypatch):
+    """A restore backs up the database, then the migrations back it up again, often within one second."""
+    from app.jobs import backup as job
+    bucket = tmp_path / "bucket"
+    bucket.mkdir()
+    second = datetime.now(timezone.utc).replace(microsecond=0)
+
+    class Frozen(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return second
+
+    monkeypatch.setattr(job, "datetime", Frozen)
+    first, _, _ = job.run_backup(libpq_url(SOURCE), str(bucket))
+    inode = os.stat(first).st_ino
+    later, _, _ = job.run_backup(libpq_url(SOURCE), str(bucket))
+    assert later != first and os.stat(first).st_ino == inode
+    assert sorted(os.listdir(bucket)) == [f"waterflow-{second:%Y%m%dT%H%M%SZ}.dump",
+                                          f"waterflow-{second + timedelta(seconds=1):%Y%m%dT%H%M%SZ}.dump"]
+
+
 @pytest.mark.parametrize("url", [
     libpq_url("no_such_db", username="nobody", password=SECRET),       # pg_dump can't connect
     f"postgresql+psycopg://nobody:{quote(SECRET)}@localhost/x",         # not a URL pg_dump takes
