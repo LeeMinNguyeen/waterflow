@@ -592,7 +592,7 @@ def test_setup_creates_the_admin_once(fresh_server, monkeypatch):
 
 
 def test_a_bad_database_url_never_prints_its_password():
-    """A typo in ADMIN_DATABASE_URL (a stray %, an unencoded @) used to put its password in the log."""
+    """A typo in ADMIN_DATABASE_URL (a stray %, an unencoded @) never puts its password in the log."""
     from app import launch
     for url, secret in (("postgresql://u:ab%zzsecret@127.0.0.1:1/x", "zzsecret"), ("postgresql://u:cd@SECRET@127.0.0.1:1/x", "SECRET")):
         with pytest.raises(SystemExit) as stopped:
@@ -698,8 +698,8 @@ def test_job_schedule_times(monkeypatch):
     # A run that failed: again at the next hourly run, until it works. That run may start a little earlier in the
     # hour than the failed job did, which started after the jobs before it (Cloud Scheduler).
     failed_at = {"last_started_at": t(2026, 10, 21, 3, 30), "last_result": "failed"}
-    assert not due(t(2026, 10, 21, 4, 20), **failed_at) and due(t(2026, 10, 21, 4, 30), **failed_at)
-    assert due(t(2026, 10, 21, 4, 29, 35), **failed_at)
+    assert not due(t(2026, 10, 21, 4, 10), **failed_at) and due(t(2026, 10, 21, 4, 30), **failed_at)
+    assert due(t(2026, 10, 21, 4, 29, 35), **failed_at) and due(t(2026, 10, 21, 4, 23, 50), **failed_at)
     assert not due(t(2026, 10, 21, 4, 30), **failed_at | {"last_result": "done"})
     assert not due(t(2026, 10, 21, 4, 30), **failed_at | {"enabled": False})
 

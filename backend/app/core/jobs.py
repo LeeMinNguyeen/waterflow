@@ -47,8 +47,9 @@ def is_due(now: datetime, job: Mapping) -> bool:
     """`job` is a row of job_schedule()."""
     if not job["enabled"]:
         return False
-    # The next hourly run can start a little earlier in its hour than the failed job did, after the jobs before it.
-    if job.get("last_result") == "failed" and job["last_started_at"] and now - job["last_started_at"] >= RETRY - timedelta(minutes=5):
+    # The next hourly run can start earlier in its hour than the failed job did, which waited for the jobs before it
+    # (a backup can take a quarter of an hour).
+    if job.get("last_result") == "failed" and job["last_started_at"] and now - job["last_started_at"] >= RETRY - timedelta(minutes=15):
         return True
     since = max((t for t in (job["last_started_at"], job["changed_at"]) if t is not None), default=None)
     return since is None or last_time(now, job["at_minute"], job["timezone"]) > since
