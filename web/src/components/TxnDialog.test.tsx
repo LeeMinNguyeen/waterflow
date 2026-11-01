@@ -593,3 +593,18 @@ describe('a ± button where an amount can be below zero (waterflow#155)', () => 
     }
   })
 })
+
+describe('the amount on a phone (waterflow#161)', () => {
+  beforeEach(() => phone(true))
+  afterEach(() => phone(false))
+
+  it('has no box around it while typing, only the line under its row', async () => {
+    server()
+    await renderApp(<TxnDialog book={book} txn={null} onClose={() => {}} />)
+    const amount = await screen.findByLabelText('Amount')
+    await userEvent.type(amount, '45000')
+    expect(amount).toHaveFocus()
+    const outline = amount.closest('.MuiOutlinedInput-root')!.querySelector('.MuiOutlinedInput-notchedOutline')!
+    expect(outline).toHaveStyle({ borderWidth: '0px' })
+  })
+})

@@ -391,7 +391,8 @@ function TxnForm({ book, txn: initial, defaults, onClose, minorOf, carry, onSwit
                 {...amountField}
                 disabled={readOnly || waitingForAccount}
                 helperText={amountHint ?? (owedOpening ? t('accounts.amountOwed') : undefined)}
-                sx={{ '& .MuiOutlinedInput-notchedOutline': { border: 0 }, '& .MuiOutlinedInput-root.Mui-focused': { boxShadow: 'none' },
+                sx={{ '& .MuiOutlinedInput-notchedOutline, & .MuiOutlinedInput-root.Mui-focused .MuiOutlinedInput-notchedOutline': { border: 0 },
+                  '& .MuiOutlinedInput-root.Mui-focused': { boxShadow: 'none' },
                   '& .MuiOutlinedInput-input': { p: 0, fontSize: 40, lineHeight: '48px', height: 48, fontWeight: 500, color: tone,
                     fontVariantNumeric: 'tabular-nums' } }}
               />
