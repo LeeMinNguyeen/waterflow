@@ -1,8 +1,10 @@
 import IconButton from '@mui/material/IconButton'
 import InputAdornment from '@mui/material/InputAdornment'
 import TextField, { type TextFieldProps } from '@mui/material/TextField'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { currentLanguage } from '../i18n'
+import { useHideAmounts } from '../lib/hideAmounts'
 import { groupWhileTyping, parseAmount } from '../lib/money'
 
 type Props = Omit<TextFieldProps, 'value' | 'onChange'> & {
@@ -20,6 +22,8 @@ type Props = Omit<TextFieldProps, 'value' | 'onChange'> & {
 // language's separators ("1.250" in Vietnamese is one thousand two hundred fifty).
 export function AmountField({ value, onChange, minorUnit, big = false, unit, ariaLabel, signed = false, sx, ...props }: Props) {
   const { t } = useTranslation()
+  const { hidden } = useHideAmounts()
+  const [focused, setFocused] = useState(false)
   const lang = currentLanguage()
   const typed = value.trim()
   const bad = typed !== '' && !(signed && typed === '-') && parseAmount(value, minorUnit, lang) === null
@@ -38,8 +42,10 @@ export function AmountField({ value, onChange, minorUnit, big = false, unit, ari
   return (
     <TextField
       {...props}
-      value={value}
+      value={hidden && !focused && typed ? '••••' : value}
       onChange={(e) => onChange(groupWhileTyping(e.target.value, lang))}
+      onFocus={(e) => { setFocused(true); props.onFocus?.(e) }}
+      onBlur={(e) => { setFocused(false); props.onBlur?.(e) }}
       error={bad || props.error}
       helperText={bad ? t('errors.amount') : props.helperText}
       sx={[big && { '& .MuiOutlinedInput-root': { minHeight: 56, borderRadius: '10px' },

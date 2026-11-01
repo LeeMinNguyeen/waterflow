@@ -1,6 +1,6 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Account, Book } from '../lib/api'
 import { todayIn } from '../lib/labels'
 import { currencies, fakeApi } from '../test/fakeApi'
@@ -330,5 +330,18 @@ describe('a ± button where a balance can be below zero (waterflow#155)', () => 
     await renderApp(<AccountDialog book={book} account={card} editing onClose={() => {}} />)
     await screen.findByRole('textbox', { name: 'Amount owed now' })
     expect(screen.queryByRole('button', { name: 'Change sign' })).not.toBeInTheDocument()
+  })
+})
+
+describe('with amounts hidden (waterflow#104)', () => {
+  afterEach(() => localStorage.clear())
+
+  it("shows dots in the details' amount fields", async () => {
+    localStorage.setItem('waterflow.hideAmounts', '1')
+    server()
+    await renderApp(<AccountDialog book={book} account={card} onClose={() => {}} />)
+    expect(await screen.findByText('Account details')).toBeInTheDocument()
+    expect(field(/credit limit/i)).toHaveValue('••••')
+    expect(document.body.textContent).not.toMatch(/\d,\d{3}/)
   })
 })
