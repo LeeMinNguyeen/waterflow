@@ -10,6 +10,7 @@ import Autocomplete from '@mui/material/Autocomplete'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Checkbox from '@mui/material/Checkbox'
+import Chip from '@mui/material/Chip'
 import Dialog from '@mui/material/Dialog'
 import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
@@ -29,14 +30,14 @@ import { useTheme } from '@mui/material/styles'
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { currentLanguage } from '../i18n'
-import { api, ApiError, categoryKindFor, liabilityKinds, send, type Account, type Book, type Entry, type Payee, type Suggestion, type Transaction, type TxnType } from '../lib/api'
+import { api, ApiError, categoryKindFor, liabilityKinds, send, type Account, type Book, type Entry, type Payee, type Suggestion, type Transaction, type TxnType, type Usual } from '../lib/api'
 import { categoryTree } from '../lib/categories'
 import { shiftDay, timeIn, todayIn } from '../lib/labels'
 import { amountText, parseAmount } from '../lib/money'
 import { useFormatMoney } from '../lib/hideAmounts'
 import { personName } from '../lib/people'
 import { fromPlan, noPlan, validMonths, type PlanForm } from '../lib/installments'
-import { useAccounts, useBooks, useCategories, useCurrencies, useInstallments, useInvalidateBook, usePayees } from '../lib/queries'
+import { useAccounts, useBooks, useCategories, useCurrencies, useInstallments, useInvalidateBook, usePayees, useUsual } from '../lib/queries'
 import { AmountField } from './AmountField'
 import { CategoryPicker } from './CategoryPicker'
 import { DateField } from './DateField'
@@ -222,6 +223,12 @@ function TxnForm({ book, txn: initial, defaults, onClose, minorOf, carry, onSwit
     if (!txn) setSuggestion({ account_id: p.account_id, category_id: p.category_id })
   }
 
+  const usual = useUsual(book.id, txn ? null : payeeType).data ?? []
+  const pickUsual = (u: Usual) => {
+    for (const field of ['account', 'category', 'payee'] as const) touched.current.add(field)
+    set({ account: u.account_id, category: u.category_id ?? '', payee: u.payee ?? '', amount: amountText(u.amount, minor(u.account_id), lang) })
+  }
+
   const card = form.type === 'expense' && from?.kind === 'credit_card' ? from : null
   const savedOnCard = !!txn && txn.entries.some((e) => byId.get(e.account_id)?.kind === 'credit_card')
   const installments = useInstallments(book.id, !!card || savedOnCard)
@@ -370,6 +377,22 @@ function TxnForm({ book, txn: initial, defaults, onClose, minorOf, carry, onSwit
     if (!txn && untouched) amountRef.current?.focus()
   }
   const other = otherTypes.includes(form.type) ? form.type : null
+  const usualLabel = (u: Usual) => {
+    const a = byId.get(u.account_id)
+    const name = u.payee || categories.data?.find((c) => c.id === u.category_id)?.name || a?.name
+    return a && `${name} · ${formatMoney(u.amount, a.currency, minor(a.id), lang)}`
+  }
+  const usualChips = usual.length > 0 && !readOnly && (
+    <Stack direction="row" sx={{ gap: 1, ...(fullScreen ? { flexWrap: 'nowrap', overflowX: 'auto', mx: -2, px: 2 } : { flexWrap: 'wrap' }) }}>
+      {usual.map((u) => {
+        const label = usualLabel(u)
+        return label && (
+          <Chip key={`${u.account_id}:${u.category_id}:${u.payee}:${u.amount}`} label={label} variant="outlined"
+            onClick={() => pickUsual(u)} sx={{ flexShrink: 0 }} />
+        )
+      })}
+    </Stack>
+  )
   const extras = (
     <>
       <Dialog open={confirmDelete} onClose={() => setConfirmDelete(false)}>
@@ -446,6 +469,7 @@ function TxnForm({ book, txn: initial, defaults, onClose, minorOf, carry, onSwit
                 })}
               </Box>
             )}
+            {usualChips}
             <Stack direction="row" sx={{ alignItems: 'baseline', gap: 0.5, borderBottom: 1, borderColor: 'divider', pb: 0.5 }}>
               {sign && <Typography aria-hidden sx={{ fontSize: 40, lineHeight: '48px', fontWeight: 500, color: tone }}>{sign}</Typography>}
               <AmountField
@@ -611,6 +635,7 @@ function TxnForm({ book, txn: initial, defaults, onClose, minorOf, carry, onSwit
               </MenuItem>
             ))}
           </Menu>
+          {usualChips}
           {noAccounts && <Alert severity="info">{t('txn.needAccount')}</Alert>}
           {transfer && open.length < 2 && !noAccounts && <Alert severity="info">{t('txn.needTwoAccounts')}</Alert>}
           <AmountField
