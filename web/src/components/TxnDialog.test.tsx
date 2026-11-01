@@ -653,6 +653,119 @@ describe('a ± button where an amount can be below zero (waterflow#155)', () => 
   })
 })
 
+describe('duplicating, and saving to add another (waterflow#102)', () => {
+  const bank: Account = { ...cash, id: 'bank', name: 'Bank', kind: 'checking', balance: 5_000_000 }
+  const visa: Account = { ...cash, id: 'visa', name: 'Visa', kind: 'credit_card', balance: 0, statement_day: 25, payment_due_day: 10,
+    credit_limit: 20_000_000 }
+  const coffee = { id: 'coffee', name: 'Coffee', parent_id: null, kind: 'expense', color: null, archived_at: null, version: 1 }
+  const latte: Transaction = { ...lunch, category_id: 'coffee', payee: 'Highlands', note: 'with Minh',
+    entries: [{ account_id: 'bank', amount: -55_000, currency: 'VND' }] }
+  const laptop: Transaction = { ...lunch, id: 't2', payee: 'Laptop', entries: [{ account_id: 'visa', amount: -6_000_000, currency: 'VND' }] }
+  const plan = { id: 'p1', account_id: 'visa', transaction_id: 't2', payee: 'Laptop', occurred_on: '2026-10-03', amount: 6_000_000,
+    months: 6, converted_on: '2026-10-03', first_statement: '2026-10-25', fee: 0, fee_split: false, counts_toward_limit: true,
+    ended_on: null, version: 1, installment: 1_000_000, billed: 0, left_to_bill: 6_000_000 }
+  function cafe() {
+    return fakeApi({
+      'GET /v1/currencies': currencies,
+      'GET /v1/books': [book],
+      'GET /v1/books/b1/accounts': [cash, bank, visa],
+      'GET /v1/books/b1/categories': [coffee],
+      'GET /v1/books/b1/installments': [plan],
+      'POST /v1/books/b1/transactions': ({ body }: { body: unknown }) => body,
+      'POST /v1/books/b1/installments': ({ body }: { body: unknown }) => body,
+    })
+  }
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-10-05T07:30:00Z'))
+  })
+  afterEach(() => vi.useRealTimers())
+
+  it('duplicates a transaction as a new one with the same details, dated now', async () => {
+    const api = cafe()
+    await renderApp(<TxnDialog book={book} txn={latte} onClose={() => {}} />)
+    await userEvent.click(await screen.findByRole('button', { name: 'Duplicate' }))
+    expect(await screen.findByText('Add transaction')).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByLabelText(/^Amount/)).toHaveValue('55,000'))
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(api.writes()).toHaveLength(1))
+    const [copy] = api.writes()
+    expect(copy.method).toBe('POST')
+    expect(copy.body).toMatchObject({ type: 'expense', occurred_on: '2026-10-05', occurred_time: '14:30', category_id: 'coffee',
+      payee: 'Highlands', note: 'with Minh', entries: [{ account_id: 'bank', amount: -55_000 }] })
+    expect((copy.body as { id: string }).id).not.toBe(latte.id)
+  })
+
+  it("doesn't copy a card purchase's installment plan", async () => {
+    const api = cafe()
+    await renderApp(<TxnDialog book={book} txn={laptop} onClose={() => {}} />)
+    expect(await screen.findByRole('switch', { name: 'Pay in installments' })).toBeChecked()
+    await userEvent.click(screen.getByRole('button', { name: 'Duplicate' }))
+    expect(await screen.findByRole('switch', { name: 'Pay in installments' })).not.toBeChecked()
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(api.writes()).toHaveLength(1))
+    expect(api.writes()[0].path).toBe('/v1/books/b1/transactions')
+  })
+
+  it('is not offered on an opening balance or an adjustment, or to a viewer', async () => {
+    cafe()
+    for (const [txn, b] of [[{ ...latte, type: 'adjustment', category_id: null }, book], [{ ...latte, type: 'opening_balance', category_id: null }, book],
+      [latte, { ...book, role: 'viewer' }]] as [Transaction, Book][]) {
+      const { unmount } = await renderApp(<TxnDialog book={b} txn={txn} onClose={() => {}} />)
+      await screen.findByRole('button', { name: 'Edit history' })
+      expect(screen.queryByRole('button', { name: 'Duplicate' })).not.toBeInTheDocument()
+      unmount()
+    }
+  })
+
+  it('saves and starts another, keeping the type, account and date and clearing the rest', async () => {
+    const api = cafe()
+    const onClose = vi.fn()
+    await renderApp(<TxnDialog book={book} txn={null} onClose={onClose} />)
+    await userEvent.click(await screen.findByRole('button', { name: 'Income' }))
+    await userEvent.click(screen.getByRole('combobox', { name: /^Account/ }))
+    await userEvent.click(await screen.findByRole('option', { name: /Bank/ }))
+    await userEvent.type(screen.getByLabelText(/^Amount/), '45000')
+    await userEvent.type(screen.getByLabelText('Payee'), 'Mẹ')
+    await userEvent.type(screen.getByLabelText('Note'), 'tiền chợ')
+    await userEvent.click(screen.getByRole('button', { name: 'Save and add another' }))
+    expect(await screen.findByText('Transaction saved')).toBeInTheDocument()
+    expect(onClose).not.toHaveBeenCalled()
+    const amount = screen.getByLabelText(/^Amount/)
+    await waitFor(() => expect(amount).toHaveValue(''))
+    expect(amount).toHaveFocus()
+    expect(screen.getByLabelText('Payee')).toHaveValue('')
+    expect(screen.getByLabelText('Note')).toHaveValue('')
+    expect(screen.getByRole('button', { name: 'Income' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('combobox', { name: /^Account/ })).toHaveTextContent('Bank')
+    await userEvent.type(amount, '30000')
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(api.writes()).toHaveLength(2))
+    const [first, second] = api.writes().map((w) => w.body as { id: string; occurred_on: string })
+    expect(second).toMatchObject({ type: 'income', occurred_on: first.occurred_on, payee: null, note: null,
+      entries: [{ account_id: 'bank', amount: 30_000 }] })
+    expect(second.id).not.toBe(first.id)
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('on a phone, duplicates from the ⋮ menu and offers Save and add another', async () => {
+    phone(true)
+    try {
+      const api = cafe()
+      await renderApp(<TxnDialog book={book} txn={latte} onClose={() => {}} />)
+      await userEvent.click(await screen.findByRole('button', { name: 'More actions' }))
+      await userEvent.click(screen.getByRole('menuitem', { name: 'Duplicate' }))
+      expect(await screen.findByRole('button', { name: 'Book: Personal' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Save and add another' })).toBeInTheDocument()
+      await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+      await waitFor(() => expect(api.writes()).toHaveLength(1))
+      expect(api.writes()[0].body).toMatchObject({ payee: 'Highlands', entries: [{ account_id: 'bank', amount: -55_000 }] })
+    } finally {
+      phone(false)
+    }
+  })
+})
+
 describe('the amount on a phone (waterflow#161)', () => {
   beforeEach(() => phone(true))
   afterEach(() => phone(false))
