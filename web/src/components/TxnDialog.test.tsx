@@ -371,3 +371,163 @@ describe('the desktop dialog, as designed (waterflow#143)', () => {
     expect(closed).toBe(true)
   })
 })
+
+describe('the sign of an amount (waterflow#137)', () => {
+  const bank: Account = { ...cash, id: 'bank', name: 'Bank', kind: 'checking', balance: -5_000_000 }
+  const opening: Transaction = { ...lunch, type: 'opening_balance', payee: null, entries: [{ account_id: 'bank', amount: -5_000_000, currency: 'VND' }] }
+  const adjustment: Transaction = { ...lunch, type: 'adjustment', payee: null, entries: [{ account_id: 'bank', amount: -30_000, currency: 'VND' }] }
+  function bankServer() {
+    return fakeApi({
+      'GET /v1/currencies': currencies,
+      'GET /v1/books/b1/accounts': [bank],
+      'GET /v1/books/b1/categories': [],
+      'POST /v1/books/b1/transactions': ({ body }: { body: unknown }) => body,
+      'PUT /v1/books/b1/transactions/t1': ({ body }: { body: unknown }) => body,
+    })
+  }
+
+  it('shows the minus of an opening balance, and keeps it when saved unchanged', async () => {
+    const api = bankServer()
+    await renderApp(<TxnDialog book={book} txn={opening} onClose={() => {}} />)
+    expect(await screen.findByLabelText(/^Amount/)).toHaveValue('-5,000,000')
+    expect(screen.getByText('Below zero: what the account owed.')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(api.writes()).toHaveLength(1))
+    expect(api.writes()[0].body).toMatchObject({ type: 'opening_balance', entries: [{ account_id: 'bank', amount: -5_000_000 }] })
+  })
+
+  it('saves a minus typed on an opening balance', async () => {
+    const api = bankServer()
+    await renderApp(<TxnDialog book={book} txn={opening} onClose={() => {}} />)
+    const amount = await screen.findByLabelText(/^Amount/)
+    await waitFor(() => expect(amount).toBeEnabled())
+    await userEvent.clear(amount)
+    await userEvent.type(amount, '-200000')
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(api.writes()).toHaveLength(1))
+    expect(api.writes()[0].body).toMatchObject({ entries: [{ account_id: 'bank', amount: -200_000 }] })
+  })
+
+  it('refuses a minus on an expense, and says why', async () => {
+    const api = bankServer()
+    await renderApp(<TxnDialog book={book} txn={null} defaults={{ account: 'bank' }} onClose={() => {}} />)
+    await userEvent.type(await screen.findByLabelText(/^Amount/), '-45000')
+    expect(screen.getByText('The type says which way the money goes: no minus needed.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+    expect(api.writes()).toHaveLength(0)
+  })
+
+  it("shows a loan's opening debt as the amount owed, as the account form does, and saves it as a debt", async () => {
+    const loan: Account = { ...bank, id: 'loan', name: 'Loan', kind: 'loan' }
+    const api = fakeApi({
+      'GET /v1/currencies': currencies,
+      'GET /v1/books/b1/accounts': [loan],
+      'GET /v1/books/b1/categories': [],
+      'PUT /v1/books/b1/transactions/t1': ({ body }: { body: unknown }) => body,
+    })
+    const owed: Transaction = { ...opening, entries: [{ account_id: 'loan', amount: -5_000_000, currency: 'VND' }] }
+    await renderApp(<TxnDialog book={book} txn={owed} onClose={() => {}} />)
+    const amount = await screen.findByLabelText(/^Amount owed/)
+    await waitFor(() => expect(amount).toHaveValue('5,000,000'))
+    await userEvent.clear(amount)
+    await userEvent.type(amount, '6000000')
+    expect(amount).toHaveValue('6,000,000')
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(api.writes()).toHaveLength(1))
+    expect(api.writes()[0].body).toMatchObject({ entries: [{ account_id: 'loan', amount: -6_000_000 }] })
+  })
+
+  it('waits for the accounts before an opening balance can be typed, since they decide its sign', async () => {
+    fakeApi({
+      'GET /v1/currencies': currencies,
+      'GET /v1/books/b1/accounts': () => new Promise(() => {}),
+      'GET /v1/books/b1/categories': [],
+    })
+    await renderApp(<TxnDialog book={book} txn={opening} onClose={() => {}} />)
+    expect(await screen.findByLabelText(/^Amount/)).toBeDisabled()
+  })
+
+  it('refuses a minus in the amount received, and says why', async () => {
+    const usd: Account = { ...cash, id: 'usd', name: 'Dollars', currency: 'USD', balance: 50_00 }
+    const api = fakeApi({
+      'GET /v1/currencies': currencies,
+      'GET /v1/books/b1/accounts': [bank, usd],
+      'GET /v1/books/b1/categories': [],
+      'POST /v1/books/b1/transactions': ({ body }: { body: unknown }) => body,
+    })
+    await renderApp(<TxnDialog book={book} txn={null} defaults={{ account: 'bank' }} onClose={() => {}} />)
+    await userEvent.click(await screen.findByRole('button', { name: 'Transfer' }))
+    await userEvent.type(screen.getByLabelText(/^Amount/), '100000')
+    await userEvent.click(screen.getByRole('combobox', { name: /^To account/ }))
+    await userEvent.click(within(screen.getByRole('listbox')).getByRole('option', { name: /Dollars/ }))
+    await userEvent.type(screen.getByLabelText(/^Amount received/), '-4')
+    expect(screen.getByText('The type says which way the money goes: no minus needed.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+    expect(api.writes()).toHaveLength(0)
+  })
+
+  it('keeps the minus of an adjustment, as before', async () => {
+    const api = bankServer()
+    await renderApp(<TxnDialog book={book} txn={adjustment} onClose={() => {}} />)
+    expect(await screen.findByLabelText(/^Amount/)).toHaveValue('-30,000')
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(api.writes()).toHaveLength(1))
+    expect(api.writes()[0].body).toMatchObject({ type: 'adjustment', entries: [{ account_id: 'bank', amount: -30_000 }] })
+  })
+})
+
+describe('the sign of an amount on a phone (waterflow#137)', () => {
+  const loan: Account = { ...cash, id: 'loan', name: 'Loan', kind: 'loan', balance: -5_000_000 }
+  const owed: Transaction = { ...lunch, type: 'opening_balance', payee: null, entries: [{ account_id: 'loan', amount: -5_000_000, currency: 'VND' }] }
+  function phoneServer() {
+    return fakeApi({
+      'GET /v1/currencies': currencies,
+      'GET /v1/books': [book],
+      'GET /v1/books/b1/accounts': [cash, loan],
+      'GET /v1/books/b1/categories': [],
+      'POST /v1/books/b1/transactions': ({ body }: { body: unknown }) => body,
+      'PUT /v1/books/b1/transactions/t1': ({ body }: { body: unknown }) => body,
+    })
+  }
+  beforeEach(() => phone(true))
+  afterEach(() => phone(false))
+
+  it("shows a loan's opening debt as the amount owed, and saves it as a debt", async () => {
+    const api = phoneServer()
+    await renderApp(<TxnDialog book={book} txn={owed} onClose={() => {}} />)
+    const amount = await screen.findByLabelText('Amount owed')
+    await waitFor(() => expect(amount).toHaveValue('5,000,000'))
+    expect(screen.getByText('Amount owed')).toBeInTheDocument()
+    await userEvent.clear(amount)
+    await userEvent.type(amount, '6000000')
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(api.writes()).toHaveLength(1))
+    expect(api.writes()[0].body).toMatchObject({ entries: [{ account_id: 'loan', amount: -6_000_000 }] })
+  })
+
+  it("keeps the minus of a bank account's opening balance", async () => {
+    const bank: Account = { ...cash, id: 'bank', name: 'Bank', kind: 'checking', balance: -5_000_000 }
+    const api = fakeApi({
+      'GET /v1/currencies': currencies,
+      'GET /v1/books': [book],
+      'GET /v1/books/b1/accounts': [bank],
+      'GET /v1/books/b1/categories': [],
+      'PUT /v1/books/b1/transactions/t1': ({ body }: { body: unknown }) => body,
+    })
+    const opening: Transaction = { ...owed, entries: [{ account_id: 'bank', amount: -5_000_000, currency: 'VND' }] }
+    await renderApp(<TxnDialog book={book} txn={opening} onClose={() => {}} />)
+    await waitFor(() => expect(screen.getByLabelText('Amount')).toHaveValue('-5,000,000'))
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(api.writes()).toHaveLength(1))
+    expect(api.writes()[0].body).toMatchObject({ entries: [{ account_id: 'bank', amount: -5_000_000 }] })
+  })
+
+  it('refuses a minus on an expense, and says why', async () => {
+    const api = phoneServer()
+    await renderApp(<TxnDialog book={book} txn={null} defaults={{ account: 'cash' }} onClose={() => {}} />)
+    await userEvent.type(await screen.findByLabelText('Amount'), '-45000')
+    expect(screen.getByText('The type says which way the money goes: no minus needed.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+    expect(api.writes()).toHaveLength(0)
+  })
+})
