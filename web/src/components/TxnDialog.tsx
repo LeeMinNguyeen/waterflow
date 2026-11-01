@@ -6,6 +6,7 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import HistoryIcon from '@mui/icons-material/History'
 import MoreVertIcon from '@mui/icons-material/MoreVert'
 import Alert from '@mui/material/Alert'
+import Autocomplete from '@mui/material/Autocomplete'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Checkbox from '@mui/material/Checkbox'
@@ -28,13 +29,13 @@ import { useTheme } from '@mui/material/styles'
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { currentLanguage } from '../i18n'
-import { api, ApiError, categoryKindFor, liabilityKinds, send, type Account, type Book, type Entry, type Suggestion, type Transaction, type TxnType } from '../lib/api'
+import { api, ApiError, categoryKindFor, liabilityKinds, send, type Account, type Book, type Entry, type Payee, type Suggestion, type Transaction, type TxnType } from '../lib/api'
 import { categoryTree } from '../lib/categories'
 import { shiftDay, timeIn, todayIn } from '../lib/labels'
 import { amountText, formatMoney, parseAmount } from '../lib/money'
 import { personName } from '../lib/people'
 import { fromPlan, noPlan, validMonths, type PlanForm } from '../lib/installments'
-import { useAccounts, useBooks, useCategories, useCurrencies, useInstallments, useInvalidateBook } from '../lib/queries'
+import { useAccounts, useBooks, useCategories, useCurrencies, useInstallments, useInvalidateBook, usePayees } from '../lib/queries'
 import { AmountField } from './AmountField'
 import { CategoryPicker } from './CategoryPicker'
 import { DateField } from './DateField'
@@ -210,6 +211,14 @@ function TxnForm({ book, txn: initial, defaults, onClose, minorOf, carry, onSwit
     const left = { ...(account_id && !accountNow ? { account_id } : {}), ...(category_id && !categoryNow ? { category_id } : {}) }
     setSuggestion(Object.keys(left).length ? left : null)
   }, [suggestion, accounts.data, categories.data, options])
+
+  const payeeType = form.type === 'expense' || form.type === 'income' ? form.type : null
+  const payees = usePayees(book.id, form.payee, payeeType).data ?? []
+  // A payee picked for a new transaction brings its last account and category, like a suggestion; an edit only renames.
+  const pickPayee = (p: Payee) => {
+    choose('payee', p.payee)
+    if (!txn) setSuggestion({ account_id: p.account_id, category_id: p.category_id })
+  }
 
   const card = form.type === 'expense' && from?.kind === 'credit_card' ? from : null
   const savedOnCard = !!txn && txn.entries.some((e) => byId.get(e.account_id)?.kind === 'credit_card')
@@ -549,6 +558,12 @@ function TxnForm({ book, txn: initial, defaults, onClose, minorOf, carry, onSwit
           <TextField autoFocus value={form.payee} onChange={(e) => choose('payee', e.target.value)}
             slotProps={{ htmlInput: { 'aria-label': t('txn.payee') } }}
             onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); setSheet(null) } }} />
+          {payees.filter((p) => p.payee !== form.payee.trim()).map((p) => (
+            <ListItemButton key={p.payee} onClick={() => { pickPayee(p); setSheet(null) }}
+              sx={{ px: 0, minHeight: 48, borderTop: 1, borderColor: 'divider' }}>
+              {p.payee}
+            </ListItemButton>
+          ))}
         </Sheet>
         {extras}
       </Dialog>
@@ -659,7 +674,10 @@ function TxnForm({ book, txn: initial, defaults, onClose, minorOf, carry, onSwit
               amount={entries ? Math.abs(entries[0].amount) : null} minorUnit={minor(card.id)} />
           )}
           {losesPlan && !readOnly && <Alert severity="warning">{t('plan.removedOnSave')}</Alert>}
-          <TextField label={t('txn.payee')} value={form.payee} onChange={(e) => choose('payee', e.target.value)} />
+          <Autocomplete freeSolo disableClearable options={payees} filterOptions={(o) => o} getOptionLabel={(p) => (typeof p === 'string' ? p : p.payee)}
+            inputValue={form.payee} onInputChange={(_, v, reason) => { if (reason === 'input') choose('payee', v) }}
+            onChange={(_, p) => { if (p && typeof p !== 'string') pickPayee(p) }}
+            renderInput={(params) => <TextField {...params} label={t('txn.payee')} />} />
           <TextField label={t('txn.note')} value={form.note} onChange={(e) => set({ note: e.target.value })} multiline minRows={1} maxRows={4}
             placeholder={t('common.optional')} />
           {txn?.created_by && (

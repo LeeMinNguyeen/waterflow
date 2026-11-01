@@ -153,6 +153,88 @@ describe('filling in from my own history (waterflow#65)', () => {
   })
 })
 
+describe("the book's payees while typing (waterflow#101)", () => {
+  const bank: Account = { ...cash, id: 'bank', name: 'Bank', kind: 'checking', balance: 5_000_000 }
+  const coffee = { id: 'coffee', name: 'Coffee', parent_id: null, kind: 'expense', color: null, archived_at: null, version: 1 }
+  const food = { ...coffee, id: 'food', name: 'Food' }
+  const highlands = { payee: 'Highlands', count: 3, account_id: 'bank', category_id: 'coffee' }
+  function payees() {
+    return fakeApi({
+      'GET /v1/currencies': currencies,
+      'GET /v1/books': [book],
+      'GET /v1/books/b1/accounts': [cash, bank],
+      'GET /v1/books/b1/categories': [coffee, food],
+      'GET /v1/books/b1/payees': ({ url }: { url: string }) =>
+        'highlands'.includes((new URL(url, 'http://x').searchParams.get('q') ?? '').toLowerCase()) ? [highlands] : [],
+      'POST /v1/books/b1/transactions': ({ body }: { body: unknown }) => body,
+      'PUT /v1/books/b1/transactions/t1': ({ body }: { body: unknown }) => body,
+    })
+  }
+
+  it('offers them, and picking one fills in its account and category', async () => {
+    const api = payees()
+    await renderApp(<TxnDialog book={book} txn={null} onClose={() => {}} />)
+    await userEvent.type(await screen.findByLabelText(/^Amount/), '55000')
+    await userEvent.type(screen.getByLabelText('Payee'), 'Hi')
+    await userEvent.click(await screen.findByRole('option', { name: /Highlands/ }))
+    expect(screen.getByLabelText('Payee')).toHaveValue('Highlands')
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Category' })).toHaveValue('Coffee'))
+    expect(screen.getByRole('combobox', { name: /^Account/ })).toHaveTextContent('Bank')
+    expect(api.calls.some((c) => c.url.includes('/payees?') && c.url.includes('type=expense'))).toBe(true)
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(api.writes()[0].body).toMatchObject({ payee: 'Highlands', category_id: 'coffee', entries: [{ account_id: 'bank' }] }))
+  })
+
+  it('keeps a category the user picked before the payee', async () => {
+    payees()
+    await renderApp(<TxnDialog book={book} txn={null} onClose={() => {}} />)
+    await userEvent.click(await screen.findByRole('combobox', { name: 'Category' }))
+    await userEvent.click(await screen.findByRole('option', { name: 'Food' }))
+    await userEvent.type(screen.getByLabelText('Payee'), 'Hi')
+    await userEvent.click(await screen.findByRole('option', { name: /Highlands/ }))
+    await waitFor(() => expect(screen.getByRole('combobox', { name: /^Account/ })).toHaveTextContent('Bank'))
+    expect(screen.getByRole('combobox', { name: 'Category' })).toHaveValue('Food')
+  })
+
+  it("keeps a new payee's name as typed", async () => {
+    const api = payees()
+    await renderApp(<TxnDialog book={book} txn={null} defaults={{ account: 'cash' }} onClose={() => {}} />)
+    await userEvent.type(await screen.findByLabelText(/^Amount/), '30000')
+    await userEvent.type(screen.getByLabelText('Payee'), 'Bánh mì Hồng')
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(api.writes()[0].body).toMatchObject({ payee: 'Bánh mì Hồng', entries: [{ account_id: 'cash' }] }))
+  })
+
+  it("only renames when editing: the saved account and category stay", async () => {
+    const api = payees()
+    const saved: Transaction = { ...lunch, payee: 'Phở', category_id: 'food', entries: [{ account_id: 'cash', amount: -65_000, currency: 'VND' }] }
+    await renderApp(<TxnDialog book={book} txn={saved} onClose={() => {}} />)
+    const payee = await screen.findByLabelText('Payee')
+    await userEvent.clear(payee)
+    await userEvent.type(payee, 'Hi')
+    await userEvent.click(await screen.findByRole('option', { name: /Highlands/ }))
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(api.writes()[0].body).toMatchObject({ payee: 'Highlands', category_id: 'food', entries: [{ account_id: 'cash' }] }))
+  })
+
+  it('on a phone, lists them in the payee sheet', async () => {
+    phone(true)
+    try {
+      const api = payees()
+      await renderApp(<TxnDialog book={book} txn={null} onClose={() => {}} />)
+      await userEvent.type(await screen.findByLabelText('Amount'), '55000')
+      await userEvent.click(screen.getByRole('button', { name: 'Payee' }))
+      const sheet = await screen.findByRole('dialog', { name: 'Payee' })
+      await userEvent.click(await within(sheet).findByRole('button', { name: /Highlands/ }))
+      expect(await screen.findByRole('button', { name: 'Payee: Highlands' })).toBeInTheDocument()
+      await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+      await waitFor(() => expect(api.writes()[0].body).toMatchObject({ payee: 'Highlands', category_id: 'coffee', entries: [{ account_id: 'bank' }] }))
+    } finally {
+      phone(false)
+    }
+  })
+})
+
 describe('the focus as the dialog opens', () => {
   it('goes to the amount', async () => {
     server()
