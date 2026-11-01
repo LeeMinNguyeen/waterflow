@@ -27,9 +27,11 @@ import { api, send, upload, type RestoreStatus } from '../lib/api'
 import { waitForServer } from '../lib/restart'
 import { session } from '../auth/session'
 import { FileField } from '../components/FileField'
-import { useInstance, useMe } from '../lib/queries'
+import { keys, useInstance, useMe } from '../lib/queries'
 import { updating, useUpdating, type UpdateInfo } from '../lib/updating'
 import { DialogFooter } from '../components/DialogFooter'
+import { copyText } from '../lib/clipboard'
+import { useToast } from '../lib/toast'
 
 type AdminUser = {
   id: string; username: string; display_name: string | null; is_admin: boolean; created_at: string
@@ -65,6 +67,7 @@ function ShowOnce({ title, body, link, qr, code, onClose }: {
   title: string; body: string; link: string; qr?: string | null; code?: string; onClose: () => void
 }) {
   const { t } = useTranslation()
+  const toast = useToast()
   return (
     <Dialog open onClose={onClose} fullWidth maxWidth="xs">
       <DialogTitle>{title}</DialogTitle>
@@ -77,7 +80,7 @@ function ShowOnce({ title, body, link, qr, code, onClose }: {
         </Stack>
       </DialogContent>
       <DialogFooter>
-        <Button onClick={() => navigator.clipboard?.writeText(link)}>{t('common.copy')}</Button>
+        <Button onClick={async () => toast(t(await copyText(link) ? 'toast.copied' : 'errors.unexpected_error'))}>{t('common.copy')}</Button>
         <Button variant="contained" onClick={onClose}>{t('common.done')}</Button>
       </DialogFooter>
     </Dialog>
@@ -176,7 +179,7 @@ function Jobs({ timezone }: { timezone: string }) {
     const failed = job.last_result === 'failed'
     return (
       <>
-        <Typography variant="body2" color={failed ? 'error' : 'success.main'}>
+        <Typography variant="body2" color={failed ? 'error' : 'success'}>
           {t(failed ? 'admin.jobFailed' : 'admin.jobDone', { when: at.format(new Date(job.last_finished_at)) })}
         </Typography>
         {job.last_detail && <Typography variant="caption" color="textSecondary" sx={{ wordBreak: 'break-word' }}>{job.last_detail}</Typography>}
@@ -484,7 +487,7 @@ function Restore() {
   const errorText = useErrorText()
   const lang = currentLanguage()
   const last = useQuery({ queryKey: ['admin', 'restore'], queryFn: () => api<RestoreStatus | null>('/v1/admin/restore') })
-  const twoFactor = useQuery({ queryKey: ['auth', 'two-factor'], queryFn: () => api<{ enabled: boolean }>('/v1/auth/two-factor') })
+  const twoFactor = useQuery({ queryKey: keys.twoFactor, queryFn: () => api<{ enabled: boolean }>('/v1/auth/two-factor') })
   const [file, setFile] = useState<File | null>(null)
   const [purged, setPurged] = useState<File | null>(null)
   const [password, setPassword] = useState('')

@@ -52,6 +52,16 @@ describe('the Overview lists (waterflow#73, waterflow#74)', () => {
     expect(recent.getByRole('link', { name: 'See all' })).toBeInTheDocument()
   })
 
+  it("opens a category's transactions from its row with the keyboard too (review #166)", async () => {
+    dashServer({ top_categories_this_month: [{ category_id: 'c1', category: 'Food & drink', category_parent_id: null, spent: 50_000, not_converted: 0 }] },
+      { 'GET /v1/books/b1/categories': [food] })
+    await renderApp(<Dashboard book={book} />)
+    const row = (await cardOf('By category')).getByRole('link', { name: /Food & drink/ })
+    row.focus()
+    await userEvent.keyboard('{Enter}')
+    expect(screen.getByTestId('where')).toHaveTextContent('/books/b1/transactions?category_id=c1')
+  })
+
   it('says so when a transaction under Recent was deleted meanwhile (review #166)', async () => {
     dashServer({ recent_transactions: [txn(1)] }, {
       'GET /v1/books/b1/transactions/t1': new Response(JSON.stringify({ detail: 'not_found' }), { status: 404 }),

@@ -561,6 +561,7 @@
     "intro": "Những người trên máy chủ này cùng giữ sổ với bạn. Họ thấy mọi thứ trong sổ.",
     "username": "Tên đăng nhập",
     "roleLabel": "Vai trò",
+    "roleOf": "Vai trò của {{name}}",
     "invite": "Mời",
     "invited": "Đã mời {{name}}. Họ sẽ thấy lời mời khi đăng nhập.",
     "roles": "Chủ sổ: mọi quyền, kể cả thành viên và cài đặt. Biên tập: thêm và sửa tài khoản, giao dịch, danh mục và ngân sách. Người xem: chỉ được xem.",
@@ -635,6 +636,7 @@
   },
   "toast": {
     "budgetAdded": "Đã thêm ngân sách",
+    "copied": "Đã sao chép",
     "budgetSaved": "Đã lưu ngân sách",
     "txnSaved": "Đã lưu giao dịch",
     "txnDeleted": "Đã xóa giao dịch",

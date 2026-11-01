@@ -30,6 +30,8 @@ import { newAccountBody } from '../auth/forms'
 import { PasswordFields } from '../components/AccountForm'
 import { rememberedDevice } from '../auth/rememberedDevice'
 import { DialogFooter } from '../components/DialogFooter'
+import { copyText } from '../lib/clipboard'
+import { useToast } from '../lib/toast'
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   const id = useId()
@@ -122,9 +124,10 @@ type Enrolment = { secret: string; uri: string; qr: string }
 
 function Security() {
   const { t } = useTranslation()
+  const toast = useToast()
   const errorText = useErrorText()
   const qc = useQueryClient()
-  const twoFactor = useQuery({ queryKey: ['two-factor'], queryFn: () => api<TwoFactorState>('/v1/auth/two-factor') })
+  const twoFactor = useQuery({ queryKey: keys.twoFactor, queryFn: () => api<TwoFactorState>('/v1/auth/two-factor') })
   const [enroll, setEnroll] = useState<Enrolment | null>(null)
   const [recovery, setRecovery] = useState<string[] | null>(null)
   const [code, setCode] = useState('')
@@ -145,7 +148,7 @@ function Security() {
       setBusy(false)
     }
   }
-  const refresh = () => qc.invalidateQueries({ queryKey: ['two-factor'] })
+  const refresh = () => qc.invalidateQueries({ queryKey: keys.twoFactor })
 
   const finish = (e: FormEvent) => {
     e.preventDefault()
@@ -256,7 +259,9 @@ function Security() {
           </Stack>
         </DialogContent>
         <DialogFooter>
-          <Button onClick={() => navigator.clipboard?.writeText(recovery?.join('\n') ?? '')}>{t('common.copy')}</Button>
+          <Button onClick={async () => toast(t(await copyText(recovery?.join('\n') ?? '') ? 'toast.copied' : 'errors.unexpected_error'))}>
+            {t('common.copy')}
+          </Button>
           <Button variant="contained" onClick={() => setRecovery(null)}>{t('mfa.recoverySaved')}</Button>
         </DialogFooter>
       </Dialog>
