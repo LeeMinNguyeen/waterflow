@@ -127,6 +127,30 @@ describe('filling in from my own history (waterflow#65)', () => {
     await waitFor(() => expect(screen.getByRole('combobox', { name: 'Category' })).toHaveValue('Parking'))
     expect(screen.getByRole('combobox', { name: /^Account/ })).toHaveTextContent('Bank')
   })
+
+  it("drops what's left of a suggestion once the amount changes", async () => {
+    let release!: () => void
+    const late = new Promise<void>((r) => { release = r })
+    const api = fakeApi({
+      'GET /v1/currencies': currencies,
+      'GET /v1/books/b1/accounts': async () => { await late; return [cash, bank] },
+      'GET /v1/books/b1/categories': async () => { await late; return [parking] },
+      'GET /v1/books/b1/transactions/suggest': ({ url }: { url: string }) =>
+        url.endsWith('amount=5000') ? { account_id: 'bank', category_id: 'parking', payee: 'Gửi xe' } : null,
+    })
+    await renderApp(<TxnDialog book={book} txn={null} onClose={() => {}} />)
+    const amount = await screen.findByLabelText(/^Amount/)
+    await userEvent.type(amount, '5000')
+    expect(await screen.findByDisplayValue('Gửi xe')).toBeInTheDocument()
+    await userEvent.type(amount, '0')
+    await waitFor(() => expect(api.calls.some((c) => c.url.endsWith('amount=50000'))).toBe(true))
+    release()
+    await userEvent.click(screen.getByRole('combobox', { name: /^Account/ }))
+    await screen.findByRole('option', { name: /Bank/ })
+    await userEvent.keyboard('{Escape}')
+    expect(screen.getByRole('combobox', { name: /^Account/ })).not.toHaveTextContent('Bank')
+    expect(screen.getByRole('combobox', { name: 'Category' })).toHaveValue('No category')
+  })
 })
 
 describe('the focus as the dialog opens', () => {

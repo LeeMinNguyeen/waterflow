@@ -168,6 +168,7 @@ function TxnForm({ book, txn: initial, defaults, onClose, minorOf, carry, onSwit
   const typed = suggestible ? parseAmount(form.amount, minorOf(from?.currency ?? book.base_currency), lang) : null
   const [suggestion, setSuggestion] = useState<Partial<Suggestion> | null>(null)
   useEffect(() => {
+    setSuggestion(null)
     if (!typed || typed <= 0) return
     let current = true
     const timer = setTimeout(async () => {
