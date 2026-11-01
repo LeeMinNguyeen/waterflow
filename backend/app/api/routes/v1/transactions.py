@@ -12,6 +12,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
+from app.api.models import MAX_AMOUNT, CurrencyCode
 from app.api.routes.v1.books import get_book, require_role
 from app.domain.transactions import Entry as EntryIn
 from app.domain.transactions import TxnIn, create_transaction, delete_transaction, update_transaction
@@ -24,7 +25,7 @@ Text = Annotated[str, StringConstraints(strip_whitespace=True, max_length=500)]
 
 class Entry(BaseModel):
     account_id: UUID
-    amount: int                                # signed, in the account's currency
+    amount: Annotated[int, Field(ge=-MAX_AMOUNT, le=MAX_AMOUNT)]    # signed, in the account's currency
     currency: str | None = None                # filled in on the way out
 
 
@@ -161,6 +162,7 @@ select e.account_id, t.category_id, t.payee
  where t.book_id = :b and t.type = cast(:ty as txn_type) and t.created_by = current_app_user()
    and t.occurred_on >= (now() at time zone b.timezone)::date - 90
    and abs(e.amount) between :lo and :hi
+   and (cast(:cur as text) is null or e.account_id in (select id from accounts where book_id = :b and currency = :cur))
    and (select count(*) from entries x where x.transaction_id = t.id) = 1
  order by t.occurred_on desc, t.occurred_time desc, t.created_at desc
  limit 3"""
@@ -168,12 +170,12 @@ select e.account_id, t.category_id, t.payee
 
 @router.get("/suggest")
 def suggest(book_id: UUID, type: Literal["expense", "income"], amount: Annotated[int, Query(gt=0)],
-            db: Session = Depends(get_db)) -> Suggestion | None:
+            currency: CurrencyCode | None = None, db: Session = Depends(get_db)) -> Suggestion | None:
     """From this user's own transactions of the type, within 10 % of the amount, in the last 90 days: what makes up at
     least 2 of the last 3, or null."""
     get_book(db, book_id)
     rows = [tuple(r) for r in db.execute(text(SUGGEST), {"b": book_id, "ty": type, "lo": amount * 9 // 10,
-                                                          "hi": amount * 11 // 10}).all()]
+                                                          "hi": amount * 11 // 10, "cur": currency}).all()]
     best = max(set(rows), key=rows.count, default=None)
     if best is None or rows.count(best) < 2:
         return None
@@ -223,6 +225,7 @@ class UpdateTxn(TxnBody):
 def update(book_id: UUID, txn_id: UUID, body: UpdateTxn, db: Session = Depends(get_db)) -> Transaction:
     """Replaces the whole transaction (header and entries)."""
     require_role(get_book(db, book_id), "owner", "editor")
+    get_transaction(db, book_id, txn_id)
     update_transaction(db, body.to_domain(txn_id, book_id), body.version)
     db.commit()
     return get_transaction(db, book_id, txn_id)
@@ -231,7 +234,8 @@ def update(book_id: UUID, txn_id: UUID, body: UpdateTxn, db: Session = Depends(g
 @router.delete("/{txn_id}", status_code=204)
 def delete(book_id: UUID, txn_id: UUID, version: int, db: Session = Depends(get_db)) -> Response:
     require_role(get_book(db, book_id), "owner", "editor")
-    delete_transaction(db, txn_id, version)
+    get_transaction(db, book_id, txn_id)
+    delete_transaction(db, book_id, txn_id, version)
     db.commit()
     return Response(status_code=204)
 

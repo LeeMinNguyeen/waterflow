@@ -9,12 +9,13 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
+from app.api.models import MAX_AMOUNT
 from app.api.routes.v1.books import get_book, require_role
 
 router = APIRouter(prefix="/books/{book_id}/budgets")
 
 Period = Literal["daily", "weekly", "monthly", "quarterly", "yearly"]
-Amount = Annotated[int, Field(gt=0)]           # in the book's currency
+Amount = Annotated[int, Field(gt=0, le=MAX_AMOUNT)]    # in the book's currency
 
 
 class Progress(BaseModel):
