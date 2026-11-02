@@ -916,3 +916,16 @@ def test_scheduler_runs_what_is_due_as_the_purge_login(database):
                 last_finished_at="null", last_result="null", last_detail="null")
         purger.dispose()
         api.dispose()
+
+
+def test_a_purged_owners_shared_book_goes_to_a_co_owner_who_can_still_restore(database):
+    """Purging the last open owner hands the book to a co-owner whose account is closed but restorable, rather than
+    deleting it: within their 30 days, everything is back as it was."""
+    u, x = new_user("purge_u"), new_user("purge_x")
+    b = new_book(u)
+    share(u, b, x, "owner")
+    with database.connect() as c:
+        c.execute(text("update users set deletion_requested_at = now() - interval '10 days' where id = :x"), {"x": x})
+        c.execute(text("update users set deletion_requested_at = now() - interval '31 days' where id = :u"), {"u": u})
+        c.execute(text("select purge_account(:u)"), {"u": u})
+        assert c.execute(text("select user_id, role from book_members where book_id = :b"), {"b": b}).all() == [(x, "owner")]

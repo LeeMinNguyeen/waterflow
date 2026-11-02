@@ -49,7 +49,7 @@ class UpdateProfile(BaseModel):
     language: Literal["en", "vi"] | None = None
     timezone: Timezone | None = None
     # On every device; null turns it off.
-    idle_sign_out_minutes: Annotated[int, Field(ge=1, le=1440)] | None = None
+    idle_sign_out_minutes: Annotated[int, Field(ge=1, le=60)] | None = None
 
 
 @router.patch("/me")

@@ -233,7 +233,7 @@ def test_idle_sign_out(client, database):
     _, neighbour = sign_up(client)
     assert me(client, token).json()["profile"]["idle_sign_out_minutes"] == 5            # the default
     assert client.patch("/v1/me", headers=bearer(neighbour), json={"idle_sign_out_minutes": 60}).status_code == 200
-    for bad in (0, 1441, "five"):
+    for bad in (0, 61, 1440, "five"):                                     # 1 to 60, or never
         assert client.patch("/v1/me", headers=bearer(token), json={"idle_sign_out_minutes": bad}).status_code == 422
 
     def unused_for(t, minutes):
@@ -505,12 +505,12 @@ def test_the_old_default_server_name_becomes_waterflow(fresh_server):
     from app.jobs import migrate
     url, _ = fresh_server
     with psycopg.connect(url, autocommit=True) as conn:
-        *before, last = migrate.pending(conn)
-        assert last.name.endswith("_waterflow.sql")
-        for migration in before:
+        pending = migrate.pending(conn)
+        rename = next(i for i, m in enumerate(pending) if m.name.endswith("_waterflow.sql"))
+        for migration in pending[:rename]:
             migrate.apply(conn, migration)
         assert conn.execute("select name from instance_settings").fetchone()[0] == "MSaving"
-        migrate.apply(conn, last)
+        migrate.apply(conn, pending[rename])
         assert conn.execute("select name from instance_settings").fetchone()[0] == "Waterflow"
 
 
