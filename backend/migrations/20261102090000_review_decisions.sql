@@ -33,6 +33,7 @@ begin
       select o.user_id into successor from book_members o
         join users ou on ou.id = o.user_id
        where o.book_id = b.book_id and o.user_id <> u and o.accepted_at is not null and ou.deleted_at is null
+         and ou.deletion_requested_at > now() - interval '30 days'
        order by o.role, o.accepted_at
        limit 1;
     end if;

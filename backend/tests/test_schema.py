@@ -929,3 +929,18 @@ def test_a_purged_owners_shared_book_goes_to_a_co_owner_who_can_still_restore(da
         c.execute(text("update users set deletion_requested_at = now() - interval '31 days' where id = :u"), {"u": u})
         c.execute(text("select purge_account(:u)"), {"u": u})
         assert c.execute(text("select user_id, role from book_members where book_id = :b"), {"b": b}).all() == [(x, "owner")]
+
+
+def test_a_book_handed_to_a_closing_member_goes_at_their_purge(database):
+    """The handover chain ends: a closed editor (with a pending invitee) gets the book, and their own purge deletes it."""
+    u, x, p = new_user("chain_u"), new_user("chain_x"), new_user("chain_p")
+    b = new_book(u)
+    share(u, b, x, "editor")
+    run(u, "insert into book_members (book_id, user_id, role, invited_by) values (:b, :p, 'viewer', :u)", b=b, p=p, u=u)
+    with database.connect() as c:
+        c.execute(text("update users set deletion_requested_at = now() - interval '10 days' where id = :x"), {"x": x})
+        c.execute(text("update users set deletion_requested_at = now() - interval '31 days' where id = :u"), {"u": u})
+        c.execute(text("select purge_account(:u)"), {"u": u})
+        assert c.execute(text("select role from book_members where book_id = :b and user_id = :x"), {"b": b, "x": x}).scalar() == "owner"
+        c.execute(text("select purge_account(:x)"), {"x": x})
+        assert c.execute(text("select count(*) from books where id = :b"), {"b": b}).scalar() == 0
