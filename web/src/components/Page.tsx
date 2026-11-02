@@ -31,6 +31,17 @@ export function Section({ title, action, children, ...props }: { title: string; 
   )
 }
 
+// A settings page's section (Profile, Server admin): a hairline above, its fields stacked.
+export function FormSection({ title, children }: { title: string; children: ReactNode }) {
+  const id = useId()
+  return (
+    <Box component="section" aria-labelledby={id} sx={{ borderTop: 1, borderColor: 'divider', pt: 3, pb: 1 }}>
+      <Typography id={id} variant="h2" sx={{ mb: 2 }}>{title}</Typography>
+      <Stack spacing={2}>{children}</Stack>
+    </Box>
+  )
+}
+
 export function SeeAll({ to, children }: { to: string; children: ReactNode }) {
   return (
     <Link component={RouterLink} to={to} variant="body2" color="textSecondary" underline="hover" sx={{ whiteSpace: 'nowrap' }}>

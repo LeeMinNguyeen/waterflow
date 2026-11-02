@@ -58,3 +58,21 @@ describe('members (review #166)', () => {
     expect(await screen.findByRole('combobox', { name: /bob/ })).toBeInTheDocument()
   })
 })
+
+describe('the look (review #166)', () => {
+  it('has one filled button, a page title like the other pages, and 36 px controls in the member rows', async () => {
+    fakeApi({
+      'GET /v1/currencies': currencies,
+      'GET /v1/books': [book],
+      'GET /v1/books/b1/members': [
+        { user_id: 'u1', name: 'lan', display_name: null, role: 'owner', pending: false, me: true },
+        { user_id: 'u2', name: 'bob', display_name: null, role: 'editor', pending: false, me: false },
+      ],
+    })
+    const { container } = await renderApp(<BookSettings book={book} />)
+    expect(await screen.findByRole('heading', { level: 1, name: 'Book settings' })).toBeInTheDocument()
+    await screen.findByRole('combobox', { name: /bob/ })
+    expect(container.querySelectorAll('.MuiButton-contained.MuiButton-colorPrimary')).toHaveLength(1)
+    expect(screen.getByRole('button', { name: 'Remove' })).toHaveStyle({ height: '36px' })
+  })
+})

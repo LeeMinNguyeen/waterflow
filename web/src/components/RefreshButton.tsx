@@ -22,7 +22,7 @@ export function RefreshButton({ bookId }: { bookId: string }) {
   return (
     <Tooltip title={t('common.refresh')}>
       <span>
-        <IconButton aria-label={t('common.refresh')} onClick={click} disabled={busy}>
+        <IconButton aria-label={t('common.refresh')} onClick={click} disabled={busy} sx={{ width: 36, height: 36 }}>
           {busy ? <CircularProgress size={20} /> : <RefreshIcon />}
         </IconButton>
       </span>
