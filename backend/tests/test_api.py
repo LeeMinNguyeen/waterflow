@@ -440,7 +440,9 @@ def test_open_statement(client, database):
 
     # The API: the list, and the one due on its own.
     r = client.get(f"{base}/accounts/{card}/bills", headers=auth(u))
-    assert r.status_code == 200 and all(b["statement_open"] for b in r.json())
+    from datetime import datetime, timezone as tz
+    today = datetime.now(tz.utc).date()                      # the book's timezone is UTC; the API reads the real day
+    assert r.status_code == 200 and [b["statement_open"] for b in r.json()] == [b.statement_open for b in bills(card, today)]
     assert client.get(f"{base}/accounts/{accts['Cash']}/bills", headers=auth(u)).json() == []
     assert client.get(f"{base}/accounts/{card}/bills", headers=auth(signed_up(client))).status_code == 404
 
