@@ -56,7 +56,7 @@ function InviteRow({ invite }: { invite: BookInvite }) {
           <Button color="inherit" size="small" loading={busy === 'decline'} disabled={!!busy} onClick={() => answer(false)}>
             {t('members.decline')}
           </Button>
-          <Button variant="contained" size="small" loading={busy === 'accept'} disabled={!!busy} onClick={() => answer(true)}>
+          <Button variant="outlined" size="small" loading={busy === 'accept'} disabled={!!busy} onClick={() => answer(true)}>
             {t('members.accept')}
           </Button>
         </Stack>
