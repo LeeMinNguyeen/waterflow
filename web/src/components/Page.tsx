@@ -31,7 +31,6 @@ export function Section({ title, action, children, ...props }: { title: string; 
   )
 }
 
-// A settings page's section (Profile, Server admin): a hairline above, its fields stacked.
 export function FormSection({ title, children }: { title: string; children: ReactNode }) {
   const id = useId()
   return (
