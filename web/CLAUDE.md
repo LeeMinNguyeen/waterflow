@@ -73,8 +73,9 @@ until the mobile app ships.
 - **Menus (⋮) are words only,** no icons: an icon takes room a phone doesn't have.
 - **The look** (the minimal design): colours, type and component defaults in `theme.ts`, Inter bundled
   (`@fontsource-variable/inter`, no font from elsewhere). Amounts on screen go through `components/Money`: red below
-  zero, green for money coming in, plain for transfers and balances, signs kept. A category's colour on its dot and
-  its bars; a budget past its limit red with "over". Sections are separated by space and a hairline
+  zero, green for money coming in, plain for transfers and balances, signs kept (`quiet` in a caption). An amount
+  inside a translated sentence ("You owe {{amount}}") stays text: the sentence says what it is. A category's colour
+  on its dot and its bars; a budget past its limit red with "over". Sections are separated by space and a hairline
   (`components/Page`), not cards; at most one filled blue button per screen. The desktop sidebar shows each page's
   icon next to its name.
 - **Layout rules** (each one a bug found on the dev server):

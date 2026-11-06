@@ -437,7 +437,7 @@ describe('paying a card purchase in installments (waterflow#71)', () => {
     await userEvent.type(await screen.findByLabelText(/^Amount/), '6000000')
     await userEvent.click(screen.getByRole('switch', { name: 'Pay in installments' }))
     expect(screen.getByRole('spinbutton', { name: 'Months' })).toHaveValue(6)
-    expect(screen.getByText('6 × ₫1,000,000')).toBeInTheDocument()
+    expect(screen.getByText('₫1,000,000').parentElement).toHaveTextContent('6 × ₫1,000,000')
     await userEvent.type(screen.getByLabelText('Conversion fee'), '120000')
     await userEvent.click(screen.getByRole('button', { name: 'Save' }))
     await waitFor(() => expect(api.writes()).toHaveLength(2))

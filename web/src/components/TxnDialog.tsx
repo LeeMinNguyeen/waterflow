@@ -34,7 +34,6 @@ import { api, ApiError, categoryKindFor, liabilityKinds, send, type Account, typ
 import { categoryTree } from '../lib/categories'
 import { shiftDay, timeIn, todayIn } from '../lib/labels'
 import { amountText, negated, parseAmount } from '../lib/money'
-import { useFormatMoney } from '../lib/hideAmounts'
 import { personName } from '../lib/people'
 import { fromPlan, noPlan, planDates, validMonths, type PlanForm } from '../lib/installments'
 import { useAccounts, useBooks, useCategories, useCurrencies, useInstallments, useInvalidateBook, usePayees, useUsual } from '../lib/queries'
@@ -98,7 +97,6 @@ export function TxnDialog(props: Props) {
 // Amounts are typed as positive numbers; the type decides the sign (an expense
 // is money out). Adjustments and opening balances take a sign.
 function TxnForm({ book, txn: initial, defaults, onClose, minorOf, carry, onSwitchBook, onDuplicate }: FormProps) {
-  const formatMoney = useFormatMoney()
   const { t } = useTranslation()
   const toast = useToast()
   const errorText = useErrorText()
@@ -366,7 +364,7 @@ function TxnForm({ book, txn: initial, defaults, onClose, minorOf, carry, onSwit
   const amountHint = minus ? t('txn.noMinus') : form.type === 'adjustment' ? t('txn.adjustmentHint')
     : openingBalance && !owedOpening ? t('txn.openingHint') : undefined
   const waitingForAccount = openingBalance && !from
-  const accountLabel = (a: Account) => `${a.name} · ${formatMoney(a.balance, a.currency, minor(a.id), lang)}`
+  const accountLabel = (a: Account) => <span>{a.name} · <Money amount={a.balance} currency={a.currency} kind="balance" /></span>
   const people = open.filter((a) => a.kind === 'person')
   const accountOptions = [
     ...open.filter((a) => a.kind !== 'person').map((a) => <MenuItem key={a.id} value={a.id}>{accountLabel(a)}</MenuItem>),
@@ -387,7 +385,7 @@ function TxnForm({ book, txn: initial, defaults, onClose, minorOf, carry, onSwit
   const usualLabel = (u: Usual) => {
     const a = byId.get(u.account_id)
     const name = u.payee || categories.data?.find((c) => c.id === u.category_id)?.name || a?.name
-    return a && `${name} · ${formatMoney(u.amount, a.currency, minor(a.id), lang)}`
+    return a && <>{name} · <Money amount={u.amount} currency={a.currency} kind="balance" /></>
   }
   const usualChips = usual.length > 0 && !readOnly && (
     <Stack direction="row" sx={{ gap: 1, ...(fullScreen ? { flexWrap: 'nowrap', overflowX: 'auto', mx: -2, px: 2 } : { flexWrap: 'wrap' }) }}>
@@ -423,7 +421,7 @@ function TxnForm({ book, txn: initial, defaults, onClose, minorOf, carry, onSwit
     const locale = lang === 'vi' ? 'vi-VN' : 'en-GB'
     const day = form.date ? new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short' }).format(new Date(`${form.date}T00:00:00`)) : ''
     const relative = form.date === today ? t('txn.today') : form.date === shiftDay(today, -1) ? t('txn.yesterday') : null
-    const balanceOf = (a: Account) => `${a.name} (${formatMoney(a.balance, a.currency, minor(a.id), lang)})`
+    const balanceOf = (a: Account) => <>{a.name} (<Money amount={a.balance} currency={a.currency} kind="balance" />)</>
     const picking = sheet === 'account' || sheet === 'toAccount'
     const matches = (a: Account) => a.name.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase())
     const pickAccount = (id: string) => {

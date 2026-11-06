@@ -31,4 +31,16 @@ describe('Money (waterflow#143)', () => {
     expect(screen.getByText('₫120,000,000')).toHaveStyle({ color: '#18181B' })
     expect(screen.getByText('−$1,250.50')).toHaveStyle({ color: '#C9372C' })
   })
+
+  it('takes the colour of the text around it when quiet, unless it is below zero', async () => {
+    fakeApi({ 'GET /v1/currencies': currencies })
+    await renderApp(
+      <span style={{ color: 'rgb(1, 2, 3)' }}>
+        <Money amount={5_000_000} currency="VND" kind="balance" quiet />
+        <Money amount={-125_050} currency="USD" kind="balance" quiet />
+      </span>,
+    )
+    expect(await screen.findByText('₫5,000,000')).toHaveStyle({ color: 'rgb(1, 2, 3)' })
+    expect(screen.getByText('−$1,250.50')).toHaveStyle({ color: '#C9372C' })
+  })
 })

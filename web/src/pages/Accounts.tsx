@@ -29,10 +29,8 @@ import { Fragment, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router'
 import { useErrorText } from '../components/errors'
-import { currentLanguage } from '../i18n'
 import { send, type Account, type AccountKind, type Book } from '../lib/api'
 import { groupByKind, type AccountGroup } from '../lib/accounts'
-import { useFormatMoney } from '../lib/hideAmounts'
 import { currencyLabel } from '../lib/labels'
 import { useAccounts, useCurrencies } from '../lib/queries'
 import { AccountDialog } from './AccountDialog'
@@ -42,7 +40,6 @@ import { PageHeader } from '../components/Page'
 // A table on desktop, a list on phones. An account opens its details, which
 // lead to its transactions.
 export function Accounts({ book }: { book: Book }) {
-  const formatMoney = useFormatMoney()
   const { t } = useTranslation()
   const errorText = useErrorText()
   const qc = useQueryClient()
@@ -113,7 +110,7 @@ export function Accounts({ book }: { book: Book }) {
   const converted = (a: Account) =>
     a.currency !== book.base_currency && (
       <Typography variant="caption" color="textDisabled" component="div" sx={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
-        {a.converted_balance == null ? t('dash.noRate') : `≈ ${formatMoney(a.converted_balance, book.base_currency, currencies.data?.get(book.base_currency)?.minor_unit ?? 0, currentLanguage())}`}
+        {a.converted_balance == null ? t('dash.noRate') : <>≈ <Money amount={a.converted_balance} currency={book.base_currency} kind="balance" quiet /></>}
       </Typography>
     )
   const meta = (a: Account) => [t(`accounts.kinds.${a.kind}`), a.last4 && `•••• ${a.last4}`, !a.in_net_worth && t('accounts.notInNetWorth')]

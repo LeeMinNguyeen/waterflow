@@ -25,6 +25,7 @@ import { liabilityKinds, send, type Account, type Bill, type Book, type Installm
 import { timeIn, todayIn } from '../lib/labels'
 import { amountText, parseAmount } from '../lib/money'
 import { useFormatMoney } from '../lib/hideAmounts'
+import { Money } from '../components/Money'
 import { useAccounts, useBills, useInstallments, useInvalidateBook } from '../lib/queries'
 import { newId } from '../lib/uuid'
 import { DialogFooter } from '../components/DialogFooter'
@@ -67,6 +68,7 @@ function BillCard({ book, account, bill: b, minorUnit, canPay, alone, last }: {
   const day = dateIn(locale, { dateStyle: 'medium' })
   const short = dateIn(locale, { day: 'numeric', month: 'short' })
   const money = (v: number) => formatMoney(v, account.currency, minorUnit, lang)
+  const amount = (v: number) => <Money amount={v} currency={account.currency} kind="balance" />
   const daysLeft = Math.round((Date.parse(b.due_on) - Date.parse(todayIn(book.timezone))) / 86_400_000)
   const open = b.kind === 'card' && !!b.statement_open
   const status: { color: 'success' | 'error' | 'warning' | 'default'; label: string } =
@@ -93,23 +95,23 @@ function BillCard({ book, account, bill: b, minorUnit, canPay, alone, last }: {
         </Stack>
         {open && alone && <Typography variant="body2" color="textSecondary">{t('bill.lastSettled', { date: short(dayBefore(b.period_start)) })}</Typography>}
         {b.kind === 'card'
-          ? row(t(open ? 'bill.soFar' : 'bill.statementBalance'), money(b.amount - b.fee))
-          : row(t('bill.installment'), <>{money(b.amount - b.fee)}{b.interest > 0 && <Typography component="span" variant="caption"
+          ? row(t(open ? 'bill.soFar' : 'bill.statementBalance'), amount(b.amount - b.fee))
+          : row(t('bill.installment'), <>{amount(b.amount - b.fee)}{b.interest > 0 && <Typography component="span" variant="caption"
             color="textSecondary" sx={{ display: 'block' }}>{t('bill.ofWhichInterest', { amount: money(b.interest) })}</Typography>}</>)}
         {(b.installments ?? []).map((i) => (
-          <Box key={i.plan_id}>{row(t('bill.installmentLine', { payee: i.payee ?? t('plan.purchase'), number: i.number, months: i.months }), money(i.amount))}</Box>
+          <Box key={i.plan_id}>{row(t('bill.installmentLine', { payee: i.payee ?? t('plan.purchase'), number: i.number, months: i.months }), amount(i.amount))}</Box>
         ))}
-        {b.fee > 0 && row(t(b.kind === 'card' ? 'bill.installmentFees' : 'bill.fee'), money(b.fee))}
-        {open ? row(t('bill.statementDate'), day(b.period_end)) : row(t(b.kind === 'card' ? 'bill.paidSince' : 'bill.paid'), money(b.paid))}
+        {b.fee > 0 && row(t(b.kind === 'card' ? 'bill.installmentFees' : 'bill.fee'), amount(b.fee))}
+        {open ? row(t('bill.statementDate'), day(b.period_end)) : row(t(b.kind === 'card' ? 'bill.paidSince' : 'bill.paid'), amount(b.paid))}
         {row(t('bill.due'), day(b.due_on))}
         <Stack direction="row" spacing={2} sx={{ justifyContent: 'space-between', alignItems: 'center', pt: 0.5 }}>
           <div>
             <Typography variant="body2" color="textSecondary">{t(open ? 'bill.toPaySoFar' : 'bill.remaining')}</Typography>
-            <Typography variant="h6">{money(b.remaining)}</Typography>
+            <Typography variant="h6">{amount(b.remaining)}</Typography>
           </div>
           {canPay && <Button variant="outlined" onClick={() => setPaying(true)}>{t('bill.pay')}</Button>}
         </Stack>
-        {b.kind === 'card' && last && row(t('bill.owedNow'), money(b.owed_now))}
+        {b.kind === 'card' && last && row(t('bill.owedNow'), amount(b.owed_now))}
         {b.kind === 'card' && last && account.credit_limit !== null && b.limit_used != null &&
           row(t('bill.limitUsed'), t('bill.limitOf', { used: money(b.limit_used), limit: money(account.credit_limit) }))}
       </Stack>
@@ -191,7 +193,7 @@ function PayBillDialog({ book, account, bill, minorUnit, onClose }: {
             <Alert severity="info">{t('bill.noAccounts', { currency: account.currency })}</Alert>
           ) : (
             <TextField select label={t('bill.payFrom')} value={payFrom} onChange={(e) => setFrom(e.target.value)}>
-              {choices.map((a) => <MenuItem key={a.id} value={a.id}>{a.name} · {money(a.balance)}</MenuItem>)}
+              {choices.map((a) => <MenuItem key={a.id} value={a.id}><span>{a.name} · <Money amount={a.balance} currency={a.currency} kind="balance" /></span></MenuItem>)}
             </TextField>
           )}
           <AmountField label={t('bill.amount')} required value={amount} onChange={setAmount} minorUnit={minorUnit}
