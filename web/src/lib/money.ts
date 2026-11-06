@@ -59,38 +59,49 @@ type Ratio = { n: bigint; d: bigint }
 const add = (a: Ratio, b: Ratio): Ratio => ({ n: a.n * b.d + b.n * a.d, d: a.d * b.d })
 
 // What the user typed -> minor units, or null. In Vietnamese "." groups thousands, so "1.250" for VND is 1250 and
-// "1.250,5" for USD is 125050. A sum is worked out too ("45.000+100.000", "450.000/3"): × and ÷ before + and -, a
-// minus only in front, exact fractions rounded once at the end to the currency's smallest unit, half away from zero.
+// "1.250,5" for USD is 125050. A sum is worked out too ("45.000+100.000", "450.000/3"): × and ÷ before + and -, any
+// number signed by the + and - in front of it as on a calculator ("50.000+-8.000" is 42.000), exact fractions rounded
+// once at the end to the currency's smallest unit, half away from zero.
 export function parseAmount(input: string, minorUnit: number, locale: Locale): number | null {
   const { group, decimal } = separators(locale)
-  let s = input.replace(/\s/g, '')
-  const negative = s.startsWith('-')
-  if (negative) s = s.slice(1)
-  const parts = s.split(operators)
+  const s = input.replace(/\s/g, '')
   const scale = 10n ** BigInt(minorUnit)
   let total: Ratio = { n: 0n, d: 1n }
   let term: Ratio = { n: 0n, d: 1n }
-  for (let i = 0; i < parts.length; i += 2) {
-    const value = readNumber(parts[i], minorUnit, group, decimal)
-    if (value === null) return null
-    const op = i === 0 ? '' : parts[i - 1]
+  let i = 0
+  do {
+    const op = i === 0 ? '' : s[i++]
+    let sign = 1n
+    for (; s[i] === '+' || s[i] === '-'; i++) if (s[i] === '-') sign = -sign
+    const start = i
+    while (i < s.length && !operators.test(s[i])) i++
+    const read = readNumber(s.slice(start, i), minorUnit, group, decimal)
+    if (read === null) return null
+    const value = sign * read
     if (op === '' || op === '+' || op === '-') {
       total = add(total, term)
-      const sign = op === '-' || (op === '' && negative) ? -1n : 1n
-      term = { n: sign * value, d: 1n }
+      term = { n: op === '-' ? -value : value, d: 1n }
     } else if (op === '*' || op === '×') {
       term = { n: term.n * value, d: term.d * scale }
     } else {
-      if (value === 0n) return null
-      term = { n: term.n * scale, d: term.d * value }
+      if (read === 0n) return null
+      term = { n: sign * term.n * scale, d: term.d * read }
     }
-  }
+  } while (i < s.length)
   total = add(total, term)
   const abs = total.n < 0n ? -total.n : total.n
   let whole = abs / total.d
   if (2n * (abs % total.d) >= total.d) whole += 1n
   if (whole > BigInt(Number.MAX_SAFE_INTEGER)) return null
   return total.n < 0n ? -Number(whole) : Number(whole)
+}
+
+// The other sign of what was typed, keeping it a sum: -(a - b) is -a + b. "" and "-" stay as they are.
+export function negated(text: string): string {
+  const t = text.trim()
+  if (t === '' || t === '-') return text
+  const flipped = t.replace(/(?<=[^+\-*/×÷\s]\s*)[+-]/g, (op) => (op === '+' ? '-' : '+'))
+  return flipped.startsWith('-') ? flipped.slice(1) : `-${flipped}`
 }
 
 function groupNumber(text: string, group: string, decimal: string): string {

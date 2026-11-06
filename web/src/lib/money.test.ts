@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { amountText, amountTone, formatMoney, groupWhileTyping, parseAmount } from './money'
+import { amountText, amountTone, formatMoney, groupWhileTyping, negated, parseAmount } from './money'
 
 const nbsp = (s: string) => s.replace(/[  ]/g, ' ')
 
@@ -131,8 +131,28 @@ describe('sums in an amount (waterflow#120)', () => {
     expect(parseAmount('10.000-50.000', 0, 'vi')).toBe(-40_000)
   })
 
+  it('reads a + or - in front of any number, as a calculator does', () => {
+    expect(parseAmount('50.000+-8000', 0, 'vi')).toBe(42_000)
+    expect(parseAmount('50.000+-8.000', 0, 'vi')).toBe(42_000)
+    expect(parseAmount('50.000-+8.000', 0, 'vi')).toBe(42_000)
+    expect(parseAmount('50.000--8.000', 0, 'vi')).toBe(58_000)
+    expect(parseAmount('50,000 + -8,000', 0, 'en')).toBe(42_000)
+    expect(parseAmount('1++2', 0, 'en')).toBe(3)
+    expect(parseAmount('+45000', 0, 'en')).toBe(45_000)
+    expect(parseAmount('--5', 0, 'en')).toBe(5)
+    expect(parseAmount('5*-2', 0, 'en')).toBe(-10)
+    expect(parseAmount('-5*-2', 0, 'en')).toBe(10)
+    expect(parseAmount('10.000÷-4', 0, 'vi')).toBe(-2_500)
+    expect(parseAmount('1/-2', 0, 'en')).toBe(-1)
+    expect(parseAmount('-1/-2', 0, 'en')).toBe(1)
+    expect(parseAmount('100/-3', 0, 'en')).toBe(-33)
+    expect(parseAmount('12,5*-2', 2, 'vi')).toBe(-2_500)
+    expect(parseAmount('20-8/-4', 0, 'en')).toBe(22)
+  })
+
   it('refuses shorthand, x for times, and anything that isn\'t a whole sum', () => {
-    for (const text of ['45k', '1tr2', '1,2tr', '3x25000', '1++2', '5*-2', '45000+', '+45000', '*3', '5/0', '1.000/0,0', '(1+2)*3', '1.234+1', '2^3']) {
+    for (const text of ['45k', '1tr2', '1,2tr', '3x25000', '45000+', '45000+-', '-', '+-', '*3', '5**2', '5*/2', '5-*3', '5/0', '5/-0',
+      '1.000/0,0', '(1+2)*3', '1.234+1', '2^3']) {
       expect(parseAmount(text, text === '1.234+1' ? 2 : 0, text.includes(',') ? 'vi' : 'en'), text).toBeNull()
     }
   })
@@ -147,5 +167,24 @@ describe('sums in an amount (waterflow#120)', () => {
     expect(groupWhileTyping('-1250000-250000', 'vi')).toBe('-1.250.000-250.000')
     expect(groupWhileTyping('1250.5*2', 'en')).toBe('1,250.5*2')
     expect(groupWhileTyping('45000+', 'vi')).toBe('45.000+')
+  })
+})
+
+describe('the other sign of what was typed (waterflow#198)', () => {
+  it('flips a whole sum, so it works out to the same amount with the other sign', () => {
+    for (const [text, locale, minor] of [['45.000', 'vi', 0], ['-45.000', 'vi', 0], ['50.000-8.000', 'vi', 0], ['45,000 + 100,000', 'en', 0],
+      ['2+3*4', 'en', 0], ['20-8/4', 'en', 0], ['50.000+-8.000', 'vi', 0], ['50.000--8.000', 'vi', 0], ['+45000', 'en', 0], ['--5', 'en', 0],
+      ['5*-2', 'en', 0], ['-1/2', 'en', 0], ['12,5-0,25', 'vi', 2]] as const) {
+      const value = parseAmount(text, minor, locale)
+      expect(parseAmount(negated(text), minor, locale), text).toBe(-value!)
+      expect(parseAmount(negated(negated(text)), minor, locale), text).toBe(value)
+    }
+    expect(negated('50.000-8.000')).toBe('-50.000+8.000')
+    expect(negated('-50.000+8.000')).toBe('50.000-8.000')
+  })
+
+  it('leaves nothing and a lone minus as they are', () => {
+    expect(negated('')).toBe('')
+    expect(negated('-')).toBe('-')
   })
 })
