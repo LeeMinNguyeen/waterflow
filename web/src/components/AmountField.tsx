@@ -8,7 +8,7 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { currentLanguage } from '../i18n'
 import { useHideAmounts } from '../lib/hideAmounts'
-import { amountText, groupWhileTyping, negated, parseAmount } from '../lib/money'
+import { amountText, groupWhileTyping, negated, parseAmount, typedDecimal } from '../lib/money'
 
 type Props = Omit<TextFieldProps, 'value' | 'onChange'> & {
   value: string
@@ -64,7 +64,7 @@ export function AmountField({ value, onChange, minorUnit, big = false, unit, ari
     <TextField
       {...props}
       value={hidden && !focused && typed ? '••••' : value}
-      onChange={(e) => onChange(groupWhileTyping(e.target.value, lang))}
+      onChange={(e) => onChange(groupWhileTyping(typedDecimal(value, e.target.value, e.target.selectionStart ?? e.target.value.length, minorUnit, lang), lang))}
       onFocus={(e) => { setFocused(true); props.onFocus?.(e) }}
       onBlur={(e) => {
         setFocused(false)

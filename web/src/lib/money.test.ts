@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { amountText, amountTone, formatMoney, groupWhileTyping, negated, parseAmount } from './money'
+import { amountText, amountTone, formatMoney, groupWhileTyping, negated, parseAmount, typedDecimal } from './money'
 
 const nbsp = (s: string) => s.replace(/[  ]/g, ' ')
 
@@ -186,5 +186,24 @@ describe('the other sign of what was typed (waterflow#198)', () => {
   it('leaves nothing and a lone minus as they are', () => {
     expect(negated('')).toBe('')
     expect(negated('-')).toBe('-')
+  })
+})
+
+describe("a phone's decimal key in the other language's style (review #166)", () => {
+  it('reads a separator typed on its own as the decimal sign, for a currency with decimals', () => {
+    expect(typedDecimal('12', '12.', 3, 2, 'vi')).toBe('12,')
+    expect(typedDecimal('12', '12,', 3, 2, 'en')).toBe('12.')
+    expect(typedDecimal('1.250', '1.250.', 6, 2, 'vi')).toBe('1.250,')
+    expect(typedDecimal('12,5+3', '12,5+3.', 7, 2, 'vi')).toBe('12,5+3,')
+    expect(typedDecimal('1250', '12.50', 3, 2, 'vi')).toBe('12,50')
+    expect(typedDecimal('12345', '12.5', 3, 2, 'vi')).toBe('12,5')
+  })
+
+  it("leaves the language's own decimal sign, a currency without decimals, a second decimal and a paste as they are", () => {
+    expect(typedDecimal('12', '12,', 3, 2, 'vi')).toBe('12,')
+    expect(typedDecimal('12', '12.', 3, 0, 'vi')).toBe('12.')
+    expect(typedDecimal('12,5', '12,5.', 5, 2, 'vi')).toBe('12,5.')
+    expect(typedDecimal('', '12.5', 4, 2, 'vi')).toBe('12.5')
+    expect(typedDecimal('12', '12.', 3, 2, 'en')).toBe('12.')
   })
 })

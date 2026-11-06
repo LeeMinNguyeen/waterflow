@@ -119,6 +119,23 @@ export function groupWhileTyping(input: string, locale: Locale): string {
   return input.split(operators).map((part, i) => (i % 2 ? part : groupNumber(part, group, decimal))).join('')
 }
 
+// A separator key typed on its own is the decimal sign when the currency has decimals, whichever of the two it is: a
+// phone's decimal key follows the phone's region, not the app's language, and the field groups thousands itself.
+// before is the field's text, after the browser's edit of it with the caret at caret.
+export function typedDecimal(before: string, after: string, caret: number, minorUnit: number, locale: Locale): string {
+  const { group, decimal } = separators(locale)
+  const at = caret - 1
+  if (!minorUnit || after[at] !== group) return after
+  const typedAlone = before.startsWith(after.slice(0, at)) && before.endsWith(after.slice(caret)) && before.length >= after.length - 1
+  if (!typedAlone) return after
+  let start = at
+  while (start > 0 && !operators.test(after[start - 1])) start--
+  let end = caret
+  while (end < after.length && !operators.test(after[end])) end++
+  if (after.slice(start, end).includes(decimal)) return after
+  return after.slice(0, at) + decimal + after.slice(caret)
+}
+
 // Minor units -> the text a user would type, e.g. 125050 USD -> "1.250,50" (vi),
 // so an edit form starts from the saved amount.
 export function amountText(minor: number, minorUnit: number, locale: Locale): string {

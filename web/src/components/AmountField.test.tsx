@@ -5,9 +5,9 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { renderApp } from '../test/render'
 import { AmountField } from './AmountField'
 
-function Field({ signed = false, unit }: { signed?: boolean; unit?: string }) {
+function Field({ signed = false, unit, minorUnit = 0 }: { signed?: boolean; unit?: string; minorUnit?: number }) {
   const [value, setValue] = useState('')
-  return <AmountField label="Amount" value={value} onChange={setValue} minorUnit={0} signed={signed} unit={unit} />
+  return <AmountField label="Amount" value={value} onChange={setValue} minorUnit={minorUnit} signed={signed} unit={unit} />
 }
 
 describe('AmountField', () => {
@@ -147,5 +147,38 @@ describe('a long paste', () => {
     await userEvent.click(input)
     await userEvent.paste('1+'.repeat(500) + '1')
     expect((input as HTMLInputElement).value.length).toBeLessThanOrEqual(64)
+  })
+})
+
+describe("a phone's decimal key in the other language's style (review #166)", () => {
+  it('takes a dot typed in Vietnamese as the decimal sign for a currency with decimals', async () => {
+    await renderApp(<Field minorUnit={2} />, { lang: 'vi' })
+    const input = screen.getByRole('textbox')
+    await userEvent.type(input, '1250.5')
+    expect(input).toHaveValue('1.250,5')
+  })
+
+  it('takes a comma typed in English as the decimal point for a currency with decimals', async () => {
+    await renderApp(<Field minorUnit={2} />)
+    const input = screen.getByLabelText('Amount')
+    await userEvent.type(input, '12,5+3,25')
+    expect(input).toHaveValue('12.5+3.25')
+    expect(screen.getByText('= 15.75')).toBeInTheDocument()
+  })
+
+  it('refuses a thousands separator typed by habit for a currency with decimals, instead of reading it wrong', async () => {
+    await renderApp(<Field minorUnit={2} />)
+    const input = screen.getByLabelText('Amount')
+    await userEvent.type(input, '1,250')
+    expect(input).toHaveValue('1.250')
+    await userEvent.tab()
+    expect(screen.getByText("The amount isn't in the right format.")).toBeInTheDocument()
+  })
+
+  it('keeps grouping a number without decimals', async () => {
+    await renderApp(<Field />, { lang: 'vi' })
+    const input = screen.getByRole('textbox')
+    await userEvent.type(input, '50.000')
+    expect(input).toHaveValue('50.000')
   })
 })
