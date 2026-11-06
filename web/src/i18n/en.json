@@ -204,6 +204,7 @@
     "restore_too_new": "That backup is from a newer version of Waterflow: update this server first.",
     "restore_too_large": "That file is too large: 100 MB at most.",
     "installment_exists": "This purchase already has an installment plan.",
+    "installment_invalid": "This installment plan doesn't fit its purchase: an expense on a credit card with a statement day, converted on or after its date.",
     "person_account": "This is a person's own account: change it on People."
   },
   "nav": {
