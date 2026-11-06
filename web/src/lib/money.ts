@@ -44,37 +44,68 @@ export function amountTone(minor: number, kind: AmountKind = 'flow'): Tone {
   return kind === 'flow' ? 'positive' : 'neutral'
 }
 
-// What the user typed -> minor units, or null if it isn't a number with at most
-// minorUnit decimals. In Vietnamese "." groups thousands, so "1.250" for VND is
-// 1250, and "1.250,5" for USD is 125050.
-export function parseAmount(input: string, minorUnit: number, locale: Locale): number | null {
-  const { group, decimal } = separators(locale)
-  let s = input.trim().replaceAll(' ', '').replaceAll(' ', '')
-  let negative = false
-  if (s.startsWith('-')) {
-    negative = true
-    s = s.slice(1)
-  }
-  s = s.replaceAll(group, '')
-  const [whole, fraction = '', extra] = s.split(decimal)
+const operators = /([+\-*/×÷])/
+
+// One number as the user wrote it, in minor units, or null unless it has at most minorUnit decimals.
+function readNumber(text: string, minorUnit: number, group: string, decimal: string): bigint | null {
+  const [whole, fraction = '', extra] = text.replaceAll(group, '').split(decimal)
   if (extra !== undefined || !/^\d*$/.test(whole) || !/^\d*$/.test(fraction)) return null
   if (whole === '' && fraction === '') return null
   if (fraction.length > minorUnit) return null
-  const minor = Number((whole || '0') + fraction.padEnd(minorUnit, '0'))
-  if (!Number.isSafeInteger(minor)) return null
-  return negative && minor !== 0 ? -minor : minor
+  return BigInt((whole || '0') + fraction.padEnd(minorUnit, '0'))
 }
 
-// Groups thousands while typing: "1250000" -> "1.250.000" (vi). Leaves input it
-// can't read alone, so the field never fights the user.
+type Ratio = { n: bigint; d: bigint }
+const add = (a: Ratio, b: Ratio): Ratio => ({ n: a.n * b.d + b.n * a.d, d: a.d * b.d })
+
+// What the user typed -> minor units, or null. In Vietnamese "." groups thousands, so "1.250" for VND is 1250 and
+// "1.250,5" for USD is 125050. A sum is worked out too ("45.000+100.000", "450.000/3"): × and ÷ before + and -, a
+// minus only in front, exact fractions rounded once at the end to the currency's smallest unit, half away from zero.
+export function parseAmount(input: string, minorUnit: number, locale: Locale): number | null {
+  const { group, decimal } = separators(locale)
+  let s = input.replace(/\s/g, '')
+  const negative = s.startsWith('-')
+  if (negative) s = s.slice(1)
+  const parts = s.split(operators)
+  const scale = 10n ** BigInt(minorUnit)
+  let total: Ratio = { n: 0n, d: 1n }
+  let term: Ratio = { n: 0n, d: 1n }
+  for (let i = 0; i < parts.length; i += 2) {
+    const value = readNumber(parts[i], minorUnit, group, decimal)
+    if (value === null) return null
+    const op = i === 0 ? '' : parts[i - 1]
+    if (op === '' || op === '+' || op === '-') {
+      total = add(total, term)
+      const sign = op === '-' || (op === '' && negative) ? -1n : 1n
+      term = { n: sign * value, d: 1n }
+    } else if (op === '*' || op === '×') {
+      term = { n: term.n * value, d: term.d * scale }
+    } else {
+      if (value === 0n) return null
+      term = { n: term.n * scale, d: term.d * value }
+    }
+  }
+  total = add(total, term)
+  const abs = total.n < 0n ? -total.n : total.n
+  let whole = abs / total.d
+  if (2n * (abs % total.d) >= total.d) whole += 1n
+  if (whole > BigInt(Number.MAX_SAFE_INTEGER)) return null
+  return total.n < 0n ? -Number(whole) : Number(whole)
+}
+
+function groupNumber(text: string, group: string, decimal: string): string {
+  const [, lead, body, trail] = /^(\s*)(.*?)(\s*)$/s.exec(text)!
+  const [whole, ...rest] = body.replaceAll(group, '').split(decimal)
+  if (!/^\d*$/.test(whole)) return text
+  const grouped = whole.replace(/^0+(?=\d)/, '').replace(/\B(?=(\d{3})+(?!\d))/g, group)
+  return lead + grouped + (rest.length ? decimal + rest.join(decimal) : '') + trail
+}
+
+// Groups thousands while typing, each number of a sum on its own: "45000+100000" -> "45.000+100.000" (vi). Leaves
+// what it can't read alone, so the field never fights the user.
 export function groupWhileTyping(input: string, locale: Locale): string {
   const { group, decimal } = separators(locale)
-  const negative = input.trim().startsWith('-')
-  const body = input.replaceAll(group, '').replace(/^\s*-/, '')
-  const [whole, ...rest] = body.split(decimal)
-  if (!/^\d*$/.test(whole)) return input
-  const grouped = whole.replace(/^0+(?=\d)/, '').replace(/\B(?=(\d{3})+(?!\d))/g, group)
-  return (negative ? '-' : '') + grouped + (rest.length ? decimal + rest.join(decimal) : '')
+  return input.split(operators).map((part, i) => (i % 2 ? part : groupNumber(part, group, decimal))).join('')
 }
 
 // Minor units -> the text a user would type, e.g. 125050 USD -> "1.250,50" (vi),

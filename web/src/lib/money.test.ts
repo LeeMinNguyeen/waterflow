@@ -95,3 +95,57 @@ describe('amountTone (waterflow#143)', () => {
     expect(amountTone(120_000_000, 'balance')).toBe('neutral')
   })
 })
+
+describe('sums in an amount (waterflow#120)', () => {
+  it('works out what was typed, in the language\'s separators', () => {
+    expect(parseAmount('45.000+100.000', 0, 'vi')).toBe(145_000)
+    expect(parseAmount('45000 + 100000', 0, 'vi')).toBe(145_000)
+    expect(parseAmount('45,000 + 100,000', 0, 'en')).toBe(145_000)
+    expect(parseAmount('120.000-35.000', 0, 'vi')).toBe(85_000)
+    expect(parseAmount('450.000/3', 0, 'vi')).toBe(150_000)
+    expect(parseAmount('3*25.000', 0, 'vi')).toBe(75_000)
+    expect(parseAmount('3×25.000', 0, 'vi')).toBe(75_000)
+    expect(parseAmount('100.000÷4', 0, 'vi')).toBe(25_000)
+    expect(parseAmount('10.5*2', 2, 'en')).toBe(2_100)
+    expect(parseAmount('12,5+0,25', 2, 'vi')).toBe(1_275)
+  })
+
+  it('multiplies and divides before adding and subtracting', () => {
+    expect(parseAmount('2+3*4', 0, 'en')).toBe(14)
+    expect(parseAmount('20-8/4', 0, 'en')).toBe(18)
+    expect(parseAmount('2+3*4', 2, 'en')).toBe(1_400)
+  })
+
+  it('rounds what doesn\'t come out even to the currency\'s smallest unit, half away from zero', () => {
+    expect(parseAmount('1.000.000/3', 0, 'vi')).toBe(333_333)
+    expect(parseAmount('10/4', 0, 'en')).toBe(3)
+    expect(parseAmount('1/2', 0, 'en')).toBe(1)
+    expect(parseAmount('-1/2', 0, 'en')).toBe(-1)
+    expect(parseAmount('10/3', 2, 'en')).toBe(333)
+    expect(parseAmount('0.1+0.2', 2, 'en')).toBe(30)
+  })
+
+  it('reads a leading minus as a negative number', () => {
+    expect(parseAmount('-50.000', 0, 'vi')).toBe(-50_000)
+    expect(parseAmount('-50.000+10.000', 0, 'vi')).toBe(-40_000)
+    expect(parseAmount('10.000-50.000', 0, 'vi')).toBe(-40_000)
+  })
+
+  it('refuses shorthand, x for times, and anything that isn\'t a whole sum', () => {
+    for (const text of ['45k', '1tr2', '1,2tr', '3x25000', '1++2', '5*-2', '45000+', '+45000', '*3', '5/0', '1.000/0,0', '(1+2)*3', '1.234+1', '2^3']) {
+      expect(parseAmount(text, text === '1.234+1' ? 2 : 0, text.includes(',') ? 'vi' : 'en'), text).toBeNull()
+    }
+  })
+
+  it('keeps a total too large to be exact out', () => {
+    expect(parseAmount('9007199254740991*10', 0, 'en')).toBeNull()
+  })
+
+  it('groups each number of a sum while typing', () => {
+    expect(groupWhileTyping('45000+100000', 'vi')).toBe('45.000+100.000')
+    expect(groupWhileTyping('45000 + 100000', 'en')).toBe('45,000 + 100,000')
+    expect(groupWhileTyping('-1250000-250000', 'vi')).toBe('-1.250.000-250.000')
+    expect(groupWhileTyping('1250.5*2', 'en')).toBe('1,250.5*2')
+    expect(groupWhileTyping('45000+', 'vi')).toBe('45.000+')
+  })
+})
