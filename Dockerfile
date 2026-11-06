@@ -11,7 +11,7 @@ RUN npm ci --no-audit --no-fund
 COPY web/ ./
 RUN npm run build
 
-FROM python:3.14-slim
+FROM python:3.14-slim-trixie
 # pg_dump for the backups, the same major version as the database (17).
 # Debian 13 (this image's base) ships PostgreSQL 17.
 RUN apt-get update \

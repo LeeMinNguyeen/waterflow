@@ -1,6 +1,7 @@
 """The server: the API under /v1, and the web app's files for everything else.
 Run for development: uvicorn app.api.main:app --reload
 """
+import logging
 from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, FastAPI, Request
@@ -19,6 +20,20 @@ from app.core.settings import settings
 # Additive changes only within /v1: a client that needs something newer checks api_version.
 API_VERSION = 1
 SERVER_VERSION = updates.current_version()
+
+
+
+class _WithoutQuery(logging.Filter):
+    """uvicorn's access log, minus query strings: reset and invite links carry their secret there."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        args = record.args
+        if isinstance(args, tuple) and len(args) >= 3 and isinstance(args[2], str):
+            record.args = (*args[:2], args[2].split("?", 1)[0], *args[3:])
+        return True
+
+
+logging.getLogger("uvicorn.access").addFilter(_WithoutQuery())
 
 app = FastAPI(title="Waterflow API", docs_url=None, redoc_url=None, openapi_url="/v1/openapi.json")
 errors.install(app)

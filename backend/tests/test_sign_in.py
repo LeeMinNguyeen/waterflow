@@ -640,6 +640,34 @@ def test_setup_creates_the_admin_once(fresh_server, monkeypatch):
     engine.dispose()
 
 
+def test_a_bad_database_url_never_prints_its_password():
+    """A typo in ADMIN_DATABASE_URL (a stray %, an unencoded @) never puts its password in the log."""
+    from app import launch
+    for url, secret in (("postgresql://u:ab%zzsecret@127.0.0.1:1/x", "zzsecret"), ("postgresql://u:cd@SECRET@127.0.0.1:1/x", "SECRET")):
+        with pytest.raises(SystemExit) as stopped:
+            launch.wait_for(url, 0)
+        assert secret not in str(stopped.value)
+
+
+@pytest.mark.parametrize("password", ["cd@SECRET/XY", "cd@SE:CRET", "cd@SECRET:54x", "cd@SECRET,XYZW", "cd@SECRET?XY",
+                                      "cd@SECR%41ET", "pw-one?two", "SECRET#XY"])
+def test_an_ambiguous_database_url_is_refused_before_it_is_read(monkeypatch, password):
+    """libpq and urlsplit would read part of such a password as the host, port or query, and quote it."""
+    from app import launch
+    monkeypatch.setenv("ADMIN_DATABASE_URL", f"postgresql://u:{password}@127.0.0.1:5432/x")
+    with pytest.raises(SystemExit) as stopped:
+        launch.admin_url()
+    assert not any(piece in str(stopped.value) for piece in ("SECRET", "SECR", "CRET", "XY", "pw-one", "two"))
+
+
+def test_the_access_log_leaves_out_query_strings(client, caplog):
+    """Reset links (/reset?token=) and invite links (/join?code=) carry their secret in the query string."""
+    import app.api.main  # noqa: F401  (adds the access log's filter)
+    with caplog.at_level(logging.INFO, logger="uvicorn.access"):
+        logging.getLogger("uvicorn.access").info('%s - "%s %s HTTP/%s" %d', "1.2.3.4:5", "GET", "/reset?token=sentinel", "1.1", 200)
+    assert '"GET /reset HTTP/1.1" 200' in caplog.text and "sentinel" not in caplog.text
+
+
 def test_an_update_whose_backup_fails_stops_with_a_plain_reason(monkeypatch):
     """A database newer than the image's pg_dump (PostgreSQL 18) can't be backed up: the server says so in one line."""
     from app import launch
@@ -736,9 +764,11 @@ def test_job_schedule_times(monkeypatch):
     assert due(t(2026, 10, 21, 23), last_started_at=t(2026, 10, 19, 19))                # off at 19:00: catches up
     assert not due(t(2026, 10, 21, 23), last_started_at=t(2026, 10, 19, 19), changed_at=t(2026, 10, 21, 22))
     assert not due(t(2026, 10, 21, 23), enabled=False)
-    # A run that failed: again an hour after it started, until it works.
+    # A run that failed: again at the next hourly run, until it works. That run may start a little earlier in the
+    # hour than the failed job did, which started after the jobs before it (Cloud Scheduler).
     failed_at = {"last_started_at": t(2026, 10, 21, 3, 30), "last_result": "failed"}
-    assert not due(t(2026, 10, 21, 4, 29), **failed_at) and due(t(2026, 10, 21, 4, 30), **failed_at)
+    assert not due(t(2026, 10, 21, 4, 10), **failed_at) and due(t(2026, 10, 21, 4, 30), **failed_at)
+    assert due(t(2026, 10, 21, 4, 29, 35), **failed_at) and due(t(2026, 10, 21, 4, 23, 50), **failed_at)
     assert not due(t(2026, 10, 21, 4, 30), **failed_at | {"last_result": "done"})
     assert not due(t(2026, 10, 21, 4, 30), **failed_at | {"enabled": False})
 
