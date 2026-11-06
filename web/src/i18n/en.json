@@ -180,6 +180,7 @@
     "txn_shape": "This transaction isn't valid: check the amounts and accounts.",
     "category_kind": "Transfers take only transfer categories, and the other way round.",
     "budget_exists": "This category already has a budget for that period.",
+    "card_has_installments": "This card has installment plans, which bill on its statements: it keeps its statement day and stays a credit card while they're there.",
     "budget_expense_only": "Budgets go on expense categories only.",
     "not_restorable": "It's been more than 30 days; the account can't be restored.",
     "invalid_code": "That code is wrong or expired. Try a new one.",
@@ -193,6 +194,7 @@
     "admin_self": "You can't disable your own account.",
     "password_mismatch": "The two passwords don't match.",
     "two_factor_off": "Two-step verification is off.",
+    "two_factor_on": "Two-step verification is already on. Turn it off first to set it up again.",
     "invalid_timezone": "That timezone isn't one this server knows. Pick another.",
     "updater_off": "One-click updates are off on this server.",
     "origin_not_allowed": "This address isn't this server's own web app.",
@@ -202,6 +204,7 @@
     "restore_too_new": "That backup is from a newer version of Waterflow: update this server first.",
     "restore_too_large": "That file is too large: 100 MB at most.",
     "installment_exists": "This purchase already has an installment plan.",
+    "installment_invalid": "This installment plan doesn't fit its purchase: an expense on a credit card with a statement day, converted on or after its date.",
     "person_account": "This is a person's own account: change it on People."
   },
   "nav": {
@@ -561,6 +564,7 @@
     "intro": "People on this server who keep this book with you. They see everything in it.",
     "username": "Username",
     "roleLabel": "Role",
+    "roleOf": "{{name}}’s role",
     "invite": "Invite",
     "invited": "Invited {{name}}. They'll see the invite when they sign in.",
     "roles": "Owner: everything, including members and settings. Editor: adds and changes accounts, transactions, categories and budgets. Viewer: can only look.",
@@ -635,6 +639,7 @@
   },
   "toast": {
     "budgetAdded": "Budget added",
+    "copied": "Copied",
     "budgetSaved": "Budget saved",
     "txnSaved": "Transaction saved",
     "txnDeleted": "Transaction deleted",

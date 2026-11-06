@@ -23,7 +23,7 @@ def dashboard(db: Session, book_id: UUID, today: date | None = None) -> dict:
 
     nw = db.execute(text("select base_currency, net_worth, missing_rates from book_net_worth where book_id = :b"), p).mappings().first()
     cashflow = rows("select month, spent, income, not_converted from book_monthly_cashflow"
-                    " where book_id = :b and month >= :six order by month")
+                    " where book_id = :b and month between :six and :this order by month")
     by_month = {r["month"]: r for r in cashflow}
     return {
         "currency": nw["base_currency"] if nw else None,
@@ -37,7 +37,7 @@ def dashboard(db: Session, book_id: UUID, today: date | None = None) -> dict:
         "cashflow_6_months": cashflow,
         "top_categories_this_month": rows(                              # all of them: the app rolls them up
             "select category_id, category, category_parent_id, spent, not_converted from book_monthly_category_spend"
-            " where book_id = :b and month = :this and spent > 0 order by spent desc"),
+            " where book_id = :b and month = :this and (spent > 0 or not_converted > 0) order by spent desc"),
         "budgets": rows(
             "select budget_id, category_id, category, period, period_start, period_end, budget, spent, remaining, percent_used, not_converted"
             "  from budget_progress where book_id = :b order by percent_used desc"),

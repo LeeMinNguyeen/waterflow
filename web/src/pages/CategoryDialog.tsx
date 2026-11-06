@@ -12,13 +12,13 @@ import MenuItem from '@mui/material/MenuItem'
 import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
-import { useQueryClient } from '@tanstack/react-query'
 import { useRef, useState, type FormEvent } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { BudgetBar } from '../components/BudgetBar'
 import { useErrorText } from '../components/errors'
 import { currentLanguage } from '../i18n'
-import { send, type Book, type Category, type CategoryKind } from '../lib/api'
+import { ApiError, send, type Book, type Category, type CategoryKind } from '../lib/api'
 import { categoryTree } from '../lib/categories'
 import { useFormatMoney } from '../lib/hideAmounts'
 import { useBudgets, useCurrencies } from '../lib/queries'
@@ -60,6 +60,18 @@ export function CategoryDialog({ book, all, category, parent, editing: startEdit
   const [color, setColor] = useState(category?.color ?? parent?.color ?? '')
   const [error, setError] = useState<unknown>(null)
   const [busy, setBusy] = useState(false)
+  // After a 409 the list reloads: the form then shows the category as it is now, and saves with that version. A
+  // refetch while the user types leaves the form alone.
+  const [shown, setShown] = useState(category?.version)
+  const [conflict, setConflict] = useState(false)
+  if (category && shown !== category.version && (conflict || !editing)) {
+    setShown(category.version)
+    setConflict(false)
+    setName(category.name)
+    setKind(category.kind)
+    setParentId(category.parent_id ?? '')
+    setColor(category.color ?? '')
+  }
   const ro = !editing
   const mine = (budgets.data ?? []).filter((b) => b.category_id === category?.id && b.progress)
   const money = (v: number) => formatMoney(v, book.base_currency, currencies.data?.get(book.base_currency)?.minor_unit ?? 0, currentLanguage())
@@ -100,6 +112,7 @@ export function CategoryDialog({ book, all, category, parent, editing: startEdit
       onClose()
     } catch (err) {
       setError(err)
+      if (err instanceof ApiError && err.code === 'conflict') setConflict(true)
     } finally {
       setBusy(false)
       await qc.invalidateQueries({ queryKey: ['books', book.id, 'categories'] })

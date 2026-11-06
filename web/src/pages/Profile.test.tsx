@@ -78,6 +78,24 @@ describe('signing out the other devices', () => {
   })
 })
 
+describe('a new username (review #166)', () => {
+  afterEach(() => localStorage.clear())
+
+  it('keeps this browser remembered for two-step, so signing out the others still keeps it', async () => {
+    localStorage.setItem('waterflow.device.lan', 'device-1')
+    const api = server([laptop, phone])
+    await renderApp(<Profile />)
+    const name = await screen.findByRole('textbox', { name: 'Username' })
+    await userEvent.clear(name)
+    await userEvent.type(name, 'lan2')
+    await userEvent.click(within(name.closest('form')!).getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(localStorage.getItem('waterflow.device.lan2')).toBe('device-1'))
+    expect(localStorage.getItem('waterflow.device.lan')).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: 'Sign out other devices' }))
+    await waitFor(() => expect(api.writes().at(-1)).toMatchObject({ path: '/v1/auth/sign-out-others', body: { device_token: 'device-1' } }))
+  })
+})
+
 describe('the language', () => {
   afterEach(() => localStorage.clear())
 

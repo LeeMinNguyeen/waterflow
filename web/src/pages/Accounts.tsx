@@ -121,7 +121,7 @@ export function Accounts({ book }: { book: Book }) {
   const dim = (a: Account) => (a.in_net_worth && !a.archived_at ? 1 : 0.55)
 
   return (
-    <Box sx={{ maxWidth: 920 }}>
+    <Box>
       <PageHeader title={t('accounts.title')} bookId={book.id}>
         {canEdit && (
           <Button variant="outlined" size={desktop ? 'medium' : 'small'} startIcon={<AddIcon />} onClick={() => setDialog({ account: null, editing: true })}>

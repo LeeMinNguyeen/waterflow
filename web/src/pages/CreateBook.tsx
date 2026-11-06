@@ -19,6 +19,7 @@ import { deviceTimezone } from '../lib/labels'
 import { send, type Book } from '../lib/api'
 import { keys, useBooks } from '../lib/queries'
 import { newId } from '../lib/uuid'
+import { signOut } from '../auth/signOut'
 
 // Shown when the user has no book, and from the book switcher.
 export function CreateBook() {
@@ -84,9 +85,13 @@ export function CreateBook() {
         <Button type="submit" variant="contained" size="large" loading={busy} disabled={!name.trim() || !currency || !timezone}>
           {t('book.create')}
         </Button>
-        {hasBook && (
+        {hasBook ? (
           <Button size="large" onClick={cancel}>
             {t('common.cancel')}
+          </Button>
+        ) : (
+          <Button size="large" onClick={() => signOut()}>
+            {t('auth.signOut')}
           </Button>
         )}
       </Stack>

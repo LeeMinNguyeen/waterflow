@@ -105,9 +105,23 @@ def _repurge(url: str, purge_log: str) -> None:
             conn.execute("select repurge_accounts(%s::uuid[])", (ids,))
 
 
-def _apply(url: str, path: str, purged: Path | None, purge_log: str) -> None:
+SIGN_IN_STATE = ("sessions", "remembered_devices", "password_resets")
+
+
+def _sign_everyone_out(url: str) -> None:
+    """The backup's sessions, remembered devices and reset links would work again, even ones ended after it. A
+    backup from before a table existed lacks it: the migrations add it after the restore."""
+    with psycopg.connect(url, autocommit=True) as conn:
+        for table in SIGN_IN_STATE:
+            if conn.execute("select to_regclass(%s)", (f"public.{table}",)).fetchone()[0]:
+                conn.execute(f"delete from public.{table}")
+
+
+def _apply(url: str, path: str, purged: Path | None, purge_log: str, sign_out: bool = True) -> None:
     _empty(url)
     _load(url, path)
+    if sign_out:
+        _sign_everyone_out(url)
     if purged and purged.exists():
         with open(purge_log, "a") as log:
             log.write(purged.read_text().rstrip("\n") + "\n")
@@ -138,7 +152,7 @@ def restore_if_requested(url: str, backup_dir: str, purge_log: str | None = None
         reason = backup._scrub(str(e), url).splitlines()[0] if str(e) else type(e).__name__
         if before:
             try:
-                _apply(url, before, None, purge_log)
+                _apply(url, before, None, purge_log, sign_out=False)     # taken seconds ago: its sessions are the live ones
             except Exception as again:
                 reason += f"; putting the database back failed too ({backup._scrub(str(again), url).splitlines()[0]}):" \
                           f" restore {os.path.basename(before)} by hand"

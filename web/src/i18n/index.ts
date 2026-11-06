@@ -48,9 +48,10 @@ export function applyAccountLanguage(lang: Language) {
 
 const opening = () => known(session.token() ? read(ACCOUNT) ?? read(SIGN_IN) : read(SIGN_IN))
 
-// Whatever ends the session (Sign out, inactivity, an expired session, another tab) goes back to the sign-in language.
-session.subscribe(() => {
-  if (session.token()) return
+// Whatever ends the session (Sign out, inactivity, an expired session, another tab, someone else signing in over it)
+// goes back to the sign-in language.
+session.onChange((before) => {
+  if (!before) return
   write(ACCOUNT, null)
   show(known(read(SIGN_IN)))
 })

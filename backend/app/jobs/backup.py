@@ -26,6 +26,9 @@ or a new server, as its owner. tests/test_backup.py runs the `$` lines.
        schema public itself, which every database already has:
        $ pg_restore --list "$DUMP" | grep -v -E ' (SCHEMA|COMMENT) - (SCHEMA )?public ' > waterflow.list
        $ pg_restore --no-owner --single-transaction --exit-on-error --use-list=waterflow.list --dbname="$NEW_DB_URL" "$DUMP"
+       Everyone signs in again: the dump's sessions, remembered devices and
+       reset links would work again, even ones ended after it.
+       $ psql -v ON_ERROR_STOP=1 "$NEW_DB_URL" <<< "select format('delete from public.%I', t) from unnest(array['sessions', 'remembered_devices', 'password_resets']) t where to_regclass('public.' || t) is not null \gexec"
     4. Start the server. Before anyone uses it, redo the purges made since the
        dump, which brought those accounts back:
            docker compose exec waterflow python -m app.admin repurge
@@ -77,7 +80,8 @@ def _split(url: str) -> tuple[str, str]:
 def _scrub(message: str, url: str) -> str:
     """Hide the URL and its password, encoded or not, in a message."""
     raw = url.partition("://")[2].rpartition("@")[0].partition(":")[2]
-    secrets = {url, raw, unquote(raw)}
+    # An unencoded @ in the password splits it, and libpq then quotes the part after it as the host.
+    secrets = {url, raw, unquote(raw), *raw.split("@")}
     with contextlib.suppress(Exception):
         secrets.add(conninfo_to_dict(url).get("password") or "")
     for secret in sorted(filter(None, secrets), key=len, reverse=True):

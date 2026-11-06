@@ -105,12 +105,19 @@ select p.id, p.account_id, p.transaction_id, t.payee, t.occurred_on, -e.amount a
 def installment_plans(db: Session, book_id: UUID, today: date) -> list[dict]:
     """A book's plans with what's billed so far, as of the last statement before `today`."""
     out = []
-    for p in db.execute(text(PLANS + " where p.book_id = :b order by t.occurred_on, t.created_at"), {"b": book_id}).mappings():
+    # A card without a statement day has no statements to bill on.
+    for p in db.execute(text(PLANS + " where p.book_id = :b and a.statement_day is not null"
+                                     " order by t.occurred_on, t.created_at"), {"b": book_id}).mappings():
         shares = parts(p["amount"], p["months"])
         done = billed(SimpleNamespace(**p), p["statement_day"], last_statement(today, p["statement_day"]))
         out.append({k: v for k, v in p.items() if k != "statement_day"} | {
             "installment": shares[0], "billed": done, "left_to_bill": p["amount"] - sum(shares[:done])})
     return out
+
+
+def monthly_interest(owed: int, rate_bp: int) -> int:
+    """A month of a yearly rate in hundredths of a percent, in whole minor units, half up."""
+    return (owed * rate_bp + 60_000) // 120_000
 
 
 @dataclass
@@ -231,7 +238,7 @@ def bills_for(db: Session, account, today: date) -> list[Bill]:
         paid = _sum(db, "e.amount > 0 and t.occurred_on > :d", a=a, d=before)
         charged = -_sum(db, "e.amount < 0 and t.type = 'expense' and t.occurred_on > :d", a=a, d=before)
         owed_before = max(0, owed_now + paid - charged)        # before this period's payments and charges
-        interest = round(owed_before * (account.interest_rate_bp or 0) / 120_000)
+        interest = monthly_interest(owed_before, account.interest_rate_bp or 0)
         installment = min(account.installment, owed_before + interest)
         fee_id, interest_id = fee_transaction_id(a), interest_transaction_id(a, due)
         fee = (account.installment_fee or 0) if owed_before and not _exists(db, fee_id) else 0

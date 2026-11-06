@@ -345,3 +345,28 @@ describe('with amounts hidden (waterflow#104)', () => {
     expect(document.body.textContent).not.toMatch(/\d,\d{3}/)
   })
 })
+
+describe('a new account, as the edit form reads it (review #166)', () => {
+  it("reads a minus in a new card's Amount owed as a credit, as the edit form does", async () => {
+    const api = server()
+    api.routes['POST /v1/books/b1/accounts'] = ({ body }: { body: unknown }) => body
+    await renderApp(<AccountDialog book={book} account={null} onClose={() => {}} />)
+    await userEvent.type(await screen.findByRole('textbox', { name: /account name/i }), 'Amex')
+    await pick(/^Account type/, 'Credit card')
+    await userEvent.type(field('Amount owed'), '-50')
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(api.writes()).toHaveLength(1))
+    expect(api.writes()[0].body).toMatchObject({ kind: 'credit_card', opening_balance: 50 })
+  })
+
+  it("dates the opening balance today in the book's timezone when the date is cleared", async () => {
+    const api = server()
+    api.routes['POST /v1/books/b1/accounts'] = ({ body }: { body: unknown }) => body
+    await renderApp(<AccountDialog book={book} account={null} onClose={() => {}} />)
+    await userEvent.type(await screen.findByRole('textbox', { name: /account name/i }), 'Wallet')
+    await userEvent.click(screen.getByRole('button', { name: /clear/i }))
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(api.writes()).toHaveLength(1))
+    expect(api.writes()[0].body).toMatchObject({ opened_on: todayIn(book.timezone) })
+  })
+})

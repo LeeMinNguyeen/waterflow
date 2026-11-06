@@ -180,6 +180,7 @@
     "txn_shape": "Giao dịch chưa hợp lệ: kiểm tra số tiền và tài khoản.",
     "category_kind": "Chuyển khoản chỉ dùng danh mục chuyển khoản, và ngược lại.",
     "budget_exists": "Danh mục này đã có ngân sách cho chu kỳ đó.",
+    "card_has_installments": "Thẻ này có khoản trả góp, được tính vào các kỳ sao kê: thẻ phải giữ ngày sao kê và vẫn là thẻ tín dụng khi còn trả góp.",
     "budget_expense_only": "Chỉ đặt ngân sách cho danh mục chi tiêu.",
     "not_restorable": "Đã quá 30 ngày, tài khoản không thể khôi phục.",
     "invalid_code": "Mã sai hoặc đã hết hạn. Hãy thử mã mới.",
@@ -193,6 +194,7 @@
     "admin_self": "Bạn không thể vô hiệu hóa tài khoản của chính mình.",
     "password_mismatch": "Hai mật khẩu không khớp.",
     "two_factor_off": "Xác minh hai bước đang tắt.",
+    "two_factor_on": "Xác minh hai bước đang bật. Hãy tắt trước rồi mới thiết lập lại.",
     "invalid_timezone": "Máy chủ không nhận múi giờ này. Hãy chọn múi giờ khác.",
     "updater_off": "Máy chủ này chưa bật cập nhật bằng một nút bấm.",
     "origin_not_allowed": "Địa chỉ này không phải ứng dụng web của chính máy chủ.",
@@ -202,6 +204,7 @@
     "restore_too_new": "Bản sao lưu này từ phiên bản Waterflow mới hơn: hãy cập nhật máy chủ này trước.",
     "restore_too_large": "Tệp quá lớn: tối đa 100 MB.",
     "installment_exists": "Khoản mua này đã có kế hoạch trả góp.",
+    "installment_invalid": "Khoản trả góp này không khớp với giao dịch: phải là chi tiêu trên thẻ tín dụng có ngày sao kê, chuyển đổi vào hoặc sau ngày mua.",
     "person_account": "Đây là tài khoản riêng của một người: hãy sửa ở mục Vay mượn."
   },
   "nav": {
@@ -561,6 +564,7 @@
     "intro": "Những người trên máy chủ này cùng giữ sổ với bạn. Họ thấy mọi thứ trong sổ.",
     "username": "Tên đăng nhập",
     "roleLabel": "Vai trò",
+    "roleOf": "Vai trò của {{name}}",
     "invite": "Mời",
     "invited": "Đã mời {{name}}. Họ sẽ thấy lời mời khi đăng nhập.",
     "roles": "Chủ sổ: mọi quyền, kể cả thành viên và cài đặt. Biên tập: thêm và sửa tài khoản, giao dịch, danh mục và ngân sách. Người xem: chỉ được xem.",
@@ -635,6 +639,7 @@
   },
   "toast": {
     "budgetAdded": "Đã thêm ngân sách",
+    "copied": "Đã sao chép",
     "budgetSaved": "Đã lưu ngân sách",
     "txnSaved": "Đã lưu giao dịch",
     "txnDeleted": "Đã xóa giao dịch",

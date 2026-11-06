@@ -55,8 +55,11 @@ export async function download(path: string): Promise<void> {
   const name = /filename="([^"]+)"/.exec(res.headers.get('Content-Disposition') ?? '')?.[1] ?? 'export.zip'
   const url = URL.createObjectURL(await res.blob())
   const a = Object.assign(document.createElement('a'), { href: url, download: name })
+  document.body.appendChild(a)
   a.click()
-  URL.revokeObjectURL(url)
+  a.remove()
+  // Revoked at once, some browsers (Safari, older Firefox) cancel the download they just started.
+  setTimeout(() => URL.revokeObjectURL(url), 60_000)
 }
 
 export type AccountStatus = { deletion_requested_at: string | null; deletes_on: string | null }

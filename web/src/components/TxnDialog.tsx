@@ -36,7 +36,7 @@ import { shiftDay, timeIn, todayIn } from '../lib/labels'
 import { amountText, parseAmount } from '../lib/money'
 import { useFormatMoney } from '../lib/hideAmounts'
 import { personName } from '../lib/people'
-import { fromPlan, noPlan, validMonths, type PlanForm } from '../lib/installments'
+import { fromPlan, noPlan, planDates, validMonths, type PlanForm } from '../lib/installments'
 import { useAccounts, useBooks, useCategories, useCurrencies, useInstallments, useInvalidateBook, usePayees, useUsual } from '../lib/queries'
 import { AmountField } from './AmountField'
 import { CategoryPicker } from './CategoryPicker'
@@ -159,8 +159,11 @@ function TxnForm({ book, txn: initial, defaults, onClose, minorOf, carry, onSwit
     [categories.data, kind, form.category],
   )
 
+  // Until an account is picked, or while the accounts load, the amount is in the saved entry's currency or the book's.
+  const amountCurrency = from?.currency ?? txn?.entries.find((e) => e.account_id === account)?.currency ?? book.base_currency
+  const amountMinor = minorOf(amountCurrency)
   const signed = signedTypes.includes(form.type)
-  const typedAmount = parseAmount(form.amount, minor(account), lang)
+  const typedAmount = parseAmount(form.amount, amountMinor, lang)
   const typedReceived = crossCurrency ? parseAmount(form.amountReceived, minor(form.toAccount), lang) : null
   const minus = !signed && (typedAmount ?? 0) < 0
   const receivedMinus = (typedReceived ?? 0) < 0
@@ -181,7 +184,7 @@ function TxnForm({ book, txn: initial, defaults, onClose, minorOf, carry, onSwit
 
   // A new expense or income fills in from the user's own history once the amount is typed.
   const suggestible = !txn && (form.type === 'expense' || form.type === 'income')
-  const typed = suggestible ? parseAmount(form.amount, minorOf(from?.currency ?? book.base_currency), lang) : null
+  const typed = suggestible ? typedAmount : null
   const [suggestion, setSuggestion] = useState<Partial<Suggestion> | null>(null)
   useEffect(() => {
     setSuggestion(null)
@@ -189,7 +192,8 @@ function TxnForm({ book, txn: initial, defaults, onClose, minorOf, carry, onSwit
     let current = true
     const timer = setTimeout(async () => {
       try {
-        const s = await api<Suggestion | null>(`/v1/books/${book.id}/transactions/suggest?type=${form.type}&amount=${typed}`)
+        const s = await api<Suggestion | null>(
+          `/v1/books/${book.id}/transactions/suggest?type=${form.type}&amount=${typed}&currency=${amountCurrency}`)
         if (current && s) setSuggestion(s)
       } catch {
         // A suggestion is a convenience: without one the form stays as it is.
@@ -200,7 +204,7 @@ function TxnForm({ book, txn: initial, defaults, onClose, minorOf, carry, onSwit
       clearTimeout(timer)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- asks again only when the amount or the type changes
-  }, [typed, form.type])
+  }, [typed, form.type, amountCurrency])
 
   // The suggestion can arrive before the accounts or categories: each part waits for its list.
   useEffect(() => {
@@ -210,13 +214,15 @@ function TxnForm({ book, txn: initial, defaults, onClose, minorOf, carry, onSwit
     const categoryNow = !!category_id && !!categories.data
     if (!accountNow && !categoryNow && !payee) return
     const patch: Partial<Form> = {}
-    if (accountNow && !touched.current.has('account') && accounts.data?.some((a) => a.id === account_id && !a.archived_at)) patch.account = account_id
+    // Once an amount is typed, an account in another currency would read it in its decimals.
+    if (accountNow && !touched.current.has('account') && accounts.data?.some((a) => a.id === account_id && !a.archived_at
+      && (form.amount.trim() === '' || a.currency === amountCurrency))) patch.account = account_id
     if (categoryNow && !touched.current.has('category') && options.some((o) => o.category.id === category_id)) patch.category = category_id
     if (payee && !touched.current.has('payee')) patch.payee = payee
     setForm((f) => ({ ...f, ...patch }))
     const left = { ...(account_id && !accountNow ? { account_id } : {}), ...(category_id && !categoryNow ? { category_id } : {}) }
     setSuggestion(Object.keys(left).length ? left : null)
-  }, [suggestion, accounts.data, categories.data, options])
+  }, [suggestion, accounts.data, categories.data, options, amountCurrency, form.amount])
 
   const payeeType = form.type === 'expense' || form.type === 'income' ? form.type : null
   const payees = usePayees(book.id, form.payee, payeeType).data ?? []
@@ -239,15 +245,18 @@ function TxnForm({ book, txn: initial, defaults, onClose, minorOf, carry, onSwit
   const plan = planEdit ?? (saved ? fromPlan(saved, amountText(saved.fee, minor(saved.account_id), lang)) : noPlan)
   const setPlan = (patch: Partial<PlanForm>) => setPlanEdit({ ...plan, ...patch })
   const planned = !!card?.statement_day && plan.on
-  const fee = parseAmount(plan.fee || '0', minor(account), lang)
+  const fee = parseAmount(plan.fee || '0', amountMinor, lang)
   const planReady = !planned || (validMonths(plan.months) && fee !== null && fee >= 0)
   const losesPlan = !!saved && !(card && card.id === saved.account_id)
 
+  // The plan changes only when its fields did: a purchase saved on its own leaves it as it is.
   async function savePlan() {
-    if (planned) {
+    if (!planEdit) return
+    if (planned && card) {
+      const { convertedOn, firstStatement } = planDates(plan, form.date, card.statement_day)
       const fields = {
-        months: Number(plan.months), converted_on: plan.convertedOn || (txn ? todayIn(book.timezone) : form.date), fee: fee ?? 0,
-        fee_split: plan.feeSplit, counts_toward_limit: plan.countsTowardLimit, ...(plan.firstStatement ? { first_statement: plan.firstStatement } : {}),
+        months: Number(plan.months), converted_on: convertedOn, first_statement: firstStatement, fee: fee ?? 0,
+        fee_split: plan.feeSplit, counts_toward_limit: plan.countsTowardLimit,
       }
       if (!saved) {
         await send('POST', `/v1/books/${book.id}/installments`, { id: planId.current, transaction_id: id.current, ...fields })
@@ -257,7 +266,7 @@ function TxnForm({ book, txn: initial, defaults, onClose, minorOf, carry, onSwit
         fee_split: saved.fee_split, counts_toward_limit: saved.counts_toward_limit, first_statement: saved.first_statement }
       const changed = Object.fromEntries(Object.entries(fields).filter(([k, v]) => before[k] !== v))
       if (Object.keys(changed).length) await send('PATCH', `/v1/books/${book.id}/installments/${saved.id}`, { version: saved.version, ...changed })
-    } else if (saved && !losesPlan) {
+    } else if (saved && !plan.on && !losesPlan) {
       await send('DELETE', `/v1/books/${book.id}/installments/${saved.id}?version=${saved.version}`)
     }
   }
@@ -281,6 +290,7 @@ function TxnForm({ book, txn: initial, defaults, onClose, minorOf, carry, onSwit
   }
 
   function startAnother() {
+    setTxn(null)
     id.current = newId()
     planId.current = newId()
     setPlanEdit(null)
@@ -305,8 +315,10 @@ function TxnForm({ book, txn: initial, defaults, onClose, minorOf, carry, onSwit
       note: form.note.trim() || null,
     }
     try {
-      if (txn) await send('PUT', `/v1/books/${book.id}/transactions/${txn.id}`, { ...body, version: txn.version })
-      else await send('POST', `/v1/books/${book.id}/transactions`, { ...body, id: id.current })
+      // Kept before the plan's step, so a retry after that step failed updates this transaction instead of
+      // posting its id again, which the server would ignore along with the change.
+      setTxn(txn ? await send<Transaction>('PUT', `/v1/books/${book.id}/transactions/${txn.id}`, { ...body, version: txn.version })
+        : await send<Transaction>('POST', `/v1/books/${book.id}/transactions`, { ...body, id: id.current }))
       await savePlan()
       await invalidate(book.id)
       toast(t('toast.txnSaved'))
@@ -355,7 +367,7 @@ function TxnForm({ book, txn: initial, defaults, onClose, minorOf, carry, onSwit
   const amountField = {
     value: owedOpening ? negated(form.amount) : form.amount,
     onChange: (v: string) => set({ amount: owedOpening ? negated(v) : v }),
-    minorUnit: minor(account),
+    minorUnit: amountMinor,
     error: minus,
     signed: signed && !owedOpening,
   }
@@ -440,7 +452,7 @@ function TxnForm({ book, txn: initial, defaults, onClose, minorOf, carry, onSwit
       <Dialog open onClose={onClose} fullScreen slotProps={{ paper: { component: 'form', onSubmit: submit }, transition: { onEntered: focusAmount } }}>
         <Stack direction="row" sx={{ alignItems: 'center', minHeight: 56, px: 0.5, gap: 0.5 }}>
           <IconButton aria-label={t('common.close')} onClick={onClose} sx={{ color: 'text.primary' }}><ArrowBackIcon /></IconButton>
-          {onSwitchBook ? (
+          {onSwitchBook && !txn ? (
             <Button onClick={() => setSheet('book')} endIcon={<ExpandMoreIcon />} aria-label={t('txn.bookOf', { name: book.name })}
               sx={{ color: 'text.primary', fontSize: 18, fontWeight: 600, minWidth: 0, px: 1 }}>
               <Box component="span" sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{book.name}</Box>
