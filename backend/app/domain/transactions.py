@@ -84,8 +84,8 @@ def update_transaction(db: Session, t: TxnIn, expected_version: int) -> int:
         text("update transactions set type = :type, occurred_on = :d,"
              " occurred_time = coalesce(cast(:tm as time), occurred_time), category_id = :c, payee = :p, note = :n"
              + (", modified_at = now()" if entries_changed else "")
-             + " where id = :id and version = :v returning version"),
-        {"id": t.id, "v": expected_version, "type": t.type, "d": t.occurred_on, "tm": t.occurred_time,
+             + " where id = :id and book_id = :b and version = :v returning version"),
+        {"id": t.id, "b": t.book_id, "v": expected_version, "type": t.type, "d": t.occurred_on, "tm": t.occurred_time,
          "c": t.category_id, "p": t.payee, "n": t.note},
     ).first()
     if row is None:
@@ -101,8 +101,8 @@ def update_transaction(db: Session, t: TxnIn, expected_version: int) -> int:
     return row.version
 
 
-def delete_transaction(db: Session, id: UUID, expected_version: int) -> None:
-    n = db.execute(text("delete from transactions where id = :id and version = :v"),
-                   {"id": id, "v": expected_version}).rowcount
+def delete_transaction(db: Session, book_id: UUID, id: UUID, expected_version: int) -> None:
+    n = db.execute(text("delete from transactions where id = :id and book_id = :b and version = :v"),
+                   {"id": id, "b": book_id, "v": expected_version}).rowcount
     if n == 0:
         raise Conflict("changed or deleted on another device")

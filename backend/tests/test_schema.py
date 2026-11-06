@@ -279,9 +279,9 @@ def test_edit_history_and_conflicts():
     assert q(owner, "select modified_at > created_at, modified_by from transactions where id = :t", t=tid)[0] == \
         (True, editor)
     with session(editor) as s, pytest.raises(Conflict):
-        delete_transaction(s, tid, 1)
+        delete_transaction(s, b, tid, 1)
     with session(owner) as s:
-        delete_transaction(s, tid, 3)
+        delete_transaction(s, b, tid, 3)
 
     hist = q(editor, "select h.version, h.action, u.username, h.snapshot->'entries' from transaction_history h"
                      " left join users u on u.id = h.changed_by where transaction_id = :t order by h.id", t=tid)

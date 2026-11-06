@@ -2,6 +2,7 @@
 import csv
 import re
 import uuid
+from datetime import date
 
 import pytest
 from sqlalchemy import text
@@ -1286,3 +1287,147 @@ def test_username_changes_are_rate_limited(client):
     me = client.get("/v1/me", headers=auth(u)).json()["profile"]
     same = client.patch("/v1/me", headers=auth(u), json={"username": me["username"], "display_name": "Mai"})
     assert same.status_code == 200 and same.json()["profile"]["display_name"] == "Mai"     # saving the same name isn't a try
+
+
+def _book(client, u, currency="VND", timezone="UTC"):
+    bid = str(uuid.uuid4())
+    r = client.post("/v1/books", headers=auth(u), json={"id": bid, "name": "B", "base_currency": currency, "timezone": timezone,
+                                                        "starter_categories": False})
+    assert r.status_code == 201, r.text
+    return bid
+
+
+def _account(client, u, bid, kind="cash", currency=None, **extra):
+    aid = str(uuid.uuid4())
+    r = client.post(f"/v1/books/{bid}/accounts", headers=auth(u), json={
+        "id": aid, "name": f"{kind} {aid[:6]}", "kind": kind, **({"currency": currency} if currency else {}), **extra})
+    assert r.status_code == 201, r.text
+    return aid
+
+
+def _expense(client, u, bid, account, amount, day=None, **extra):
+    r = client.post(f"/v1/books/{bid}/transactions", headers=auth(u), json={
+        "id": str(uuid.uuid4()), "type": "expense", "occurred_on": day or date.today().isoformat(),
+        "entries": [{"account_id": account, "amount": -amount}], **extra})
+    assert r.status_code == 201, r.text
+    return r.json()
+
+
+def test_a_card_with_installments_keeps_its_statement_day(client, database):
+    """A card's plans bill on its statements: losing the statement day is refused while it has plans, and the plans
+    of a card that lost it anyway are left out instead of failing every installments call."""
+    u = signed_up(client)
+    bid = _book(client, u)
+    card = _account(client, u, bid, "credit_card", statement_day=20, payment_due_day=5, credit_limit=50_000_000)
+    laptop = _expense(client, u, bid, card, 12_000_000)
+    assert client.post(f"/v1/books/{bid}/installments", headers=auth(u),
+                       json={"id": str(uuid.uuid4()), "transaction_id": laptop["id"], "months": 6}).status_code == 201
+    for change in ({"statement_day": None}, {"kind": "loan"}):
+        r = client.patch(f"/v1/books/{bid}/accounts/{card}", headers=auth(u), json={"version": 1, **change})
+        assert (r.status_code, r.json()) == (409, {"detail": "card_has_installments"})
+    with database.connect() as c:                       # a card that lost it before this check existed
+        c.execute(text("update accounts set statement_day = null where id = :a"), {"a": card})
+    assert client.get(f"/v1/books/{bid}/installments", headers=auth(u)).status_code == 200
+
+
+def test_a_suggestion_stays_in_the_currency_typed(client):
+    """5000 minor units are ₫5,000 or $50.00: with a currency, only amounts in it match."""
+    u = signed_up(client)
+    bid = _book(client, u)
+    usd = _account(client, u, bid, "credit_card", currency="USD")
+    for _ in range(2):
+        _expense(client, u, bid, usd, 5000, payee="Amazon")
+    url = f"/v1/books/{bid}/transactions/suggest?type=expense&amount=5000"
+    assert client.get(url + "&currency=VND", headers=auth(u)).json() is None
+    assert client.get(url + "&currency=USD", headers=auth(u)).json()["account_id"] == usd
+    assert client.get(url, headers=auth(u)).json()["account_id"] == usd      # older apps send no currency
+
+
+def test_an_opening_balance_without_a_date_is_today_in_the_books_timezone(client, database):
+    u = signed_up(client)
+    bid = _book(client, u, timezone="Pacific/Kiritimati")
+    aid = _account(client, u, bid, "cash", opening_balance=100)
+    with database.connect() as c:
+        day, today = c.execute(text("select t.occurred_on, (now() at time zone 'Pacific/Kiritimati')::date from transactions t"
+                                    " join entries e on e.transaction_id = t.id where e.account_id = :a"), {"a": aid}).one()
+    assert day == today
+
+
+def test_amounts_past_a_trillion_are_refused(client):
+    """Past 10**15 minor units, sums would overflow the balance and conversion views for the whole book."""
+    u = signed_up(client)
+    bid = _book(client, u)
+    cash = _account(client, u, bid)
+    huge = 10**16
+    r = client.post(f"/v1/books/{bid}/transactions", headers=auth(u), json={
+        "id": str(uuid.uuid4()), "type": "expense", "occurred_on": "2026-10-01", "entries": [{"account_id": cash, "amount": -huge}]})
+    assert (r.status_code, r.json()) == (422, {"detail": "invalid"})
+    r = client.post(f"/v1/books/{bid}/accounts", headers=auth(u), json={
+        "id": str(uuid.uuid4()), "name": "Big", "kind": "cash", "opening_balance": huge})
+    assert r.status_code == 422
+    food = add_category(client, u, bid, "Food")["id"]
+    r = client.post(f"/v1/books/{bid}/budgets", headers=auth(u), json={
+        "id": str(uuid.uuid4()), "category_id": food, "period": "monthly", "amount": huge})
+    assert r.status_code == 422
+
+
+def test_a_transaction_changes_only_in_its_own_book(client):
+    """Like every write, an edit or delete through another book's path changes nothing."""
+    u = signed_up(client)
+    a, b = _book(client, u), _book(client, u)
+    cash_b = _account(client, u, b)
+    t = _expense(client, u, b, cash_b, 1000, payee="Lunch")
+    r = client.put(f"/v1/books/{a}/transactions/{t['id']}", headers=auth(u), json={
+        "version": t["version"], "type": "expense", "occurred_on": t["occurred_on"], "payee": "Moved",
+        "entries": [{"account_id": cash_b, "amount": -1000}]})
+    assert r.status_code == 404
+    assert client.delete(f"/v1/books/{a}/transactions/{t['id']}?version={t['version']}", headers=auth(u)).status_code == 404
+    assert client.get(f"/v1/books/{b}/transactions/{t['id']}", headers=auth(u)).json()["payee"] == "Lunch"
+
+
+def test_an_amount_saved_past_the_bound_can_still_be_read_and_deleted(client, database):
+    u = signed_up(client)
+    bid = _book(client, u)
+    cash = _account(client, u, bid)
+    t = _expense(client, u, bid, cash, 1000)
+    with database.connect() as c:
+        c.execute(text("update entries set amount = -2000000000000000 where transaction_id = :t"), {"t": t["id"]})
+    assert client.get(f"/v1/books/{bid}/transactions/{t['id']}", headers=auth(u)).json()["entries"][0]["amount"] == -2 * 10**15
+    assert client.get(f"/v1/books/{bid}/transactions", headers=auth(u)).status_code == 200
+    version = client.get(f"/v1/books/{bid}/transactions/{t['id']}", headers=auth(u)).json()["version"]
+    assert client.delete(f"/v1/books/{bid}/transactions/{t['id']}?version={version}", headers=auth(u)).status_code == 204
+
+
+def test_a_transaction_deleted_meanwhile_is_still_a_conflict(client):
+    u = signed_up(client)
+    bid = _book(client, u)
+    t = _expense(client, u, bid, _account(client, u, bid), 1000)
+    assert client.delete(f"/v1/books/{bid}/transactions/{t['id']}?version={t['version']}", headers=auth(u)).status_code == 204
+    r = client.delete(f"/v1/books/{bid}/transactions/{t['id']}?version={t['version']}", headers=auth(u))
+    assert (r.status_code, r.json()) == (409, {"detail": "conflict"})
+
+
+def test_monthly_interest_rounds_half_up_in_whole_units():
+    from app.domain.bills import monthly_interest
+    assert monthly_interest(60_000, 1) == 1                         # 0.5 rounds up
+    assert monthly_interest(10_000_000, 1_200) == 100_000
+    assert monthly_interest(9_007_199_254_740_993, 1_200) == 90_071_992_547_410   # exact past 2**53
+
+
+def test_the_overview_keeps_spending_without_a_rate_and_leaves_out_future_months(client):
+    """A category whose spending this month all lacks a rate keeps its count; future months stay out of the chart."""
+    from datetime import timedelta
+    u = signed_up(client)
+    bid = _book(client, u)
+    cash, odd = _account(client, u, bid), _account(client, u, bid, currency="XAF")
+    trips = add_category(client, u, bid, "Trips")["id"]
+    _expense(client, u, bid, odd, 5000, category_id=trips)
+    _expense(client, u, bid, cash, 7000, day=(date.today().replace(day=1) + timedelta(days=40)).isoformat())
+    d = client.get(f"/v1/books/{bid}/dashboard", headers=auth(u)).json()
+    assert [(c["category_id"], c["spent"], c["not_converted"]) for c in d["top_categories_this_month"]] == [(trips, 0, 1)]
+    assert all(m["month"] <= date.today().isoformat() for m in d["cashflow_6_months"])
+
+
+def test_a_vietnamese_export_names_every_table_in_vietnamese():
+    from app.domain.export import VI
+    assert VI["installment plans"] == "trả góp"
