@@ -90,7 +90,7 @@ describe('sums (waterflow#120)', () => {
     expect(input).toHaveValue('45,000+')
   })
 
-  it('offers 000 and + on a touch screen while the field has focus', async () => {
+  it('offers 000, + and − on a touch screen while the field has focus', async () => {
     const matchMedia = window.matchMedia
     window.matchMedia = ((query: string) => ({
       matches: query.includes('pointer: coarse'), media: query, onchange: null, addListener: () => {}, removeListener: () => {},
@@ -106,6 +106,10 @@ describe('sums (waterflow#120)', () => {
       await userEvent.click(screen.getByRole('button', { name: '+' }))
       await userEvent.type(input, '5000')
       expect(input).toHaveValue('45,000+5,000')
+      await userEvent.click(screen.getByRole('button', { name: '−' }))
+      await userEvent.type(input, '2000')
+      expect(input).toHaveValue('45,000+5,000-2,000')
+      expect(screen.getByText('= 48,000')).toBeInTheDocument()
       expect(input).toHaveFocus()
     } finally {
       window.matchMedia = matchMedia

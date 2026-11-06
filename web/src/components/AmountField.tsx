@@ -74,10 +74,10 @@ export function AmountField({ value, onChange, minorUnit, big = false, unit, ari
       error={bad || props.error}
       helperText={keys ? (
         <Stack component="span" direction="row" sx={{ alignItems: 'center', gap: 1, mt: 0.5 }}>
-          {['000', '+'].map((k) => (
+          {[['000', '000'], ['+', '+'], ['−', '-']].map(([label, k]) => (
             <Button key={k} size="small" variant="outlined" onMouseDown={keepFocus} onPointerDown={keepFocus} onClick={() => insert(k)}
               sx={{ minWidth: 44, fontVariantNumeric: 'tabular-nums' }}>
-              {k}
+              {label}
             </Button>
           ))}
           {helper}
