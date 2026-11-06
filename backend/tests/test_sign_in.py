@@ -234,7 +234,7 @@ def test_idle_sign_out(client, database):
     _, neighbour = sign_up(client)
     assert me(client, token).json()["profile"]["idle_sign_out_minutes"] == 5            # the default
     assert client.patch("/v1/me", headers=bearer(neighbour), json={"idle_sign_out_minutes": 60}).status_code == 200
-    for bad in (0, 1441, "five"):
+    for bad in (0, 61, 1440, "five"):                                     # 1 to 60, or never
         assert client.patch("/v1/me", headers=bearer(token), json={"idle_sign_out_minutes": bad}).status_code == 422
 
     def unused_for(t, minutes):
