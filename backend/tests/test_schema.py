@@ -279,9 +279,9 @@ def test_edit_history_and_conflicts():
     assert q(owner, "select modified_at > created_at, modified_by from transactions where id = :t", t=tid)[0] == \
         (True, editor)
     with session(editor) as s, pytest.raises(Conflict):
-        delete_transaction(s, tid, 1)
+        delete_transaction(s, b, tid, 1)
     with session(owner) as s:
-        delete_transaction(s, tid, 3)
+        delete_transaction(s, b, tid, 3)
 
     hist = q(editor, "select h.version, h.action, u.username, h.snapshot->'entries' from transaction_history h"
                      " left join users u on u.id = h.changed_by where transaction_id = :t order by h.id", t=tid)
@@ -710,7 +710,7 @@ def test_features_from_the_old_app(database):
     with pytest.raises(DBAPIError, match="expense categories"):
         run(u, "insert into budgets (book_id, category_id, period, amount) values (:b, :c, 'monthly', 1)", b=b, c=saving)
     assert refused(u, "update categories set kind = 'expense' where id = :c", c=saving) == "RaiseException"
-    with pytest.raises(DBAPIError, match="opening"):
+    with pytest.raises(DBAPIError, match="category_kind"):
         add(u, b, "opening_balance", date(2026, 10, 2), [(chk, 1)], saving)
 
     # All of it reaches the export.
@@ -916,6 +916,119 @@ def test_scheduler_runs_what_is_due_as_the_purge_login(database):
                 last_finished_at="null", last_result="null", last_detail="null")
         purger.dispose()
         api.dispose()
+
+
+def test_categories_never_loop(database):
+    """A category can't be its own parent, and a cycle that slipped in ends the ancestors' walk instead of running
+    forever (it serves budgets and the transaction filter)."""
+    u = new_user("loop_owner")
+    b = new_book(u)
+    a = new_category(u, b, "A")
+    assert refused(u, "update categories set parent_id = id where id = :c", c=a) == "CheckViolation"
+    c = new_category(u, b, "C", parent=a)
+    with database.connect() as owner:              # two moves at the same moment: A under C while C is under A
+        owner.execute(text("update categories set parent_id = :c where id = :a"), {"c": c, "a": a})
+    with session(u) as s:
+        s.execute(text("set local statement_timeout = '5s'"))
+        assert s.execute(text("select count(*) from category_ancestors where category_id = :a"), {"a": a}).scalar() == 2
+
+
+def test_two_owners_removing_each_other_at_once_keep_one(database):
+    """Each sees the other as an owner unless the second waits for the first: one of them must be refused."""
+    from app.core import db
+    one, two = new_user("race_one"), new_user("race_two")
+    b = new_book(one)
+    share(one, b, two, "owner")
+    results, release = {}, threading.Event()
+
+    def remove(me, other, first):
+        try:
+            with db.user_session(me) as s:
+                s.execute(text("delete from book_members where book_id = :b and user_id = :u"), {"b": b, "u": other})
+                if first:
+                    release.wait(10)
+            results[me] = "done"
+        except DBAPIError as e:
+            results[me] = "owner_required" if "owner_required" in str(e) else str(e)
+
+    def advisory(granted):
+        with database.connect() as watch:
+            while not watch.execute(text("select count(*) from pg_locks where locktype = 'advisory' and granted = :g"),
+                                    {"g": granted}).scalar():
+                time.sleep(0.05)
+
+    first = threading.Thread(target=remove, args=(one, two, True))
+    first.start()
+    advisory(True)                                    # the first holds the book's lock
+    second = threading.Thread(target=remove, args=(two, one, False))
+    second.start()
+    advisory(False)                                   # the second waits for it
+    release.set()
+    first.join()
+    second.join()
+    assert sorted(results.values()) == ["done", "owner_required"]
+    with database.connect() as owner:
+        assert owner.execute(text("select count(*) from book_members where book_id = :b and role = 'owner'"), {"b": b}).scalar() == 1
+
+
+def test_a_self_parented_category_moves_to_the_top_without_a_name_clash(database):
+    """An API that let a category be its own parent may have left one beside a sibling of the same name."""
+    from pathlib import Path
+    u = new_user("self_parent")
+    b = new_book(u)
+    new_category(u, b, "Food")
+    with database.connect() as owner:
+        owner.execute(text("alter table categories drop constraint categories_not_own_parent"))
+        owner.execute(text("insert into categories (id, book_id, name, kind, parent_id) values"
+                           " ('11111111-2222-3333-4444-555555555555', :b, 'Food', 'expense', '11111111-2222-3333-4444-555555555555')"),
+                      {"b": b})
+        fix = Path(__file__).resolve().parents[1] / "migrations" / "20261101210000_review_fixes.sql"
+        owner.execute(text(fix.read_text().replace("%", "%%")))
+        assert sorted(owner.execute(text("select name from categories where book_id = :b"), {"b": b}).scalars()) == \
+            ["Food", "Food (11111111)"]
+
+
+def test_a_budgeted_category_stays_an_expense():
+    u = new_user("budget_kind")
+    b = new_book(u)
+    food = new_category(u, b, "Food")
+    run(u, "insert into budgets (book_id, category_id, period, amount) values (:b, :c, 'monthly', 1000)", b=b, c=food)
+    with pytest.raises(DBAPIError, match="budget_expense_only"):
+        run(u, "update categories set kind = 'income' where id = :c", c=food)
+
+
+def test_a_plan_follows_its_purchase_to_a_later_date():
+    """A purchase moved to a later date keeps a plan that can still change (Pay off early); the plan's own dates are
+    still checked, with a coded error."""
+    from app.domain.transactions import Entry, TxnIn, update_transaction
+    u = new_user("plan_date")
+    b = new_book(u, "VND")
+    card = new_account(u, b, "Visa", "credit_card")
+    run(u, "update accounts set statement_day = 20 where id = :a", a=card)
+    t = add(u, b, "expense", date(2026, 10, 10), [(card, -6_000_000)])
+    run(u, "insert into installment_plans (id, book_id, transaction_id, months, converted_on, first_statement)"
+           " values (gen_random_uuid(), :b, :t, 6, '2026-10-10', '2026-10-20')", b=b, t=t)
+    with session(u) as s:
+        update_transaction(s, TxnIn(t, b, "expense", date(2026, 10, 12), [Entry(card, -6_000_000)]), 1)
+    run(u, "update installment_plans set ended_on = '2026-10-15' where transaction_id = :t", t=t)
+    with pytest.raises(DBAPIError, match="installment_invalid"):
+        run(u, "update installment_plans set converted_on = '2026-10-01' where transaction_id = :t", t=t)
+
+
+def test_a_job_that_never_finished_counts_as_failed(database):
+    """A run killed midway (the container replaced at the jobs hour) isn't today's run: it's retried."""
+    with database.connect() as owner:
+        owner.execute(text("update jobs set last_started_at = now() - interval '2 hours',"
+                           " last_finished_at = now() - interval '26 hours', last_result = 'done' where name = 'rates'"))
+        assert owner.execute(text("select last_result from job_schedule() where name = 'rates'")).scalar() == "failed"
+        owner.execute(text("update jobs set last_finished_at = now() where name = 'rates'"))
+        assert owner.execute(text("select last_result from job_schedule() where name = 'rates'")).scalar() == "done"
+
+
+def test_the_edit_history_is_indexed_by_book(database):
+    with database.connect() as owner:
+        assert owner.execute(text("select count(*) from pg_indexes where tablename = 'transaction_history'"
+                                  " and indexdef like '%(book_id%'")).scalar() >= 1
 
 
 def test_a_purged_owners_shared_book_goes_to_a_co_owner_who_can_still_restore(database):

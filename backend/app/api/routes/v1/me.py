@@ -68,7 +68,7 @@ def update_profile(body: UpdateProfile, caller: Caller = Depends(current_caller)
                             "tz": body.timezone}).rowcount
     if n == 0:
         raise HTTPException(404, "not_found")
-    if "idle_sign_out_minutes" in body.model_fields_set:        # left out leaves it; null turns it off
+    if "idle_sign_out_minutes" in body.model_fields_set:
         db.execute(text("update users set idle_sign_out_minutes = :m where id = :i"),
                    {"m": body.idle_sign_out_minutes, "i": caller.id})
     db.commit()

@@ -147,7 +147,7 @@ export function Transactions({ book }: { book: Book }) {
             onClear={() => { setCleared((n) => n + 1); setFilter('from', ''); setFilter('to', '') }}
             clearLabel={t('filters.clearOne', { name: t('filters.dates') })} />
           {filtered && (
-            <Button size="small" sx={{ flexShrink: 0 }} onClick={() => { setSearch(''); setCleared((n) => n + 1); setParams({}, { replace: true }) }}>
+            <Button sx={{ flexShrink: 0 }} onClick={() => { setSearch(''); setCleared((n) => n + 1); setParams({}, { replace: true }) }}>
               {t('filters.clear')}
             </Button>
           )}

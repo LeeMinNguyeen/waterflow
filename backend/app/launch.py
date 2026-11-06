@@ -54,6 +54,10 @@ def login_passwords() -> dict[str, str]:
 def admin_url() -> str:
     own = os.environ.get("ADMIN_DATABASE_URL", "").strip()
     if own:
+        # An unencoded @ / ? # in the password makes libpq and urlsplit read part of it as the host, port or query,
+        # and quote it in their errors: refused before anything reads the URL, with nothing of it in the message.
+        if any(c in own.partition("://")[2].rpartition("@")[0] for c in "@/?#"):
+            raise SystemExit("ADMIN_DATABASE_URL: percent-encode @ / ? # in the password (%40 %2F %3F %23)")
         return own.replace("postgresql+psycopg://", "postgresql://")
     password = POSTGRES_PASSWORD.read_text().strip()
     return f"postgresql://postgres:{password}@db:5432/postgres?sslmode=disable"
@@ -80,8 +84,10 @@ def wait_for(url: str, seconds: int = 120) -> None:
             return
         except psycopg.OperationalError as e:
             if time.monotonic() > deadline:
-                raise SystemExit(f"the database isn't reachable: {str(e).splitlines()[0]}") from None
+                raise SystemExit(f"the database isn't reachable: {backup._scrub(str(e).splitlines()[0], url)}") from None
             time.sleep(2)
+        except psycopg.Error as e:       # a URL psycopg can't read: its message may quote the password
+            raise SystemExit(f"ADMIN_DATABASE_URL can't be read: {backup._scrub(str(e).splitlines()[0], url)}") from None
 
 
 def print_setup_code(code: str) -> None:
@@ -117,6 +123,17 @@ def run_jobs_once() -> None:
     sys.exit(subprocess.run([sys.executable, "-m", "app.jobs.scheduler", "--once"], env=env).returncode)
 
 
+def backup_before_updating(admin: str, backup_dir: str) -> None:
+    """Stops the server with a plain reason, not a traceback, when the backup an update needs can't be made."""
+    try:
+        path, _, _ = backup.run_backup(admin, backup_dir)
+    except backup.BackupError as e:
+        hint = (" The image's pg_dump can't back up a newer PostgreSQL than its own: see Own database in the docs."
+                if "version mismatch" in str(e) else "")
+        raise SystemExit(f"the backup before updating failed, so nothing was updated: {backup._scrub(str(e), admin)}.{hint}") from None
+    print(f"before updating: backed up to {path}", flush=True)
+
+
 def serve() -> None:
     started = time.time()              # before the backup and migrations: see app/core/updates.py status()
     admin = admin_url()
@@ -127,8 +144,7 @@ def serve() -> None:
         migrate.rename_old_schema(conn)          # before any backup, which dumps schema waterflow
 
     def backup_first():
-        path, _, _ = backup.run_backup(admin, backup_dir)
-        print(f"before updating: backed up to {path}", flush=True)
+        backup_before_updating(admin, backup_dir)
 
     restored = restore.restore_if_requested(admin, backup_dir)
     if restored:

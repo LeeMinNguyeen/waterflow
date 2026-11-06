@@ -107,7 +107,7 @@ function BillCard({ book, account, bill: b, minorUnit, canPay, alone, last }: {
             <Typography variant="body2" color="textSecondary">{t(open ? 'bill.toPaySoFar' : 'bill.remaining')}</Typography>
             <Typography variant="h6">{money(b.remaining)}</Typography>
           </div>
-          {canPay && <Button variant="contained" onClick={() => setPaying(true)}>{t('bill.pay')}</Button>}
+          {canPay && <Button variant="outlined" onClick={() => setPaying(true)}>{t('bill.pay')}</Button>}
         </Stack>
         {b.kind === 'card' && last && row(t('bill.owedNow'), money(b.owed_now))}
         {b.kind === 'card' && last && account.credit_limit !== null && b.limit_used != null &&

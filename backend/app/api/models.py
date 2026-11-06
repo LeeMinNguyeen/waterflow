@@ -57,4 +57,6 @@ def _timezone(name: str) -> str:
 
 Timezone = Annotated[str, AfterValidator(_timezone)]          # IANA name, e.g. Asia/Ho_Chi_Minh; aliases become the canonical name
 CurrencyCode = Annotated[str, StringConstraints(pattern=r"^[A-Z]{3}$")]
+# Past it, sums overflow the balance and conversion views (bigint) for the whole book: a quadrillion minor units.
+MAX_AMOUNT = 10**15
 Name = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]

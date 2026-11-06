@@ -15,7 +15,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
-from app.api.models import CurrencyCode, Name
+from app.api.models import MAX_AMOUNT, CurrencyCode, Name
 from app.api.routes.v1.books import get_book, require_role
 from app.domain.bills import Bill, bill_for, bills_for
 from app.domain.transactions import Entry, TxnIn, create_transaction
@@ -133,8 +133,12 @@ class CreateAccount(Details):
     last4: Last4 | None = None
     in_net_worth: bool = True
     contact_id: UUID | None = None             # lent and loan accounts only
-    opening_balance: int = 0                   # signed
+    opening_balance: Annotated[int, Field(ge=-MAX_AMOUNT, le=MAX_AMOUNT)] = 0    # signed
     opened_on: date | None = None              # the opening balance's date
+
+
+def _today(db: Session, book_id: UUID) -> date:
+    return db.execute(text("select (now() at time zone timezone)::date from books where id = :b"), {"b": book_id}).scalar()
 
 
 @router.post("", status_code=201)
@@ -148,7 +152,7 @@ def create_account(book_id: UUID, body: CreateAccount, db: Session = Depends(get
                     "l4": body.last4, "nw": body.in_net_worth, "ct": body.contact_id, **details}).rowcount
     if n and body.opening_balance:
         create_transaction(db, TxnIn(id=opening_balance_id(body.id), book_id=book_id, type="opening_balance",
-                                     occurred_on=body.opened_on or date.today(),
+                                     occurred_on=body.opened_on or _today(db, book_id),
                                      entries=[Entry(body.id, body.opening_balance)]))
     db.commit()
     return get_account(db, book_id, body.id)
@@ -187,6 +191,11 @@ def update_account(book_id: UUID, account_id: UUID, body: UpdateAccount, db: Ses
                     "a": body.archived, **details}).rowcount
     if n == 0:
         raise HTTPException(409, "conflict")
+    # A plan bills on its card's statements: a card with plans keeps its statement day and stays a card.
+    if current.kind == "credit_card" and current.statement_day and db.execute(text(
+            "select exists (select 1 from installment_plans p join accounts a on a.id = p.account_id"
+            " where a.id = :i and (a.kind <> 'credit_card' or a.statement_day is null))"), {"i": account_id}).scalar():
+        raise HTTPException(409, "card_has_installments")
     db.commit()
     return get_account(db, book_id, account_id)
 

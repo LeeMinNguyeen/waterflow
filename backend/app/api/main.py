@@ -1,6 +1,7 @@
 """The server: the API under /v1, and the web app's files for everything else.
 Run for development: uvicorn app.api.main:app --reload
 """
+import logging
 from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, FastAPI, Request
@@ -20,8 +21,36 @@ from app.core.settings import settings
 API_VERSION = 1
 SERVER_VERSION = updates.current_version()
 
+
+
+class _WithoutQuery(logging.Filter):
+    """uvicorn's access log, minus query strings: reset and invite links carry their secret there."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        args = record.args
+        if isinstance(args, tuple) and len(args) >= 3 and isinstance(args[2], str):
+            record.args = (*args[:2], args[2].split("?", 1)[0], *args[3:])
+        return True
+
+
+logging.getLogger("uvicorn.access").addFilter(_WithoutQuery())
+
 app = FastAPI(title="Waterflow API", docs_url=None, redoc_url=None, openapi_url="/v1/openapi.json")
 errors.install(app)
+
+# A restore's upload is refused by its size before FastAPI reads the whole body to disk, which it does before any
+# check of who's asking.
+RESTORES = {"/v1/admin/restore", "/v1/setup/restore"}
+
+
+@app.middleware("http")
+async def refuse_oversized_restores(request: Request, call_next):
+    if request.method == "POST" and request.url.path in RESTORES:
+        length = request.headers.get("content-length", "")
+        if ("transfer-encoding" in request.headers or not length.isdigit()
+                or int(length) > restore.MAX_DUMP + restore.MAX_PURGED + 2**20):
+            return JSONResponse({"detail": "restore_too_large"}, status_code=413)
+    return await call_next(request)
 
 # Only this server's own web app may call the API from a browser: browsers send Origin, so a copy of the web app
 # hosted anywhere else is refused before anything runs. Phones send no Origin. Behind a reverse proxy the browser's

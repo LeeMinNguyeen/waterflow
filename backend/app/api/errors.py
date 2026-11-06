@@ -16,11 +16,12 @@ CODES = {
     "owner_required": 409, "currency_locked": 409, "txn_shape": 422, "category_kind": 422,
     "budget_expense_only": 422, "no_rate": 409, "setup_invalid": 403, "invite_invalid": 403,
     "invite_required": 403, "reset_invalid": 403, "admin_only": 403, "admin_self": 409, "not_found": 404, "invalid_timezone": 422,
-    "person_account": 409,
+    "person_account": 409, "installment_invalid": 422,
 }
 UNIQUE = {
     "users_username_key": "username_taken",
     "accounts_book_id_name_key": "name_taken",
+    "categories_book_id_parent_id_name_key": "name_taken",
     "budgets_category_id_period_key": "budget_exists",
     "contacts_book_id_name_key": "name_taken",
     "books_pkey": "conflict",              # a client id already used for someone else's book
@@ -58,7 +59,7 @@ def install(app: FastAPI) -> None:
     @app.exception_handler(RequestValidationError)
     async def invalid(request: Request, exc: RequestValidationError):
         # Same shape as every other error; the details are for developers.
-        log.info("invalid request: %s", exc.errors())
+        log.info("invalid request: %s", [(e["loc"], e["type"]) for e in exc.errors()])     # not the input: a password
         return error(422, "invalid")
 
     @app.exception_handler(Conflict)

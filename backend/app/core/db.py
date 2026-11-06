@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session, sessionmaker
 engine = create_engine(
     os.environ["DATABASE_URL"], pool_pre_ping=True, pool_size=5, max_overflow=5, pool_recycle=1800,
     connect_args={"prepare_threshold": None},
+    hide_parameters=True,       # an error's message would carry the values: TOTP secrets, password hashes, notes
 )
 SessionLocal = sessionmaker(engine, expire_on_commit=False)
 

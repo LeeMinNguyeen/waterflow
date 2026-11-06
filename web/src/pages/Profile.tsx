@@ -16,8 +16,9 @@ import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import { useColorScheme } from '@mui/material/styles'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useId, useState, type FormEvent, type ReactNode } from 'react'
+import { useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
+import { FormSection, PageHeader } from '../components/Page'
 import { useErrorText } from '../components/errors'
 import { LanguagePicker } from '../components/LanguagePicker'
 import { TimezonePicker } from '../components/TimezonePicker'
@@ -33,23 +34,13 @@ import { DialogFooter } from '../components/DialogFooter'
 import { copyText } from '../lib/clipboard'
 import { useToast } from '../lib/toast'
 
-function Section({ title, children }: { title: string; children: ReactNode }) {
-  const id = useId()
-  return (
-    <Box component="section" aria-labelledby={id} sx={{ borderTop: 1, borderColor: 'divider', pt: 3, pb: 1 }}>
-      <Typography id={id} variant="h2" sx={{ mb: 2 }}>{title}</Typography>
-      <Stack spacing={2}>{children}</Stack>
-    </Box>
-  )
-}
-
 export function Profile() {
   const { t } = useTranslation()
   const me = useMe()
   if (!me.data) return null
   return (
     <Stack spacing={2} sx={{ maxWidth: 720 }}>
-      <Typography variant="h5">{t('profile.title')}</Typography>
+      <PageHeader title={t('profile.title')} />
       <ProfileForm profile={me.data.profile} />
       <Appearance />
       <Security />
@@ -64,14 +55,14 @@ function Appearance() {
   const { t } = useTranslation()
   const { mode, setMode } = useColorScheme()
   return (
-    <Section title={t('profile.appearance')}>
+    <FormSection title={t('profile.appearance')}>
       <TextField select label={t('profile.theme')} value={mode ?? 'system'} helperText={t('profile.themeHint')}
         onChange={(e) => setMode(e.target.value as 'system' | 'light' | 'dark')}>
         <MenuItem value="system">{t('profile.themeSystem')}</MenuItem>
         <MenuItem value="light">{t('profile.themeLight')}</MenuItem>
         <MenuItem value="dark">{t('profile.themeDark')}</MenuItem>
       </TextField>
-    </Section>
+    </FormSection>
   )
 }
 
@@ -104,7 +95,7 @@ function ProfileForm({ profile }: { profile: ProfileT }) {
   }
 
   return (
-    <Section title={t('profile.profile')}>
+    <FormSection title={t('profile.profile')}>
       <Stack component="form" spacing={2} onSubmit={save}>
         <TextField label={t('profile.username')} required value={username} onChange={(e) => setUsername(e.target.value.toLowerCase())}
           helperText={t('welcome.usernameHint')} slotProps={{ htmlInput: { pattern: '[a-z0-9][a-z0-9_.]{2,29}', autoCapitalize: 'none' } }} />
@@ -113,9 +104,9 @@ function ProfileForm({ profile }: { profile: ProfileT }) {
         <TimezonePicker label={t('profile.timezone')} value={timezone} onChange={setTimezone} />
         {status.error ? <Alert severity="error">{errorText(status.error)}</Alert> : null}
         {status.saved ? <Alert severity="success">{t('profile.saved')}</Alert> : null}
-        <Button type="submit" variant="contained" loading={busy} disabled={!timezone} sx={{ alignSelf: 'start' }}>{t('profile.save')}</Button>
+        <Button type="submit" variant="outlined" loading={busy} disabled={!timezone} sx={{ alignSelf: 'start' }}>{t('profile.save')}</Button>
       </Stack>
-    </Section>
+    </FormSection>
   )
 }
 
@@ -192,7 +183,7 @@ function Security() {
   const on = twoFactor.data?.enabled ?? false
 
   return (
-    <Section title={t('profile.security')}>
+    <FormSection title={t('profile.security')}>
       <Typography variant="subtitle1">{t('profile.password')}</Typography>
       <Stack component="form" spacing={2} onSubmit={changePassword}>
         <TextField name="current" label={t('profile.currentPassword')} type="password" required autoComplete="current-password" />
@@ -224,7 +215,7 @@ function Security() {
           <TextField label={t('mfa.secret')} value={enroll.secret} slotProps={{ htmlInput: { readOnly: true } }} />
           <Typography>{t('mfa.setupStep2')}</Typography>
           {codeField}
-          <Button type="submit" variant="contained" loading={busy} disabled={code.length !== 6} sx={{ alignSelf: 'start' }}>{t('mfa.verify')}</Button>
+          <Button type="submit" variant="outlined" loading={busy} disabled={code.length !== 6} sx={{ alignSelf: 'start' }}>{t('mfa.verify')}</Button>
         </Stack>
       )}
       {notice && <Alert severity="success">{notice}</Alert>}
@@ -265,7 +256,7 @@ function Security() {
           <Button variant="contained" onClick={() => setRecovery(null)}>{t('mfa.recoverySaved')}</Button>
         </DialogFooter>
       </Dialog>
-    </Section>
+    </FormSection>
   )
 }
 
@@ -300,7 +291,7 @@ function Devices({ profile }: { profile: ProfileT }) {
   }
 
   return (
-    <Section title={t('profile.devices')}>
+    <FormSection title={t('profile.devices')}>
       <TextField select label={t('profile.idleSignOut')} value={idle} helperText={t('profile.idleSignOutHint')} disabled={busy === 'idle'}
         onChange={(e) => run('idle', async () => {
           await send('PATCH', '/v1/me', { idle_sign_out_minutes: Number(e.target.value) || null })
@@ -336,7 +327,7 @@ function Devices({ profile }: { profile: ProfileT }) {
       )}
       {notice && <Alert severity="success">{notice}</Alert>}
       {error ? <Alert severity="error">{errorText(error)}</Alert> : null}
-    </Section>
+    </FormSection>
   )
 }
 
@@ -367,7 +358,7 @@ function YourData({ profile }: { profile: ProfileT }) {
   })
 
   return (
-    <Section title={t('profile.yourData')}>
+    <FormSection title={t('profile.yourData')}>
       <Typography color="textSecondary">{t('profile.exportHint')}</Typography>
       <Button variant="outlined" loading={busy && !confirm} onClick={() => run(() => download('/v1/me/export'))} sx={{ alignSelf: 'start' }}>
         {t('profile.export')}
@@ -393,6 +384,6 @@ function YourData({ profile }: { profile: ProfileT }) {
           </Button>
         </DialogFooter>
       </Dialog>
-    </Section>
+    </FormSection>
   )
 }
