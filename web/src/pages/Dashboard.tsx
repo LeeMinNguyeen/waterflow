@@ -11,7 +11,7 @@ import useMediaQuery from '@mui/material/useMediaQuery'
 import { useTheme } from '@mui/material/styles'
 import { Fragment, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useNavigate } from 'react-router'
+import { Link as RouterLink, useNavigate } from 'react-router'
 import { Bar } from '../components/Bar'
 import { BudgetBar } from '../components/BudgetBar'
 import { CashflowChart } from '../components/charts/CashflowChart'
@@ -24,7 +24,8 @@ import { currentLanguage } from '../i18n'
 import { api, type Book, type Category, type Transaction } from '../lib/api'
 import { shiftDay, todayIn } from '../lib/labels'
 import { useFormatMoney, useHideAmounts } from '../lib/hideAmounts'
-import { useCategories, useCurrencies, useDashboard } from '../lib/queries'
+import { useCategories, useCurrencies, useDashboard, useInvalidateBook } from '../lib/queries'
+import { useToast } from '../lib/toast'
 import { BudgetDialog } from './BudgetDialog'
 
 // Credits some rate sources ask for (backend/app/jobs/fx_update.py); a proper name, not translated.
@@ -72,6 +73,8 @@ export function Dashboard({ book }: { book: Book }) {
   const lang = currentLanguage()
   const navigate = useNavigate()
   const openTxn = useOpenTxn()
+  const toast = useToast()
+  const invalidate = useInvalidateBook()
   const desktop = useMediaQuery(useTheme().breakpoints.up('md'))
   const chartColors = useChartColors()
   const dash = useDashboard(book.id)
@@ -113,7 +116,12 @@ export function Dashboard({ book }: { book: Book }) {
   const barMax = Math.max(1, ...bars.map((b) => b.spent))
 
   async function openRecent(id: string) {
-    openTxn(await api<Transaction>(`/v1/books/${book.id}/transactions/${id}`))
+    try {
+      openTxn(await api<Transaction>(`/v1/books/${book.id}/transactions/${id}`))
+    } catch (err) {
+      toast(errorText(err))
+      await invalidate(book.id)
+    }
   }
 
   // Recent transactions carry their category's name only: its colour, when that name means one colour.
@@ -166,8 +174,9 @@ export function Dashboard({ book }: { book: Book }) {
         const name = b.id ? nameOf.get(b.id) ?? '' : t('dash.uncategorized')
         const color = b.id ? colorOf.get(b.id) : null
         return (
-          <Box key={b.id ?? 'none'} onClick={() => b.id && navigate(`/books/${book.id}/transactions?category_id=${b.id}`)}
-            sx={{ py: 1.125, cursor: b.id ? 'pointer' : undefined }}>
+          <Box key={b.id ?? 'none'} {...(b.id && { component: RouterLink, to: `/books/${book.id}/transactions?category_id=${b.id}` })}
+            sx={{ display: 'block', py: 1.125, color: 'inherit', textDecoration: 'none', borderRadius: 1,
+              '&:focus-visible': { outline: 2, outlineColor: 'primary.main', outlineOffset: 2 } }}>
             <Stack direction="row" spacing={1.25} sx={{ alignItems: 'center', mb: 1 }}>
               <Dot color={color} />
               <Typography noWrap sx={{ flex: 1, minWidth: 0 }}>{name}</Typography>

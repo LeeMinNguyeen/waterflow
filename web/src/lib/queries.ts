@@ -4,6 +4,7 @@ import { api, type Account, type Bill, type Book, type Budget, type Category, ty
 
 export const keys = {
   me: ['me'] as const,
+  twoFactor: ['auth', 'two-factor'] as const,
   books: ['books'] as const,
   bookInvites: ['me', 'book-invites'] as const,
   members: (bookId: string) => ['books', bookId, 'members'] as const,

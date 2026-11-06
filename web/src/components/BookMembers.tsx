@@ -90,7 +90,7 @@ export function BookMembers({ book }: { book: Book }) {
             secondaryAction={owner && !m.me && (
               <Tooltip title={m.pending ? t('members.cancelInvite') : t('members.remove')}>
                 <IconButton edge="end" aria-label={m.pending ? t('members.cancelInvite') : t('members.remove')}
-                  disabled={busy} onClick={() => setRemoving(m)}>
+                  disabled={busy} onClick={() => setRemoving(m)} sx={{ width: 36, height: 36 }}>
                   <CloseIcon />
                 </IconButton>
               </Tooltip>
@@ -102,7 +102,8 @@ export function BookMembers({ book }: { book: Book }) {
             />
             {owner ? (
               <TextField select size="small" value={m.role} disabled={busy} sx={{ width: 160, flexShrink: 0, mr: 5 }}
-                aria-label={t('members.roleLabel')} onChange={(e) => changeRole(m, e.target.value as Role)}>
+                slotProps={{ htmlInput: { 'aria-label': t('members.roleOf', { name: m.name }) } }}
+                onChange={(e) => changeRole(m, e.target.value as Role)}>
                 {ROLES.map((r) => <MenuItem key={r} value={r}>{t(`members.role.${r}`)}</MenuItem>)}
               </TextField>
             ) : (
@@ -119,7 +120,7 @@ export function BookMembers({ book }: { book: Book }) {
             sx={{ width: { sm: 160 }, flexShrink: 0 }}>
             {ROLES.map((r) => <MenuItem key={r} value={r}>{t(`members.role.${r}`)}</MenuItem>)}
           </TextField>
-          <Button type="submit" variant="contained" loading={busy} disabled={!username.trim()}>{t('members.invite')}</Button>
+          <Button type="submit" variant="outlined" loading={busy} disabled={!username.trim()}>{t('members.invite')}</Button>
         </Stack>
       )}
       {owner && <Typography variant="body2" color="textSecondary">{t('members.roles')}</Typography>}

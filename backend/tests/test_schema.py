@@ -279,9 +279,9 @@ def test_edit_history_and_conflicts():
     assert q(owner, "select modified_at > created_at, modified_by from transactions where id = :t", t=tid)[0] == \
         (True, editor)
     with session(editor) as s, pytest.raises(Conflict):
-        delete_transaction(s, tid, 1)
+        delete_transaction(s, b, tid, 1)
     with session(owner) as s:
-        delete_transaction(s, tid, 3)
+        delete_transaction(s, b, tid, 3)
 
     hist = q(editor, "select h.version, h.action, u.username, h.snapshot->'entries' from transaction_history h"
                      " left join users u on u.id = h.changed_by where transaction_id = :t order by h.id", t=tid)
@@ -710,7 +710,7 @@ def test_features_from_the_old_app(database):
     with pytest.raises(DBAPIError, match="expense categories"):
         run(u, "insert into budgets (book_id, category_id, period, amount) values (:b, :c, 'monthly', 1)", b=b, c=saving)
     assert refused(u, "update categories set kind = 'expense' where id = :c", c=saving) == "RaiseException"
-    with pytest.raises(DBAPIError, match="opening"):
+    with pytest.raises(DBAPIError, match="category_kind"):
         add(u, b, "opening_balance", date(2026, 10, 2), [(chk, 1)], saving)
 
     # All of it reaches the export.

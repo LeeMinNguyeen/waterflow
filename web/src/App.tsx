@@ -89,7 +89,7 @@ function InBook({ page }: { page: Page }) {
     accounts: <Accounts book={book} />,
     people: <People book={book} />,
     categories: <Categories book={book} />,
-    settings: <BookSettings key={book.version} book={book} />,
+    settings: <BookSettings key={book.id} book={book} />,
     profile: <Profile />,
     admin: <Admin />,
   }

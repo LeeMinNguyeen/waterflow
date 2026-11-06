@@ -123,6 +123,17 @@ def run_jobs_once() -> None:
     sys.exit(subprocess.run([sys.executable, "-m", "app.jobs.scheduler", "--once"], env=env).returncode)
 
 
+def backup_before_updating(admin: str, backup_dir: str) -> None:
+    """Stops the server with a plain reason, not a traceback, when the backup an update needs can't be made."""
+    try:
+        path, _, _ = backup.run_backup(admin, backup_dir)
+    except backup.BackupError as e:
+        hint = (" The image's pg_dump can't back up a newer PostgreSQL than its own: see Own database in the docs."
+                if "version mismatch" in str(e) else "")
+        raise SystemExit(f"the backup before updating failed, so nothing was updated: {backup._scrub(str(e), admin)}.{hint}") from None
+    print(f"before updating: backed up to {path}", flush=True)
+
+
 def serve() -> None:
     started = time.time()              # before the backup and migrations: see app/core/updates.py status()
     admin = admin_url()
@@ -133,8 +144,7 @@ def serve() -> None:
         migrate.rename_old_schema(conn)          # before any backup, which dumps schema waterflow
 
     def backup_first():
-        path, _, _ = backup.run_backup(admin, backup_dir)
-        print(f"before updating: backed up to {path}", flush=True)
+        backup_before_updating(admin, backup_dir)
 
     restored = restore.restore_if_requested(admin, backup_dir)
     if restored:

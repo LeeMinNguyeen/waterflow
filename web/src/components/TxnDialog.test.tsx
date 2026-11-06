@@ -136,20 +136,86 @@ describe('filling in from my own history (waterflow#65)', () => {
       'GET /v1/books/b1/accounts': async () => { await late; return [cash, bank] },
       'GET /v1/books/b1/categories': async () => { await late; return [parking] },
       'GET /v1/books/b1/transactions/suggest': ({ url }: { url: string }) =>
-        url.endsWith('amount=5000') ? { account_id: 'bank', category_id: 'parking', payee: 'Gửi xe' } : null,
+        url.includes('amount=5000&') ? { account_id: 'bank', category_id: 'parking', payee: 'Gửi xe' } : null,
     })
     await renderApp(<TxnDialog book={book} txn={null} onClose={() => {}} />)
     const amount = await screen.findByLabelText(/^Amount/)
     await userEvent.type(amount, '5000')
     expect(await screen.findByDisplayValue('Gửi xe')).toBeInTheDocument()
     await userEvent.type(amount, '0')
-    await waitFor(() => expect(api.calls.some((c) => c.url.endsWith('amount=50000'))).toBe(true))
+    await waitFor(() => expect(api.calls.some((c) => c.url.includes('amount=50000&'))).toBe(true))
     release()
     await userEvent.click(screen.getByRole('combobox', { name: /^Account/ }))
     await screen.findByRole('option', { name: /Bank/ })
     await userEvent.keyboard('{Escape}')
     expect(screen.getByRole('combobox', { name: /^Account/ })).not.toHaveTextContent('Bank')
     expect(screen.getByRole('combobox', { name: 'Category' })).toHaveValue('No category')
+  })
+})
+
+describe('amounts in a currency of their own (review #166)', () => {
+  it('reads the amount in the book currency before an account is picked', async () => {
+    const usdBook: Book = { ...book, base_currency: 'USD' }
+    const checking: Account = { ...cash, id: 'chk', name: 'Checking', kind: 'checking', currency: 'USD' }
+    fakeApi({
+      'GET /v1/currencies': currencies,
+      'GET /v1/books/b1/accounts': [{ ...cash, currency: 'USD' }, checking],
+      'GET /v1/books/b1/categories': [],
+      'GET /v1/books/b1/transactions/suggest': null,
+    })
+    await renderApp(<TxnDialog book={usdBook} txn={null} onClose={() => {}} />)
+    const amount = await screen.findByLabelText(/^Amount/)
+    await userEvent.type(amount, '4.50')
+    expect(amount).toHaveAttribute('inputmode', 'decimal')
+    expect(amount).toHaveAttribute('aria-invalid', 'false')
+  })
+
+  it("never lets a suggestion move the amount to an account in another currency", async () => {
+    const card: Account = { ...cash, id: 'usd', name: 'USD card', kind: 'credit_card', currency: 'USD' }
+    const api = fakeApi({
+      'GET /v1/currencies': currencies,
+      'GET /v1/books/b1/accounts': [cash, card],
+      'GET /v1/books/b1/categories': [],
+      'GET /v1/books/b1/transactions/suggest': { account_id: 'usd', category_id: null, payee: 'Amazon' },
+      'POST /v1/books/b1/transactions': ({ body }: { body: unknown }) => body,
+    })
+    await renderApp(<TxnDialog book={book} txn={null} defaults={{ account: 'cash' }} onClose={() => {}} />)
+    await userEvent.type(await screen.findByLabelText(/^Amount/), '50000')
+    expect(await screen.findByDisplayValue('Amazon', {}, { timeout: 3000 })).toBeInTheDocument()
+    expect(api.calls.filter((c) => c.path.endsWith('/suggest')).at(-1)!.url).toContain('currency=VND')
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(api.writes()).toHaveLength(1))
+    expect(api.writes()[0].body).toMatchObject({ entries: [{ account_id: 'cash', amount: -50_000 }] })
+  })
+
+  it("still takes a picked payee's account in another currency while no amount is typed", async () => {
+    const card: Account = { ...cash, id: 'usd', name: 'USD card', kind: 'credit_card', currency: 'USD' }
+    fakeApi({
+      'GET /v1/currencies': currencies,
+      'GET /v1/books': [book],
+      'GET /v1/books/b1/accounts': [cash, { ...cash, id: 'bank', name: 'Bank', kind: 'checking' }, card],
+      'GET /v1/books/b1/categories': [],
+      'GET /v1/books/b1/payees': [{ payee: 'Netflix', count: 3, account_id: 'usd', category_id: null }],
+    })
+    await renderApp(<TxnDialog book={book} txn={null} onClose={() => {}} />)
+    await userEvent.type(await screen.findByLabelText('Payee'), 'Net')
+    await userEvent.click(await screen.findByRole('option', { name: /Netflix/ }))
+    await waitFor(() => expect(screen.getByRole('combobox', { name: /^Account/ })).toHaveTextContent('USD card'))
+  })
+
+  it("leaves an untouched account alone when the suggestion's is in another currency", async () => {
+    const card: Account = { ...cash, id: 'usd', name: 'USD card', kind: 'credit_card', currency: 'USD' }
+    const bank: Account = { ...cash, id: 'bank', name: 'Bank', kind: 'checking' }
+    fakeApi({
+      'GET /v1/currencies': currencies,
+      'GET /v1/books/b1/accounts': [cash, bank, card],
+      'GET /v1/books/b1/categories': [],
+      'GET /v1/books/b1/transactions/suggest': { account_id: 'usd', category_id: null, payee: 'Amazon' },
+    })
+    await renderApp(<TxnDialog book={book} txn={null} onClose={() => {}} />)
+    await userEvent.type(await screen.findByLabelText(/^Amount/), '50000')
+    expect(await screen.findByDisplayValue('Amazon', {}, { timeout: 3000 })).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: /^Account/ })).not.toHaveTextContent('USD card')
   })
 })
 
@@ -416,6 +482,52 @@ describe('paying a card purchase in installments (waterflow#71)', () => {
     await userEvent.click(screen.getByRole('combobox', { name: /^Account/ }))
     await userEvent.click(await screen.findByRole('option', { name: /Cash/ }))
     expect(screen.getByText("Saving removes this purchase's installment plan.")).toBeInTheDocument()
+  })
+
+  it('sends the conversion date and first statement it shows, on a plan added to a saved purchase (review #166)', async () => {
+    const api = cards()
+    const saved: Transaction = { ...laptop, occurred_on: '2026-10-03' }
+    await renderApp(<TxnDialog book={book} txn={saved} onClose={() => {}} />)
+    await userEvent.click(await screen.findByRole('switch', { name: 'Pay in installments' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(api.writes()).toHaveLength(2))
+    expect(api.writes()[1]).toMatchObject({ method: 'POST', body: { converted_on: '2026-10-03', first_statement: '2026-10-25' } })
+  })
+
+  it("keeps a saved plan when only the purchase changed, even on a card with no statement day now (review #166)", async () => {
+    const api = cards([plan])
+    api.routes['GET /v1/books/b1/accounts'] = [cash, { ...visa, statement_day: null }]
+    await renderApp(<TxnDialog book={book} txn={laptop} onClose={() => {}} />)
+    await userEvent.type(await screen.findByLabelText('Note'), 'for work')
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(api.writes()).toHaveLength(1))
+    expect(api.writes()[0].method).toBe('PUT')
+  })
+
+  it("after a purchase saved but its plan didn't, a second Save updates that purchase rather than losing the change (review #166)", async () => {
+    let refused = true
+    const api = cards()
+    api.routes['POST /v1/books/b1/installments'] = ({ body }: { body: unknown }) => {
+      if (!refused) return body
+      refused = false
+      return new Response(JSON.stringify({ detail: 'unexpected_error' }), { status: 500 })
+    }
+    api.routes['POST /v1/books/b1/transactions'] = ({ body }: { body: unknown }) => ({ ...(body as object), version: 1, entries: (body as { entries: unknown[] }).entries.map((e) => ({ ...(e as object), currency: 'VND' })) })
+    await renderApp(<TxnDialog book={book} txn={null} defaults={{ account: 'visa' }} onClose={() => {}} />)
+    const amount = await screen.findByLabelText(/^Amount/)
+    await userEvent.type(amount, '6000000')
+    await userEvent.click(screen.getByRole('switch', { name: 'Pay in installments' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(api.writes()).toHaveLength(2))
+    const id = (api.writes()[0].body as { id: string }).id
+    api.routes[`PUT /v1/books/b1/transactions/${id}`] = ({ body }: { body: unknown }) => body
+    await userEvent.clear(screen.getByLabelText(/^Amount/))
+    await userEvent.type(screen.getByLabelText(/^Amount/), '7000000')
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(api.writes()).toHaveLength(4))
+    expect(api.writes()[2]).toMatchObject({ method: 'PUT', path: `/v1/books/b1/transactions/${id}`,
+      body: { version: 1, entries: [{ account_id: 'visa', amount: -7_000_000 }] } })
+    expect(api.writes()[3]).toMatchObject({ method: 'POST', path: '/v1/books/b1/installments', body: { transaction_id: id } })
   })
 })
 

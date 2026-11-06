@@ -128,7 +128,7 @@ class RateLimit:
 # Enough for a person who mistypes, far too few for guessing.
 per_ip = RateLimit(30, 15 * 60)               # sign-in, join, setup, reset, invite checks
 per_username = RateLimit(10, 15 * 60)         # sign-in attempts on one account
-per_user_action = RateLimit(10, 15 * 60)      # password and two-factor changes by a signed-in user
+per_user_action = RateLimit(10, 15 * 60)      # by a signed-in user: password and two-factor changes, book invites, restores
 sign_ups_per_ip = RateLimit(5, 60 * 60)
 # A taken name answers username_taken, so changing one's username can list who
 # has an account: a few tries an hour.
