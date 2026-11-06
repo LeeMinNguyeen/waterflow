@@ -113,3 +113,12 @@ describe('sums (waterflow#120)', () => {
   })
 })
 
+describe('a long paste', () => {
+  it('takes at most 64 characters, far more than any sum, so a huge paste never freezes the tab', async () => {
+    await renderApp(<Field />)
+    const input = screen.getByLabelText('Amount')
+    await userEvent.click(input)
+    await userEvent.paste('1+'.repeat(500) + '1')
+    expect((input as HTMLInputElement).value.length).toBeLessThanOrEqual(64)
+  })
+})

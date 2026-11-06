@@ -21,6 +21,9 @@ type Props = Omit<TextFieldProps, 'value' | 'onChange'> & {
   signed?: boolean
 }
 
+// Far longer than any real sum; working out a sum costs the square of its length, so a huge paste would freeze the tab.
+const MAX_TYPED = 64
+
 // Amount input: groups thousands while typing and reads the number by the
 // language's separators ("1.250" in Vietnamese is one thousand two hundred fifty).
 export function AmountField({ value, onChange, minorUnit, big = false, unit, ariaLabel, signed = false, sx, ...props }: Props) {
@@ -84,7 +87,7 @@ export function AmountField({ value, onChange, minorUnit, big = false, unit, ari
         '& .MuiOutlinedInput-input': { fontSize: 28, lineHeight: '36px', fontWeight: 600, letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' } },
       ...(Array.isArray(sx) ? sx : [sx])]}
       slotProps={{
-        htmlInput: { inputMode: minorUnit ? 'decimal' : 'numeric', autoComplete: 'off', 'aria-label': ariaLabel },
+        htmlInput: { inputMode: minorUnit ? 'decimal' : 'numeric', autoComplete: 'off', 'aria-label': ariaLabel, maxLength: MAX_TYPED },
         input: end ? { endAdornment: end } : undefined,
       }}
     />
