@@ -1,8 +1,8 @@
 """Commands for whoever runs the server, for when the web app can't help:
 
     docker compose exec waterflow python -m app.admin reset-password <username>
-        A one-time reset link (24 hours) for anyone, the admin included. Like
-        the admin's reset link: also turns their two-factor off.
+        A one-time reset link (24 hours) for any account that isn't disabled, the
+        admin included. Like the admin's reset link: also turns their two-factor off.
     docker compose exec waterflow python -m app.admin make-admin <username>
         Makes that account the admin (for example after the admin left).
     docker compose exec waterflow python -m app.admin repurge
@@ -25,16 +25,20 @@ USAGE = __doc__
 
 
 def _user(conn: psycopg.Connection, username: str):
-    row = conn.execute("select id from users where username = lower(%s) and deleted_at is null", (username,)).fetchone()
+    row = conn.execute("select id, deletion_requested_at is not null, disabled_at is not null from users"
+                       " where username = lower(%s) and deleted_at is null", (username,)).fetchone()
     if not row:
         raise SystemExit(f"no account named {username!r}")
-    return row[0]
+    return row
 
 
 def reset_password(username: str) -> None:
     token, digest = new_token()
     with psycopg.connect(admin_url()) as conn:
-        user_id = _user(conn, username)
+        user_id, _, disabled = _user(conn, username)
+        if disabled:
+            raise SystemExit(f"{username} is disabled, so a reset link wouldn't work: enable it on Server admin first,"
+                             " or make it the admin (make-admin), which enables it")
         conn.execute("insert into password_resets (token_sha256, user_id, expires_at) values (%s, %s, %s)",
                      (digest, user_id, datetime.now(timezone.utc) + timedelta(hours=24)))
     print("Open this path on the server's address within 24 hours (for example https://money.example.com"
@@ -43,7 +47,10 @@ def reset_password(username: str) -> None:
 
 def make_admin(username: str) -> None:
     with psycopg.connect(admin_url()) as conn:
-        user_id = _user(conn, username)
+        user_id, closing, _ = _user(conn, username)
+        if closing:
+            raise SystemExit(f"{username} is closing (deleted, can be restored within 30 days): an admin only once"
+                             " they restore it")
         conn.execute("update users set is_admin = true, disabled_at = null where id = %s", (user_id,))
     print(f"{username} is now an admin")
 

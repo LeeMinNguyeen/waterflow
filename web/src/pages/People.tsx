@@ -13,19 +13,20 @@ import MenuItem from '@mui/material/MenuItem'
 import Paper from '@mui/material/Paper'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
-import { useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router'
 import { useErrorText } from '../components/errors'
 import { currentLanguage } from '../i18n'
 import { send, type Book, type Contact } from '../lib/api'
-import { formatMoney } from '../lib/money'
+import { useFormatMoney } from '../lib/hideAmounts'
 import { useContacts, useCurrencies } from '../lib/queries'
 import { PersonDialog } from './PersonDialog'
-import { RefreshButton } from '../components/RefreshButton'
+import { PageHeader } from '../components/Page'
 
 export function People({ book }: { book: Book }) {
+  const formatMoney = useFormatMoney()
   const { t } = useTranslation()
   const errorText = useErrorText()
   const qc = useQueryClient()
@@ -60,29 +61,25 @@ export function People({ book }: { book: Book }) {
 
   return (
     <Stack spacing={2}>
-      <Stack direction="row" sx={{ alignItems: 'center', justifyContent: 'space-between' }}>
-        <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
-          <Typography variant="h5">{t('nav.people')}</Typography>
-          <RefreshButton bookId={book.id} />
-        </Stack>
-        {canEdit && <Button variant="contained" startIcon={<AddIcon />} onClick={() => setDialog('new')}>{t('people.add')}</Button>}
-      </Stack>
-      <Typography color="text.secondary">{t('people.title')}</Typography>
-      <Typography variant="body2" color="text.secondary">{t('people.howTo')}</Typography>
+      <PageHeader title={t('nav.people')} bookId={book.id}>
+        {canEdit && <Button variant="outlined" startIcon={<AddIcon />} onClick={() => setDialog('new')}>{t('people.add')}</Button>}
+      </PageHeader>
+      <Typography color="textSecondary">{t('people.title')}</Typography>
+      <Typography variant="body2" color="textSecondary">{t('people.howTo')}</Typography>
       {notice.error ? <Alert severity="error">{errorText(notice.error)}</Alert> : null}
       {notice.info && <Alert severity="info">{notice.info}</Alert>}
-      {contacts.data?.length === 0 && <Typography color="text.secondary">{t('people.empty')}</Typography>}
+      {contacts.data?.length === 0 && <Typography color="textSecondary">{t('people.empty')}</Typography>}
       {!!contacts.data?.length && (
         <Paper variant="outlined">
           <List disablePadding>
             {contacts.data.map((p) => (
               <ListItem key={p.id} divider disablePadding sx={{ opacity: p.archived_at ? 0.55 : 1 }}
                 secondaryAction={canEdit && (
-                  <IconButton edge="end" aria-label={t('people.edit')} onClick={(e) => setMenu({ el: e.currentTarget, person: p })}>
-                    <MoreVertIcon />
+                  <IconButton edge="end" size="small" aria-label={t('people.edit')} onClick={(e) => setMenu({ el: e.currentTarget, person: p })}>
+                    <MoreVertIcon fontSize="small" />
                   </IconButton>
                 )}>
-                <ListItemButton onClick={() => navigate(`/books/${book.id}/transactions?account_id=${p.id}`)}>
+                <ListItemButton sx={{ px: 0, minHeight: 56 }} onClick={() => navigate(`/books/${book.id}/transactions?account_id=${p.id}`)}>
                   <ListItemText primary={<Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}><span>{p.name}</span>{p.archived_at && <Chip size="small" label={t('cat.archived')} />}</Stack>}
                     secondary={[standing(p), p.note].filter(Boolean).join(' · ')} />
                 </ListItemButton>
@@ -101,7 +98,8 @@ export function People({ book }: { book: Book }) {
           if (r.archived) setNotice({ info: t('people.archivedInstead') })
         })}>{t('people.delete')}</MenuItem>
       </Menu>
-      {dialog && <PersonDialog book={book} person={dialog === 'new' ? null : dialog} onClose={() => setDialog(null)} />}
+      {dialog && <PersonDialog book={book} person={dialog === 'new' ? null : contacts.data?.find((p) => p.id === dialog.id) ?? dialog}
+        onClose={() => setDialog(null)} />}
     </Stack>
   )
 }

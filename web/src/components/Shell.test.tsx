@@ -76,7 +76,7 @@ describe('desktop (waterflow#22)', () => {
     expect(screen.getByRole('combobox', { name: 'Switch book' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'More' })).not.toBeInTheDocument()
     const paper = document.querySelector('.MuiDrawer-paper')!
-    expect(getComputedStyle(paper).backgroundColor).toBe('rgb(243, 244, 246)') // on a white page
+    expect(getComputedStyle(paper).backgroundColor).toBe('rgb(245, 245, 243)') // on a white page
   })
 
   it('lists People after Accounts (waterflow#68)', async () => {
@@ -86,6 +86,14 @@ describe('desktop (waterflow#22)', () => {
     const nav = screen.getByRole('link', { name: 'Overview' }).closest('ul')!
     expect(within(nav).getAllByRole('link').map((a) => a.textContent).slice(0, 5)).toEqual(['Overview', 'Transactions', 'Accounts', 'People', 'Categories'])
     expect(within(nav).getByRole('link', { name: 'People' })).toHaveAttribute('href', '/books/b1/people')
+  })
+
+  it('shows each page with its icon (waterflow#148)', async () => {
+    desktop(true)
+    server()
+    await page()
+    const nav = screen.getByRole('link', { name: 'Overview' }).closest('ul')!
+    for (const link of within(nav).getAllByRole('link')) expect(link.querySelector('svg')).not.toBeNull()
   })
 
   it("shows the server's version next to the app's name", async () => {
@@ -100,6 +108,33 @@ describe('desktop (waterflow#22)', () => {
     server()
     await page()
     const paper = document.querySelector('.MuiDrawer-paper')!
-    expect(getComputedStyle(paper).backgroundColor).toBe('rgb(11, 11, 11)') // on #121212
+    expect(getComputedStyle(paper).backgroundColor).toBe('rgb(12, 12, 14)') // on #121214
+  })
+})
+
+describe('hiding amounts (waterflow#104)', () => {
+  afterEach(() => {
+    localStorage.clear()
+    desktop(false)
+  })
+
+  it('has an eye button on a phone that hides and shows amounts, remembered by this browser', async () => {
+    server()
+    const { unmount } = await page()
+    await userEvent.click(screen.getByRole('button', { name: 'Hide amounts' }))
+    expect(screen.getByRole('button', { name: 'Show amounts' })).toBeInTheDocument()
+    expect(localStorage.getItem('waterflow.hideAmounts')).toBe('1')
+    unmount()
+    await page()
+    await userEvent.click(screen.getByRole('button', { name: 'Show amounts' }))
+    expect(screen.getByRole('button', { name: 'Hide amounts' })).toBeInTheDocument()
+    expect(localStorage.getItem('waterflow.hideAmounts')).toBeNull()
+  })
+
+  it('has it in the sidebar on a desktop', async () => {
+    desktop(true)
+    server()
+    await page()
+    expect(screen.getByRole('button', { name: 'Hide amounts' })).toBeInTheDocument()
   })
 })

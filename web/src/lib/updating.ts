@@ -27,6 +27,7 @@ const set = (next: Updating | null) => {
 
 export const updating = {
   start: (version: string | null) => set({ version, since: Date.now(), phase: 'running' }),
+  clear: () => set(null),
   finish: (status: string) =>
     state && set(status.startsWith('done') ? { ...state, phase: 'done' } : { ...state, phase: 'failed', detail: status }),
   subscribe(listener: () => void): () => void {

@@ -1,6 +1,6 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Account, Book } from '../lib/api'
 import { todayIn } from '../lib/labels'
 import { currencies, fakeApi } from '../test/fakeApi'
@@ -297,5 +297,76 @@ describe('fields that follow the kind and currency', () => {
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
     fireEvent.input(document.activeElement!, { target: { textContent: '5' } })
     expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled()
+  })
+})
+
+describe('a ± button where a balance can be below zero (waterflow#155)', () => {
+  it("turns a new account's opening balance negative", async () => {
+    const api = server()
+    api.routes['POST /v1/books/b1/accounts'] = ({ body }: { body: unknown }) => body
+    await renderApp(<AccountDialog book={book} account={null} onClose={() => {}} />)
+    await userEvent.type(await screen.findByRole('textbox', { name: /account name/i }), 'Bank')
+    await userEvent.type(field('Opening balance'), '500000')
+    await userEvent.click(screen.getByRole('button', { name: 'Change sign' }))
+    expect(field('Opening balance')).toHaveValue('-500,000')
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(api.writes()).toHaveLength(1))
+    expect(api.writes()[0].body).toMatchObject({ name: 'Bank', opening_balance: -500_000 })
+  })
+
+  it('sets a current balance below zero', async () => {
+    const api = server()
+    await renderApp(<AccountDialog book={book} account={cash} editing onClose={() => {}} />)
+    await userEvent.clear(await screen.findByRole('textbox', { name: 'Current balance' }))
+    await userEvent.type(field('Current balance'), '64000')
+    await userEvent.click(screen.getByRole('button', { name: 'Change sign' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(api.writes()).toHaveLength(2))
+    expect(api.writes()[1].body).toMatchObject({ type: 'adjustment', entries: [{ account_id: 'a1', amount: -7_000_000 }] })
+  })
+
+  it('has none on what a card owes', async () => {
+    server()
+    await renderApp(<AccountDialog book={book} account={card} editing onClose={() => {}} />)
+    await screen.findByRole('textbox', { name: 'Amount owed now' })
+    expect(screen.queryByRole('button', { name: 'Change sign' })).not.toBeInTheDocument()
+  })
+})
+
+describe('with amounts hidden (waterflow#104)', () => {
+  afterEach(() => localStorage.clear())
+
+  it("shows dots in the details' amount fields", async () => {
+    localStorage.setItem('waterflow.hideAmounts', '1')
+    server()
+    await renderApp(<AccountDialog book={book} account={card} onClose={() => {}} />)
+    expect(await screen.findByText('Account details')).toBeInTheDocument()
+    expect(field(/credit limit/i)).toHaveValue('••••')
+    expect(document.body.textContent).not.toMatch(/\d,\d{3}/)
+  })
+})
+
+describe('a new account, as the edit form reads it (review #166)', () => {
+  it("reads a minus in a new card's Amount owed as a credit, as the edit form does", async () => {
+    const api = server()
+    api.routes['POST /v1/books/b1/accounts'] = ({ body }: { body: unknown }) => body
+    await renderApp(<AccountDialog book={book} account={null} onClose={() => {}} />)
+    await userEvent.type(await screen.findByRole('textbox', { name: /account name/i }), 'Amex')
+    await pick(/^Account type/, 'Credit card')
+    await userEvent.type(field('Amount owed'), '-50')
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(api.writes()).toHaveLength(1))
+    expect(api.writes()[0].body).toMatchObject({ kind: 'credit_card', opening_balance: 50 })
+  })
+
+  it("dates the opening balance today in the book's timezone when the date is cleared", async () => {
+    const api = server()
+    api.routes['POST /v1/books/b1/accounts'] = ({ body }: { body: unknown }) => body
+    await renderApp(<AccountDialog book={book} account={null} onClose={() => {}} />)
+    await userEvent.type(await screen.findByRole('textbox', { name: /account name/i }), 'Wallet')
+    await userEvent.click(screen.getByRole('button', { name: /clear/i }))
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(api.writes()).toHaveLength(1))
+    expect(api.writes()[0].body).toMatchObject({ opened_on: todayIn(book.timezone) })
   })
 })

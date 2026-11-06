@@ -4,6 +4,7 @@ import type { ReactElement, ReactNode } from 'react'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router'
 import { AppTheme } from '../components/AppTheme'
 import { DatesProvider } from '../components/DatesProvider'
+import { HideAmountsProvider } from '../components/HideAmountsProvider'
 import { ToastProvider } from '../components/ToastProvider'
 import i18n from '../i18n'
 
@@ -31,11 +32,13 @@ export async function renderApp(ui: ReactElement, opts: { route?: string; histor
       <QueryClientProvider client={client}>
         <DatesProvider>
           <ToastProvider>
-            <MemoryRouter initialEntries={entries} initialIndex={entries.length - 1}>
-              <Routes>
-                <Route path="*" element={<>{children}<Where /></>} />
-              </Routes>
-            </MemoryRouter>
+            <HideAmountsProvider>
+              <MemoryRouter initialEntries={entries} initialIndex={entries.length - 1}>
+                <Routes>
+                  <Route path="*" element={<>{children}<Where /></>} />
+                </Routes>
+              </MemoryRouter>
+            </HideAmountsProvider>
           </ToastProvider>
         </DatesProvider>
       </QueryClientProvider>
@@ -50,6 +53,14 @@ export async function renderApp(ui: ReactElement, opts: { route?: string; histor
 export function desktop(on: boolean, { dark = false } = {}) {
   window.matchMedia = ((query: string) => ({
     matches: query.includes('prefers-color-scheme') ? dark && query.includes('dark') : on, media: query, onchange: null,
+    addListener: () => {}, removeListener: () => {}, addEventListener: () => {}, removeEventListener: () => {}, dispatchEvent: () => false,
+  })) as unknown as typeof window.matchMedia
+}
+
+// A phone: the max-width queries match (MUI's breakpoints.down), the min-width ones don't.
+export function phone(on: boolean) {
+  window.matchMedia = ((query: string) => ({
+    matches: on && query.includes('max-width'), media: query, onchange: null,
     addListener: () => {}, removeListener: () => {}, addEventListener: () => {}, removeEventListener: () => {}, dispatchEvent: () => false,
   })) as unknown as typeof window.matchMedia
 }

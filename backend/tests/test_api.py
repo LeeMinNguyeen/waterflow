@@ -2,6 +2,7 @@
 import csv
 import re
 import uuid
+from datetime import date
 
 import pytest
 from sqlalchemy import text
@@ -108,6 +109,21 @@ def test_web_app_files_and_routes(client, tmp_path, monkeypatch):
     asset = client.get("/assets/a.js")
     assert asset.text == "js" and "immutable" in asset.headers["cache-control"]
     assert client.get("/../../etc/passwd").text == "<html>app</html>"        # never outside the web app's folder
+
+
+def test_home_screen_manifest(client, tmp_path, monkeypatch):
+    """The web app's manifest is served as application/manifest+json, which phones need to offer adding it."""
+    from pathlib import Path
+    from app.core import settings
+    manifest = Path(__file__).resolve().parents[2] / "web" / "public" / "manifest.webmanifest"
+    (tmp_path / "index.html").write_text("<html>app</html>")
+    (tmp_path / "manifest.webmanifest").write_bytes(manifest.read_bytes())
+    monkeypatch.setattr(settings, "settings", settings.Settings(web_dir=tmp_path))
+    import app.api.main as main
+    monkeypatch.setattr(main, "settings", settings.settings)
+    r = client.get("/manifest.webmanifest")
+    assert r.headers["content-type"].startswith("application/manifest+json")
+    assert r.json()["name"] == "Waterflow"
 
 
 def test_currencies(client):
@@ -425,7 +441,9 @@ def test_open_statement(client, database):
 
     # The API: the list, and the one due on its own.
     r = client.get(f"{base}/accounts/{card}/bills", headers=auth(u))
-    assert r.status_code == 200 and all(b["statement_open"] for b in r.json())
+    from datetime import datetime, timezone as tz
+    today = datetime.now(tz.utc).date()                      # the book's timezone is UTC; the API reads the real day
+    assert r.status_code == 200 and [b["statement_open"] for b in r.json()] == [b.statement_open for b in bills(card, today)]
     assert client.get(f"{base}/accounts/{accts['Cash']}/bills", headers=auth(u)).json() == []
     assert client.get(f"{base}/accounts/{card}/bills", headers=auth(signed_up(client))).status_code == 404
 
@@ -566,6 +584,17 @@ def test_installment_plans(client, database):
     assert rows[0].startswith("Book,Card,Purchase,Date,Amount,Months") and len(rows) == 2
 
 
+def test_a_category_with_a_siblings_name_is_name_taken(client):
+    u = signed_up(client)
+    bid, _ = new_book_with_accounts(client, u)
+    food = add_category(client, u, bid, "Food")
+    add_category(client, u, bid, "Lunch", parent=food["id"])
+    for parent in (None, food["id"]):
+        r = client.post(f"/v1/books/{bid}/categories", headers=auth(u), json={
+            "id": str(uuid.uuid4()), "name": "Food" if parent is None else "Lunch", "kind": "expense", "parent_id": parent})
+        assert (r.status_code, r.json()) == (409, {"detail": "name_taken"})
+
+
 def test_categories(client):
     u = signed_up(client)
     bid, accts = new_book_with_accounts(client, u)
@@ -683,6 +712,119 @@ def test_suggestions_from_my_own_history(client):
     assert suggest(owner, 77_000) is None
     assert client.get(f"/v1/books/{bid}/transactions/suggest", headers=auth(signed_up(client)),
                       params={"type": "expense", "amount": 5_000}).status_code == 404
+
+
+def test_payee_suggestions(client):
+    """R-TXN-8: typing a payee offers the book's payees, every member's: those starting with the text first, then those
+    containing it, the most used first, each with the account and category of its latest transaction of the type."""
+    names = {k: f"{k}_{uuid.uuid4().hex[:8]}" for k in ("owner", "editor", "viewer")}
+    users = {k: signed_up(client, names[k]) for k in names}
+    owner = users["owner"]
+    bid, accts = new_book_with_accounts(client, owner)
+    for k in ("editor", "viewer"):
+        client.post(f"/v1/books/{bid}/members", headers=auth(owner), json={"username": names[k], "role": k})
+        client.post(f"/v1/me/book-invites/{bid}/accept", headers=auth(users[k]))
+    food = add_category(client, owner, bid, "Ăn uống")["id"]
+    coffee = add_category(client, owner, bid, "Cà phê")["id"]
+    pay = add_category(client, owner, bid, "Lương", kind="income")["id"]
+    move = add_category(client, owner, bid, "Chuyển", kind="transfer")["id"]
+
+    def add(u, payee, account, category, day, type_="expense", amount=50_000):
+        entries = ([{"account_id": accts["Cash"], "amount": -amount}, {"account_id": accts["Bank"], "amount": amount}]
+                   if type_ == "transfer" else [{"account_id": accts[account], "amount": -amount if type_ == "expense" else amount}])
+        r = client.post(f"/v1/books/{bid}/transactions", headers=auth(u), json={
+            "id": str(uuid.uuid4()), "type": type_, "occurred_on": f"2026-10-{day:02d}", "category_id": category,
+            "payee": payee, "entries": entries})
+        assert r.status_code == 201, r.text
+
+    def payees(u, q, type_=None):
+        r = client.get(f"/v1/books/{bid}/payees", headers=auth(u), params={"q": q} | ({"type": type_} if type_ else {}))
+        assert r.status_code == 200, r.text
+        return r.json()
+
+    add(owner, "Highlands", "Cash", coffee, 1)
+    add(owner, "highlands ", "Bank", food, 3)
+    add(users["editor"], "Highlands", "Bank", coffee, 5)
+    add(owner, "Phở Highlands", "Cash", food, 4)
+    add(owner, "Phở Highlands", "Cash", food, 6)
+    add(owner, "Phở Highlands", "Cash", food, 7)
+    add(owner, "Công ty", "Bank", pay, 2, type_="income")
+    add(owner, "Highlands ATM", "Cash", move, 8, type_="transfer")
+
+    got = payees(owner, "HIGH")
+    assert [p["payee"] for p in got] == ["Highlands", "Phở Highlands"]        # starts with it first, then contains it
+    assert got[0] == {"payee": "Highlands", "count": 3, "account_id": accts["Bank"], "category_id": coffee}
+    assert got[1]["count"] == 3
+    assert [p["payee"] for p in payees(owner, "")] == ["Phở Highlands", "Highlands", "Công ty"]    # equal counts: latest first
+    assert [p["payee"] for p in payees(owner, "", "income")] == ["Công ty"]
+    assert payees(owner, "atm") == []                                         # transfers aren't offered
+    assert payees(users["viewer"], "high") == got                             # a viewer reads them too
+    assert payees(owner, "%") == [] and payees(owner, "_") == []
+
+    for i in range(10):
+        add(owner, f"Shop {i}", "Cash", food, 10)
+    assert len(payees(owner, "shop")) == 8
+
+    other = signed_up(client)
+    assert client.get(f"/v1/books/{bid}/payees", headers=auth(other), params={"q": "high"}).status_code == 404
+    other_bid, other_accts = new_book_with_accounts(client, other)
+    assert client.get(f"/v1/books/{other_bid}/payees", headers=auth(other), params={"q": "high"}).json() == []
+
+
+def test_usual_transactions(client):
+    """R-TXN-9: the add dialog offers the user's own usual transactions: the same account, category, payee and amount
+    at least 3 times in the last 60 days, the most frequent 5, ties to the latest; other members' never count."""
+    from datetime import date, timedelta
+    names = {k: f"{k}_{uuid.uuid4().hex[:8]}" for k in ("owner", "editor")}
+    owner, editor = (signed_up(client, names[k]) for k in ("owner", "editor"))
+    bid, accts = new_book_with_accounts(client, owner)
+    client.post(f"/v1/books/{bid}/members", headers=auth(owner), json={"username": names["editor"], "role": "editor"})
+    client.post(f"/v1/me/book-invites/{bid}/accept", headers=auth(editor))
+    coffee = add_category(client, owner, bid, "Cà phê")["id"]
+    move = add_category(client, owner, bid, "Di chuyển")["id"]
+    pay = add_category(client, owner, bid, "Lương", kind="income")["id"]
+    today = date.today()
+
+    def add(u, payee, amount, account="Cash", category=coffee, days_ago=0, type_="expense", times=1):
+        for _ in range(times):
+            r = client.post(f"/v1/books/{bid}/transactions", headers=auth(u), json={
+                "id": str(uuid.uuid4()), "type": type_, "occurred_on": (today - timedelta(days=days_ago)).isoformat(),
+                "category_id": category, "payee": payee,
+                "entries": [{"account_id": accts[account], "amount": -amount if type_ == "expense" else amount}]})
+            assert r.status_code == 201, r.text
+
+    def usual(u, type_="expense"):
+        r = client.get(f"/v1/books/{bid}/transactions/usual", headers=auth(u), params={"type": type_})
+        assert r.status_code == 200, r.text
+        return [(t["payee"], t["amount"], t["count"]) for t in r.json()]
+
+    add(owner, "Highlands", 55_000, times=4, days_ago=2)
+    add(owner, "Grab", 45_000, account="Bank", category=move, times=3, days_ago=1)
+    add(owner, "Phở", 65_000, times=2)                                         # twice isn't usual
+    add(owner, "Highlands", 60_000, times=2)                                   # another amount is another group
+    add(owner, "Old habit", 20_000, times=5, days_ago=70)                      # older than 60 days
+    add(editor, "Cơm", 35_000, times=5)                                        # someone else's habits
+    add(owner, "Công ty", 30_000_000, category=pay, type_="income", times=3)
+    assert usual(owner) == [("Highlands", 55_000, 4), ("Grab", 45_000, 3)]
+    first = client.get(f"/v1/books/{bid}/transactions/usual", headers=auth(owner), params={"type": "expense"}).json()[0]
+    assert (first["account_id"], first["category_id"], first["last_on"]) == (accts["Cash"], coffee, (today - timedelta(days=2)).isoformat())
+    assert usual(owner, "income") == [("Công ty", 30_000_000, 3)]
+    assert usual(editor) == [("Cơm", 35_000, 5)]
+
+    for i in range(6):                                                          # the top 5; equal counts, the latest first
+        add(owner, f"Shop {i}", 10_000 + i, times=3, days_ago=10 - i)
+    assert [p for p, _, _ in usual(owner)] == ["Highlands", "Grab", "Shop 5", "Shop 4", "Shop 3"]
+
+    bank = next(a for a in client.get(f"/v1/books/{bid}/accounts", headers=auth(owner)).json() if a["id"] == accts["Bank"])
+    assert client.patch(f"/v1/books/{bid}/accounts/{bank['id']}", headers=auth(owner),
+                        json={"version": bank["version"], "archived": True}).status_code == 200
+    assert "Grab" not in [p for p, _, _ in usual(owner)]                        # an archived account is left out
+    cat = next(c for c in client.get(f"/v1/books/{bid}/categories", headers=auth(owner)).json() if c["id"] == coffee)
+    client.delete(f"/v1/books/{bid}/categories/{coffee}", headers=auth(owner), params={"version": cat["version"]})
+    assert "Highlands" not in [p for p, _, _ in usual(owner)]                   # so is an archived category
+
+    assert client.get(f"/v1/books/{bid}/transactions/usual", headers=auth(signed_up(client)),
+                      params={"type": "expense"}).status_code == 404
 
 
 def test_transactions_and_two_browsers(client):
@@ -1145,3 +1287,147 @@ def test_username_changes_are_rate_limited(client):
     me = client.get("/v1/me", headers=auth(u)).json()["profile"]
     same = client.patch("/v1/me", headers=auth(u), json={"username": me["username"], "display_name": "Mai"})
     assert same.status_code == 200 and same.json()["profile"]["display_name"] == "Mai"     # saving the same name isn't a try
+
+
+def _book(client, u, currency="VND", timezone="UTC"):
+    bid = str(uuid.uuid4())
+    r = client.post("/v1/books", headers=auth(u), json={"id": bid, "name": "B", "base_currency": currency, "timezone": timezone,
+                                                        "starter_categories": False})
+    assert r.status_code == 201, r.text
+    return bid
+
+
+def _account(client, u, bid, kind="cash", currency=None, **extra):
+    aid = str(uuid.uuid4())
+    r = client.post(f"/v1/books/{bid}/accounts", headers=auth(u), json={
+        "id": aid, "name": f"{kind} {aid[:6]}", "kind": kind, **({"currency": currency} if currency else {}), **extra})
+    assert r.status_code == 201, r.text
+    return aid
+
+
+def _expense(client, u, bid, account, amount, day=None, **extra):
+    r = client.post(f"/v1/books/{bid}/transactions", headers=auth(u), json={
+        "id": str(uuid.uuid4()), "type": "expense", "occurred_on": day or date.today().isoformat(),
+        "entries": [{"account_id": account, "amount": -amount}], **extra})
+    assert r.status_code == 201, r.text
+    return r.json()
+
+
+def test_a_card_with_installments_keeps_its_statement_day(client, database):
+    """A card's plans bill on its statements: losing the statement day is refused while it has plans, and the plans
+    of a card that lost it anyway are left out instead of failing every installments call."""
+    u = signed_up(client)
+    bid = _book(client, u)
+    card = _account(client, u, bid, "credit_card", statement_day=20, payment_due_day=5, credit_limit=50_000_000)
+    laptop = _expense(client, u, bid, card, 12_000_000)
+    assert client.post(f"/v1/books/{bid}/installments", headers=auth(u),
+                       json={"id": str(uuid.uuid4()), "transaction_id": laptop["id"], "months": 6}).status_code == 201
+    for change in ({"statement_day": None}, {"kind": "loan"}):
+        r = client.patch(f"/v1/books/{bid}/accounts/{card}", headers=auth(u), json={"version": 1, **change})
+        assert (r.status_code, r.json()) == (409, {"detail": "card_has_installments"})
+    with database.connect() as c:                       # a card that lost it before this check existed
+        c.execute(text("update accounts set statement_day = null where id = :a"), {"a": card})
+    assert client.get(f"/v1/books/{bid}/installments", headers=auth(u)).status_code == 200
+
+
+def test_a_suggestion_stays_in_the_currency_typed(client):
+    """5000 minor units are ₫5,000 or $50.00: with a currency, only amounts in it match."""
+    u = signed_up(client)
+    bid = _book(client, u)
+    usd = _account(client, u, bid, "credit_card", currency="USD")
+    for _ in range(2):
+        _expense(client, u, bid, usd, 5000, payee="Amazon")
+    url = f"/v1/books/{bid}/transactions/suggest?type=expense&amount=5000"
+    assert client.get(url + "&currency=VND", headers=auth(u)).json() is None
+    assert client.get(url + "&currency=USD", headers=auth(u)).json()["account_id"] == usd
+    assert client.get(url, headers=auth(u)).json()["account_id"] == usd      # older apps send no currency
+
+
+def test_an_opening_balance_without_a_date_is_today_in_the_books_timezone(client, database):
+    u = signed_up(client)
+    bid = _book(client, u, timezone="Pacific/Kiritimati")
+    aid = _account(client, u, bid, "cash", opening_balance=100)
+    with database.connect() as c:
+        day, today = c.execute(text("select t.occurred_on, (now() at time zone 'Pacific/Kiritimati')::date from transactions t"
+                                    " join entries e on e.transaction_id = t.id where e.account_id = :a"), {"a": aid}).one()
+    assert day == today
+
+
+def test_amounts_past_a_trillion_are_refused(client):
+    """Past 10**15 minor units, sums would overflow the balance and conversion views for the whole book."""
+    u = signed_up(client)
+    bid = _book(client, u)
+    cash = _account(client, u, bid)
+    huge = 10**16
+    r = client.post(f"/v1/books/{bid}/transactions", headers=auth(u), json={
+        "id": str(uuid.uuid4()), "type": "expense", "occurred_on": "2026-10-01", "entries": [{"account_id": cash, "amount": -huge}]})
+    assert (r.status_code, r.json()) == (422, {"detail": "invalid"})
+    r = client.post(f"/v1/books/{bid}/accounts", headers=auth(u), json={
+        "id": str(uuid.uuid4()), "name": "Big", "kind": "cash", "opening_balance": huge})
+    assert r.status_code == 422
+    food = add_category(client, u, bid, "Food")["id"]
+    r = client.post(f"/v1/books/{bid}/budgets", headers=auth(u), json={
+        "id": str(uuid.uuid4()), "category_id": food, "period": "monthly", "amount": huge})
+    assert r.status_code == 422
+
+
+def test_a_transaction_changes_only_in_its_own_book(client):
+    """Like every write, an edit or delete through another book's path changes nothing."""
+    u = signed_up(client)
+    a, b = _book(client, u), _book(client, u)
+    cash_b = _account(client, u, b)
+    t = _expense(client, u, b, cash_b, 1000, payee="Lunch")
+    r = client.put(f"/v1/books/{a}/transactions/{t['id']}", headers=auth(u), json={
+        "version": t["version"], "type": "expense", "occurred_on": t["occurred_on"], "payee": "Moved",
+        "entries": [{"account_id": cash_b, "amount": -1000}]})
+    assert r.status_code == 404
+    assert client.delete(f"/v1/books/{a}/transactions/{t['id']}?version={t['version']}", headers=auth(u)).status_code == 404
+    assert client.get(f"/v1/books/{b}/transactions/{t['id']}", headers=auth(u)).json()["payee"] == "Lunch"
+
+
+def test_an_amount_saved_past_the_bound_can_still_be_read_and_deleted(client, database):
+    u = signed_up(client)
+    bid = _book(client, u)
+    cash = _account(client, u, bid)
+    t = _expense(client, u, bid, cash, 1000)
+    with database.connect() as c:
+        c.execute(text("update entries set amount = -2000000000000000 where transaction_id = :t"), {"t": t["id"]})
+    assert client.get(f"/v1/books/{bid}/transactions/{t['id']}", headers=auth(u)).json()["entries"][0]["amount"] == -2 * 10**15
+    assert client.get(f"/v1/books/{bid}/transactions", headers=auth(u)).status_code == 200
+    version = client.get(f"/v1/books/{bid}/transactions/{t['id']}", headers=auth(u)).json()["version"]
+    assert client.delete(f"/v1/books/{bid}/transactions/{t['id']}?version={version}", headers=auth(u)).status_code == 204
+
+
+def test_a_transaction_deleted_meanwhile_is_still_a_conflict(client):
+    u = signed_up(client)
+    bid = _book(client, u)
+    t = _expense(client, u, bid, _account(client, u, bid), 1000)
+    assert client.delete(f"/v1/books/{bid}/transactions/{t['id']}?version={t['version']}", headers=auth(u)).status_code == 204
+    r = client.delete(f"/v1/books/{bid}/transactions/{t['id']}?version={t['version']}", headers=auth(u))
+    assert (r.status_code, r.json()) == (409, {"detail": "conflict"})
+
+
+def test_monthly_interest_rounds_half_up_in_whole_units():
+    from app.domain.bills import monthly_interest
+    assert monthly_interest(60_000, 1) == 1                         # 0.5 rounds up
+    assert monthly_interest(10_000_000, 1_200) == 100_000
+    assert monthly_interest(9_007_199_254_740_993, 1_200) == 90_071_992_547_410   # exact past 2**53
+
+
+def test_the_overview_keeps_spending_without_a_rate_and_leaves_out_future_months(client):
+    """A category whose spending this month all lacks a rate keeps its count; future months stay out of the chart."""
+    from datetime import timedelta
+    u = signed_up(client)
+    bid = _book(client, u)
+    cash, odd = _account(client, u, bid), _account(client, u, bid, currency="XAF")
+    trips = add_category(client, u, bid, "Trips")["id"]
+    _expense(client, u, bid, odd, 5000, category_id=trips)
+    _expense(client, u, bid, cash, 7000, day=(date.today().replace(day=1) + timedelta(days=40)).isoformat())
+    d = client.get(f"/v1/books/{bid}/dashboard", headers=auth(u)).json()
+    assert [(c["category_id"], c["spent"], c["not_converted"]) for c in d["top_categories_this_month"]] == [(trips, 0, 1)]
+    assert all(m["month"] <= date.today().isoformat() for m in d["cashflow_6_months"])
+
+
+def test_a_vietnamese_export_names_every_table_in_vietnamese():
+    from app.domain.export import VI
+    assert VI["installment plans"] == "trả góp"

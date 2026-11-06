@@ -31,3 +31,12 @@ export function statementsFrom(from: string, statementDay: number, count = 3): s
 }
 
 export const validMonths = (text: string) => /^\d+$/.test(text) && Number(text) >= 2 && Number(text) <= 60
+
+// The conversion date and first statement the plan fields show, which are also the ones saved: a first statement no
+// longer among those offered (the dates changed since) falls back to the first one.
+export function planDates(plan: PlanForm, purchaseDate: string, statementDay: number | null) {
+  const convertedOn = plan.convertedOn || purchaseDate
+  const statements = statementDay && convertedOn ? statementsFrom(convertedOn, statementDay) : []
+  const firstStatement = statements.includes(plan.firstStatement) ? plan.firstStatement : statements[0] ?? ''
+  return { convertedOn, firstStatement, statements }
+}

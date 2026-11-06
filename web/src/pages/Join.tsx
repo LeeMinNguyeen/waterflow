@@ -3,7 +3,7 @@ import Button from '@mui/material/Button'
 import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
-import { useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link as RouterLink, useLocation, useNavigate, useSearchParams } from 'react-router'
 import { Centered } from '../components/Centered'
@@ -13,7 +13,9 @@ import { FileField } from '../components/FileField'
 import { LanguagePicker } from '../components/LanguagePicker'
 import { useInstance } from '../lib/queries'
 import { newAccountBody, useSignedInForm } from '../auth/forms'
-import { FormError, NewAccountFields, PasswordFields, PublicHeader } from '../components/AccountForm'
+import { session } from '../auth/session'
+import { signOut } from '../auth/signOut'
+import { FormError, NewAccountFields, PasswordFields, PublicHeader, PublicPage } from '../components/AccountForm'
 
 // Join with an invite (/join?code=X7K2-9QPM, from the admin's link or QR
 // code), or without one when the admin has opened sign-up. The code and the
@@ -50,8 +52,8 @@ export function Join() {
   if (!account) return (
     <Centered key="code">
       <Stack component="form" spacing={2} onSubmit={next}>
-        <PublicHeader title={t('join.title')} languageSwitch={false} />
-        <Typography color="text.secondary">{t(open ? 'join.introOpen' : 'join.intro')}</Typography>
+        <PublicHeader title={t('join.title')} />
+        <Typography color="textSecondary">{t(open ? 'join.introOpen' : 'join.intro')}</Typography>
         <TextField label={t('join.code')} value={code} onChange={(e) => setCode(e.target.value)} required={!open}
           helperText={t('join.codeHint')} slotProps={{ htmlInput: { autoCapitalize: 'characters', autoComplete: 'off' } }} />
         <LanguagePicker helperText={t('join.languageHint')} />
@@ -66,8 +68,8 @@ export function Join() {
     <Centered key="account">
       <Stack component="form" spacing={2} onSubmit={(e) => submit(e, (form) =>
         send<Token>('POST', '/v1/auth/sign-up', { ...newAccountBody(form), invite_code: code.trim() || null }))}>
-        <PublicHeader title={t('join.title')} languageSwitch={false} />
-        <Typography color="text.secondary">{t('join.accountIntro')}</Typography>
+        <PublicHeader title={t('join.title')} />
+        <Typography color="textSecondary">{t('join.accountIntro')}</Typography>
         <NewAccountFields />
         <FormError error={error} />
         <Button type="submit" variant="contained" size="large" loading={busy}>{t('join.submit')}</Button>
@@ -84,7 +86,7 @@ export function Setup() {
   const [restoring, setRestoring] = useState(false)
   if (restoring) return <SetupRestore onBack={() => setRestoring(false)} />
   return (
-    <Centered>
+    <PublicPage>
       <Stack component="form" spacing={2} onSubmit={(e) => submit(e, (form) => {
         const f = new FormData(form)
         return send<Token>('POST', '/v1/setup', {
@@ -93,7 +95,7 @@ export function Setup() {
         })
       })}>
         <PublicHeader title={t('setup.title')} />
-        <Typography color="text.secondary">{t('setup.intro')}</Typography>
+        <Typography color="textSecondary">{t('setup.intro')}</Typography>
         <TextField name="setup_code" label={t('setup.code')} required helperText={t('setup.codeHint')}
           slotProps={{ htmlInput: { autoCapitalize: 'characters', autoComplete: 'off' } }} />
         <TextField name="server_name" label={t('setup.serverName')} helperText={t('setup.serverNameHint')}
@@ -104,7 +106,7 @@ export function Setup() {
         <Button type="submit" variant="contained" size="large" loading={busy}>{t('setup.submit')}</Button>
         <Button onClick={() => setRestoring(true)}>{t('restore.instead')}</Button>
       </Stack>
-    </Centered>
+    </PublicPage>
   )
 }
 
@@ -136,44 +138,50 @@ function SetupRestore({ onBack }: { onBack: () => void }) {
   }
 
   return (
-    <Centered>
+    <PublicPage>
       <Stack component="form" spacing={2} onSubmit={start}>
         <PublicHeader title={t('restore.title')} />
         {state.restarting ? <Alert severity="info">{t('restore.setupRestarting')}</Alert> : (
           <>
-            <Typography color="text.secondary">{t('restore.setupIntro')}</Typography>
+            <Typography color="textSecondary">{t('restore.setupIntro')}</Typography>
             <TextField label={t('setup.code')} required value={code} onChange={(e) => setCode(e.target.value)} helperText={t('setup.codeHint')}
               slotProps={{ htmlInput: { autoCapitalize: 'characters', autoComplete: 'off' } }} />
             <FileField label={t('restore.file')} button={t('restore.choose')} file={file} onChange={setFile} accept=".dump" />
             <FileField label={t('restore.purged')} button={t('restore.choose')} file={purged} onChange={setPurged} accept=".jsonl" />
-            <Typography variant="body2" color="text.secondary">{t('restore.purgedHint')}</Typography>
+            <Typography variant="body2" color="textSecondary">{t('restore.purgedHint')}</Typography>
             <FormError error={state.error} />
             <Button type="submit" variant="contained" size="large" loading={state.busy} disabled={!file || !code.trim()}>{t('restore.submit')}</Button>
             <Button onClick={onBack}>{t('restore.back')}</Button>
           </>
         )}
       </Stack>
-    </Centered>
+    </PublicPage>
   )
 }
 
-// A reset link from the admin (/reset?token=...): a new password, then signed in.
+// A reset link from the admin (/reset?token=...): a new password, then signed in. Whoever is signed in on this
+// browser is signed out first: the link is for someone else's account.
 export function Reset() {
   const { t } = useTranslation()
   const [params] = useSearchParams()
   const { submit, error, busy } = useSignedInForm()
+  const leaving = useRef<Promise<void>>(Promise.resolve())
+  useEffect(() => {
+    if (session.token()) leaving.current = signOut()
+  }, [])
   return (
-    <Centered>
-      <Stack component="form" spacing={2} onSubmit={(e) => submit(e, (form) => {
+    <PublicPage>
+      <Stack component="form" spacing={2} onSubmit={(e) => submit(e, async (form) => {
         const { password } = newAccountBody(form)
+        await leaving.current
         return send<Token>('POST', '/v1/auth/reset', { token: params.get('token') ?? '', new_password: password })
       })}>
         <PublicHeader title={t('reset.title')} />
-        <Typography color="text.secondary">{t('reset.intro')}</Typography>
+        <Typography color="textSecondary">{t('reset.intro')}</Typography>
         <PasswordFields label={t('reset.newPassword')} />
         <FormError error={error} />
         <Button type="submit" variant="contained" size="large" loading={busy}>{t('reset.submit')}</Button>
       </Stack>
-    </Centered>
+    </PublicPage>
   )
 }

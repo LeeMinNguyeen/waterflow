@@ -19,6 +19,7 @@ import { deviceTimezone } from '../lib/labels'
 import { send, type Book } from '../lib/api'
 import { keys, useBooks } from '../lib/queries'
 import { newId } from '../lib/uuid'
+import { signOut } from '../auth/signOut'
 
 // Shown when the user has no book, and from the book switcher.
 export function CreateBook() {
@@ -72,7 +73,7 @@ export function CreateBook() {
       <BookInvites />
       <Stack component="form" spacing={2} onSubmit={submit}>
         <Typography variant="h5">{t('book.createTitle')}</Typography>
-        <Typography color="text.secondary">{t('book.createIntro')}</Typography>
+        <Typography color="textSecondary">{t('book.createIntro')}</Typography>
         <TextField label={t('book.name')} required value={name} onChange={(e) => setName(e.target.value)} />
         <CurrencyPicker label={t('book.currency')} value={currency} onChange={setCurrency} helperText={t('book.currencyHint')} />
         <TimezonePicker label={t('book.timezone')} value={timezone} onChange={setTimezone} />
@@ -84,9 +85,13 @@ export function CreateBook() {
         <Button type="submit" variant="contained" size="large" loading={busy} disabled={!name.trim() || !currency || !timezone}>
           {t('book.create')}
         </Button>
-        {hasBook && (
+        {hasBook ? (
           <Button size="large" onClick={cancel}>
             {t('common.cancel')}
+          </Button>
+        ) : (
+          <Button size="large" onClick={() => signOut()}>
+            {t('auth.signOut')}
           </Button>
         )}
       </Stack>

@@ -1,9 +1,10 @@
-import { useInfiniteQuery, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
-import { useEffect, useRef } from 'react'
-import { api, type Account, type Bill, type Book, type Budget, type Category, type Contact, type Currency, type Dashboard, type HistoryEntry, type Instance, type InstallmentPlan, type Me, type Member, type BookInvite, type TxnPage } from './api'
+import { keepPreviousData, useInfiniteQuery, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
+import { useEffect, useRef, useState } from 'react'
+import { api, type Account, type Bill, type Book, type Budget, type Category, type Contact, type Currency, type Dashboard, type HistoryEntry, type Instance, type InstallmentPlan, type Me, type Member, type BookInvite, type Payee, type TxnPage, type Usual } from './api'
 
 export const keys = {
   me: ['me'] as const,
+  twoFactor: ['auth', 'two-factor'] as const,
   books: ['books'] as const,
   bookInvites: ['me', 'book-invites'] as const,
   members: (bookId: string) => ['books', bookId, 'members'] as const,
@@ -34,6 +35,28 @@ export function useBills(bookId: string, accountId: string, enabled: boolean) {
     queryKey: ['books', bookId, 'accounts', 'bills', accountId],
     queryFn: () => api<Bill[]>(`/v1/books/${bookId}/accounts/${accountId}/bills`),
     enabled,
+  })
+}
+
+export function usePayees(bookId: string, q: string, type: 'expense' | 'income' | null) {
+  const [text, setText] = useState(q.trim())
+  useEffect(() => {
+    const timer = setTimeout(() => setText(q.trim()), 250)
+    return () => clearTimeout(timer)
+  }, [q])
+  return useQuery({
+    queryKey: ['books', bookId, 'payees', type, text],
+    queryFn: () => api<Payee[]>(`/v1/books/${bookId}/payees?${new URLSearchParams({ q: text, type: type ?? '' })}`),
+    enabled: !!type,
+    placeholderData: keepPreviousData,
+  })
+}
+
+export function useUsual(bookId: string, type: 'expense' | 'income' | null) {
+  return useQuery({
+    queryKey: ['books', bookId, 'transactions', 'usual', type],
+    queryFn: () => api<Usual[]>(`/v1/books/${bookId}/transactions/usual?type=${type}`),
+    enabled: !!type,
   })
 }
 

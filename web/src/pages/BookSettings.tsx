@@ -7,10 +7,10 @@ import DialogTitle from '@mui/material/DialogTitle'
 import Divider from '@mui/material/Divider'
 import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
-import Typography from '@mui/material/Typography'
 import { useQueryClient } from '@tanstack/react-query'
 import { useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
+import { PageHeader } from '../components/Page'
 import { useNavigate } from 'react-router'
 import { BookMembers } from '../components/BookMembers'
 import { CurrencyPicker } from '../components/CurrencyPicker'
@@ -33,6 +33,14 @@ export function BookSettings({ book }: { book: Book }) {
   const [busy, setBusy] = useState(false)
   const [confirming, setConfirming] = useState(false)
   const [confirmName, setConfirmName] = useState('')
+  // A newer version (this save, or another owner's) shows as it is; what was said about the save stays.
+  const [shown, setShown] = useState(book.version)
+  if (shown !== book.version) {
+    setShown(book.version)
+    setName(book.name)
+    setCurrency(book.base_currency)
+    setTimezone(book.timezone)
+  }
   const owner = book.role === 'owner'
 
   async function save(e: FormEvent) {
@@ -72,7 +80,7 @@ export function BookSettings({ book }: { book: Book }) {
 
   return (
     <Stack spacing={2} sx={{ maxWidth: 560 }}>
-      <Typography variant="h5">{t('book.settingsTitle')}</Typography>
+      <PageHeader title={t('book.settingsTitle')} bookId={book.id} />
       {!owner && <Alert severity="info">{t('book.ownerOnly')}</Alert>}
       <Stack component="form" spacing={2} onSubmit={save}>
         <TextField label={t('book.name')} required value={name} onChange={(e) => setName(e.target.value)} disabled={!owner} />

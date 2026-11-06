@@ -26,7 +26,8 @@ import {
   accountKinds, api, ApiError, interestKinds, last4Kinds, liabilityKinds, personKinds, send, type Account, type AccountKind, type Book,
 } from '../lib/api'
 import { timeIn, todayIn } from '../lib/labels'
-import { amountText, formatMoney, parseAmount } from '../lib/money'
+import { amountText, parseAmount } from '../lib/money'
+import { useFormatMoney } from '../lib/hideAmounts'
 import { useContacts, useCurrencies, useInvalidateBook } from '../lib/queries'
 import { newId } from '../lib/uuid'
 import { BillPanel, InstallmentsPanel } from './AccountBill'
@@ -55,6 +56,7 @@ export function AccountDialog(props: Props) {
 // positive and saved negative. Editing the current balance adds an adjustment
 // for the difference, dated today, since balances only come from transactions.
 function AccountForm({ book, account, editing: startEditing = false, onTransactions, onClose, minorOf }: Props & { minorOf: (currency: string) => number }) {
+  const formatMoney = useFormatMoney()
   const { t } = useTranslation()
   const toast = useToast()
   const errorText = useErrorText()
@@ -171,8 +173,8 @@ function AccountForm({ book, account, editing: startEditing = false, onTransacti
           last4: (last4Kinds.includes(form.kind) && form.last4) || null,
           in_net_worth: form.inNetWorth,
           contact_id: contactId,
-          opening_balance: owed ? -Math.abs(opening ?? 0) : (opening ?? 0),
-          opened_on: form.openedOn || null, // none: today
+          opening_balance: ledgerBalance(form.kind, opening ?? 0),
+          opened_on: form.openedOn || todayIn(book.timezone),
           ...details(),
         })
       }
@@ -259,6 +261,7 @@ function AccountForm({ book, account, editing: startEditing = false, onTransacti
               value={form.balance}
               onChange={(balance) => set({ balance })}
               minorUnit={minorUnit}
+              signed={!owed}
               helperText={editing ? t('accounts.balanceHint') : form.currency ?? undefined}
             />
           ) : (
@@ -268,6 +271,7 @@ function AccountForm({ book, account, editing: startEditing = false, onTransacti
                 value={form.opening}
                 onChange={(opening) => set({ opening })}
                 minorUnit={minorUnit}
+                signed={!owed}
               />
               <DateField label={t('accounts.openedOn')} value={form.openedOn} onChange={(openedOn) => set({ openedOn })} onInvalid={setBadDate}
                 sx={{ maxWidth: 190 }} />

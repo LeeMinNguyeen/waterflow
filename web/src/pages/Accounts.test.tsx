@@ -45,7 +45,17 @@ describe('Accounts grouped by kind (waterflow#64)', () => {
     expect(checking).toHaveTextContent('Checking · 3')
     expect(checking).toHaveTextContent('₫3,801,836')
     expect(checking).toHaveTextContent('1 not included')
-    expect(screen.getAllByRole('row').find((r) => r.dataset.group === 'loan')).toHaveTextContent('-₫18,002,668')
+    expect(screen.getAllByRole('row').find((r) => r.dataset.group === 'loan')).toHaveTextContent('−₫18,002,668')
+  })
+
+  it('shows a debt and a group that comes out negative in red, a lent amount plain (waterflow#143)', async () => {
+    server()
+    await renderApp(<Accounts book={book} />)
+    await screen.findByText('Nợ mẹ')
+    const rows = screen.getAllByRole('row')
+    expect(within(rows.find((r) => r.dataset.group === 'loan')!).getByText('−₫18,002,668')).toHaveStyle({ color: '#C9372C' })
+    expect(within(rows.find((r) => r.textContent?.includes('Nợ mẹ'))!).getByText('−₫10,000,000')).toHaveStyle({ color: '#C9372C' })
+    expect(within(rows.find((r) => r.textContent?.includes('Lent to Lan'))!).getByText('₫100,000')).toHaveStyle({ color: '#18181B' })
   })
 
   it('folds a group when its header is clicked', async () => {
@@ -139,5 +149,34 @@ describe('pinning accounts to the Overview (waterflow#74, waterflow#88)', () => 
       const cash = (await screen.findByText('Cash', { selector: 'span' })).closest('tr')!
       expect(within(await menuOf(cash)).getAllByRole('menuitem').map((m) => m.textContent)).toEqual(['Pin to the Overview'])
     })
+  })
+})
+
+describe('hidden amounts (waterflow#104)', () => {
+  afterEach(() => localStorage.clear())
+
+  it('shows dots for every balance and total', async () => {
+    localStorage.setItem('waterflow.hideAmounts', '1')
+    server()
+    await renderApp(<Accounts book={book} />)
+    await screen.findByText('Nợ mẹ')
+    expect((await screen.findAllByText('₫••••')).length).toBeGreaterThan(0)
+    expect(document.body.textContent).not.toMatch(/\d,\d{3}/)
+  })
+})
+
+describe('the page width', () => {
+  beforeEach(() => desktop(true))
+  afterEach(() => desktop(false))
+
+  it('uses the full width, like Transactions and the Overview', async () => {
+    server()
+    await renderApp(<Accounts book={book} />)
+    const title = await screen.findByRole('heading', { level: 1 })
+    let node: HTMLElement | null = title
+    while (node) {
+      expect(node).not.toHaveStyle({ maxWidth: '920px' })
+      node = node.parentElement
+    }
   })
 })

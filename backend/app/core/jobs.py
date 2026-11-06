@@ -10,9 +10,9 @@ from collections.abc import Mapping
 from datetime import UTC, date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
-# The jobs and their modules, in the order they run when due together.
+# The order they run in when due together is job_schedule()'s, in the database.
 JOBS = {"purge": "app.jobs.account_deletion", "backup": "app.jobs.backup", "rates": "app.jobs.fx_update"}
-RETRY = timedelta(hours=1)   # a job that failed runs again this long after it started
+RETRY = timedelta(hours=1)   # a job that failed runs again at the next hourly run, about this long after it started
 
 
 def default_minute() -> int:
@@ -47,7 +47,9 @@ def is_due(now: datetime, job: Mapping) -> bool:
     """`job` is a row of job_schedule()."""
     if not job["enabled"]:
         return False
-    if job.get("last_result") == "failed" and job["last_started_at"] and now - job["last_started_at"] >= RETRY:
+    # The next hourly run can start earlier in its hour than the failed job did, which waited for the jobs before it
+    # (a backup can take a quarter of an hour).
+    if job.get("last_result") == "failed" and job["last_started_at"] and now - job["last_started_at"] >= RETRY - timedelta(minutes=15):
         return True
     since = max((t for t in (job["last_started_at"], job["changed_at"]) if t is not None), default=None)
     return since is None or last_time(now, job["at_minute"], job["timezone"]) > since

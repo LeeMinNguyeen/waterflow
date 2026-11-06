@@ -17,3 +17,9 @@ export const deviceTimezone = (): string => Intl.DateTimeFormat().resolvedOption
 export const todayIn = (timezone: string): string => new Intl.DateTimeFormat('en-CA', { timeZone: timezone }).format(new Date())
 export const timeIn = (timezone: string): string =>
   new Intl.DateTimeFormat('en-GB', { timeZone: timezone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date())
+
+export function shiftDay(iso: string, days: number): string {
+  const d = new Date(`${iso}T00:00:00Z`)
+  d.setUTCDate(d.getUTCDate() + days)
+  return d.toISOString().slice(0, 10)
+}

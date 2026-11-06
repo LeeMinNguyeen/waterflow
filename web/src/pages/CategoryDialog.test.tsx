@@ -1,4 +1,4 @@
-import { screen, within } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import type { Book, Budget, Category } from '../lib/api'
@@ -71,5 +71,47 @@ describe('category details (waterflow#23)', () => {
     expect(within(dialog).getByText('Category details')).toBeInTheDocument()
     await userEvent.click(within(dialog).getByRole('button', { name: 'View transactions' }))
     expect(screen.getByTestId('where')).toHaveTextContent('/books/b1/transactions?category_id=c2')
+  })
+})
+
+describe('budgets on the Categories page (waterflow#139)', () => {
+  it("opens the category's budgets from the bar under it, rather than its details", async () => {
+    server()
+    await renderApp(<Categories book={book} />, { route: '/books/b1/categories' })
+    await userEvent.click(await screen.findByRole('button', { name: /^Monthly/ }))
+    const dialog = await screen.findByRole('dialog', { name: 'Budgets · Dining out' })
+    expect(within(dialog).getByRole('button', { name: 'Edit budget' })).toBeInTheDocument()
+    expect(screen.queryByText('Category details')).not.toBeInTheDocument()
+  })
+})
+
+describe('a category someone else changed first (review #166)', () => {
+  it('shows it as it is now, says so, and saves from there', async () => {
+    let onServer = dining
+    const api = fakeApi({
+      'GET /v1/currencies': currencies,
+      'GET /v1/books/b1/categories': () => [wants, onServer],
+      'GET /v1/books/b1/budgets': [],
+      'PATCH /v1/books/b1/categories/c2': ({ body }: { body: unknown }) => {
+        const b = body as { version: number; name: string }
+        if (b.version !== onServer.version) return new Response(JSON.stringify({ detail: 'conflict' }), { status: 409 })
+        onServer = { ...onServer, name: b.name, version: onServer.version + 1 }
+        return onServer
+      },
+    })
+    await renderApp(<Categories book={book} />, { route: '/books/b1/categories' })
+    await screen.findByText('Dining out')
+    await userEvent.click(screen.getAllByRole('button', { name: 'Edit category' })[1])
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Edit category' }))
+    onServer = { ...dining, name: 'Eating out', version: 3 }
+    await userEvent.clear(name())
+    await userEvent.type(name(), 'Restaurants')
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    expect(await screen.findByText(/changed somewhere else/)).toBeInTheDocument()
+    await waitFor(() => expect(name()).toHaveValue('Eating out'))
+    await userEvent.clear(name())
+    await userEvent.type(name(), 'Restaurants')
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(api.writes().at(-1)!.body).toMatchObject({ version: 3, name: 'Restaurants' }))
   })
 })

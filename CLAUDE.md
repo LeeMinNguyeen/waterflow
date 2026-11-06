@@ -10,7 +10,7 @@ https://waterflow-app.net/docs/, source `waterflow-landing/src/content/docs/`. A
 documented behaviour (a route, setting, error code, setup step, command) comes with a docs PR there, linked both
 ways. The README is a short quickstart pointing to it; don't grow it back into a guide. Documentation is
 English only (Vietnamese is for the UI). The
-team's decisions are in the private waterflow-docs. Workspace-wide rules: `~/projects/msaving/CLAUDE.md`. Repo-part
+team's decisions are in the private waterflow-docs. Workspace-wide rules: `~/projects/waterflow/CLAUDE.md`. Repo-part
 rules: `backend/CLAUDE.md`, `web/CLAUDE.md`.
 
 ## Layout
@@ -27,6 +27,7 @@ scripts/move-to-waterflow.sh  once, on a compose server from before the rename (
 backend/             see backend/CLAUDE.md
 web/                 see web/CLAUDE.md
 .github/workflows/   ci.yml (backend tests, web lint/test/build, image build), release.yml (run by hand on main: tag and GitHub release)
+.github/CODEOWNERS   the high-risk paths, which need the project owner's approval (Risk and review)
 ```
 
 ## Commands
@@ -51,6 +52,33 @@ Faster loops: `backend/CLAUDE.md` (pytest, uvicorn --reload) and `web/CLAUDE.md`
   the user gave.
 - **Security is a hard requirement:** least-privilege database logins (the API never gets the owner's password),
   RLS, hashed passwords and tokens, rate limits, strict CSP, no third-party scripts, no tracking.
+
+## Risk and review
+
+A change's risk is set by what it touches, not by who wrote it.
+
+| Risk | What it touches | Before it merges into `dev` |
+|---|---|---|
+| Low | Docs, string files, tests only, styling with no logic change, CLAUDE.md files | CI passes |
+| Medium | Everything else: features and fixes in `web/` and the API routes | CI passes, and `/code-review` at `low` in a fresh context with every Important finding fixed or answered in the PR |
+| High | The paths in `.github/CODEOWNERS` (migrations, sign-in, sessions, two-step codes, invites and resets, money parsing, backup, restore, purge and account deletion, updates, the image, compose and CI); anything else that changes how money is stored, signed or summed; a change to an existing `/v1` route | `/code-review` at `high` and `/security-review`, each in a fresh context; the PR says how to revert it; the project owner approves |
+
+Keep a PR under about 400 changed lines, tests not counted: split bigger work by layer into PRs merged one after
+another, never stacked.
+
+### Review rules (for /code-review and any reviewer)
+
+- Important means: breaks behaviour, loses or corrupts money data, shows one user's data to another, or blocks an
+  upgrade. Style and naming are Nit at most; report at most three Nits.
+- Don't report what CI checks: lint, types, formatting, string-key parity.
+- Every finding cites `file:line` in the source, not a guess from a name.
+- Always check: money stays integer minor units and keeps its sign; a new route has a test where another user gets
+  404 or 403; a migration adds RLS, policies and grants in the same file and never edits a released one; `/v1`
+  changes are additive; no URL in code; comments follow Code comments below.
+- A bug the PR didn't introduce becomes a new issue, not a fix in this PR.
+- Start the summary with the number of Important findings, and say plainly when there's nothing to fix.
+- After three review-and-fix rounds, stop and report instead of fixing again. `ultra` only when the project owner
+  asks.
 
 ## Code comments
 
@@ -79,3 +107,6 @@ steps in `backend/app/jobs/backup.py`'s docstring (the tests run them).
 Feature branches from `dev`; `dev` and `main` are protected (PR with passing CI). A release: a PR into `main`
 that bumps `VERSION`, then Actions -> Release -> Run workflow on `main`, which tags `vX.Y.Z` and makes the GitHub
 release (servers check it for updates; operators `git pull`). Never push tags from a laptop.
+
+A fix for data that a release gets wrong (a balance, a lost backup) doesn't wait behind `dev`: branch from `main`,
+PR into `main` with the `VERSION` bump, release, then PR `main` back into `dev`.

@@ -1,7 +1,7 @@
 # CLAUDE.md: web
 
 The React web app for Waterflow, served by the server itself (same origin as the API). Monorepo rules:
-`../CLAUDE.md`. Workspace rules: `~/projects/msaving/CLAUDE.md`. How it works: the public docs
+`../CLAUDE.md`. Workspace rules: `~/projects/waterflow/CLAUDE.md`. How it works: the public docs
 (https://waterflow-app.net/docs/); decisions and the screens: the private waterflow-docs (MVP scope).
 
 ## Stack
@@ -39,13 +39,13 @@ npm run lint && npm test && npm run build
 ## Screens
 
 Before sign-in: Sign in, Join (two steps: the invite code from `/join?code=` and the language, then the account),
-Reset password (`/reset?token=`), Set up this server (only while the server has no admin); setup and reset have the
-language dropdown in their header, sign-in has none. Signed in: Create a book, Dashboard, Add/edit transaction,
-Transactions, Accounts (with people), Categories and budgets, Book settings, Profile and security (appearance,
-profile and language, password, two-step with recovery codes, signed-in devices, sign-out after inactivity, export,
-delete account), Server admin (admin only: server name, sign-up mode, updates, the daily jobs, invites with link and
-QR, accounts, reset links), Account closing. Desktop first; phones get a working
-layout until the mobile app ships.
+Reset password (`/reset?token=`), Set up this server (only while the server has no admin); sign-in, setup and reset
+have the language button at the window's top right (`PublicPage`), Join its own dropdown. Signed in: Create a book,
+Dashboard, Add/edit transaction, Transactions, Accounts (with people), Categories and budgets, Book settings, Profile
+and security (appearance, profile and language, password, two-step with recovery codes, signed-in devices, sign-out
+after inactivity, export, delete account), Server admin (admin only: server name, sign-up mode, updates, the daily
+jobs, invites with link and QR, accounts, reset links), Account closing. Desktop first; phones get a working layout
+until the mobile app ships.
 
 ## Rules
 
@@ -55,10 +55,11 @@ layout until the mobile app ships.
 - **Money:** integers in minor units from the API; `Intl.NumberFormat` in the user's locale (`1.250.000 ₫` in
   Vietnamese, `1,250,000 ₫` in English). Amount fields parse by the same locale and the currency's decimals.
 - **Languages:** English default, Vietnamese second. One string file per language, same keys (the tests fail
-  otherwise). API error codes are translated under `errors.*`. User-typed text is never translated. Every screen
-  opens in the language this browser remembers (stored by `setLanguage`: the signed-in user's, kept after signing
-  out, or one picked before sign-in), English when none. Choosing a language is always the `LanguagePicker`
-  dropdown, each language in its own name.
+  otherwise). API error codes are translated under `errors.*`. User-typed text is never translated. Two languages
+  (`i18n/index.ts`): the screens before sign-in use this browser's sign-in language (`setSignInLanguage`, from the
+  `LanguageMenu` button or Join's dropdown), English when none; once signed in, the account's language
+  (`applyAccountLanguage`, kept only while the session is), and ending the session goes back to the sign-in
+  language. Each language is shown in its own name.
 - **Concurrency:** send the `version` you loaded; on 409, reload and tell the user. Generate a transaction's id
   when the user taps Save and reuse it on retry.
 - **Freshness:** refetch on window focus and about every minute. Inside a book, `useBookChanges` (in the Shell) polls
@@ -67,8 +68,27 @@ layout until the mobile app ships.
   (`useInvalidateBook`, Refresh) note the marker first, so the poll doesn't fetch the same change again.
 - **Security:** the server sends a strict CSP (scripts `'self'` only; `style-src 'unsafe-inline'` for MUI's
   Emotion; QR codes are `data:` images from the API). No third-party scripts, fonts or analytics. Nothing in
-  localStorage but the session token, the language and appearance choices, and remembered-device tokens.
+  localStorage but the session token, the language and appearance choices, whether amounts are hidden, and
+  remembered-device tokens.
 - **Menus (⋮) are words only,** no icons: an icon takes room a phone doesn't have.
+- **The look** (the minimal design): colours, type and component defaults in `theme.ts`, Inter bundled
+  (`@fontsource-variable/inter`, no font from elsewhere). Amounts on screen go through `components/Money`: red below
+  zero, green for money coming in, plain for transfers and balances, signs kept (`quiet` in a caption). An amount
+  inside a translated sentence ("You owe {{amount}}") stays text: the sentence says what it is. A category's colour
+  on its dot and its bars; a budget past its limit red with "over". Sections are separated by space and a hairline
+  (`components/Page`), not cards; at most one filled blue button per screen. The desktop sidebar shows each page's
+  icon next to its name.
+- **Layout rules** (each one a bug found on the dev server):
+  - Controls on one row are one height, 36 px: search fields, filter chips, selects, buttons. A new control on a row
+    with others matches them.
+  - Sections of different heights never share a grid row: a short one gets stretched to its neighbour's height and
+    leaves a gap. Put each column's sections in their own `Stack` (with `divider={<Divider />}` between them), as the
+    Overview does.
+  - A bottom sheet or menu opened from a full-screen dialog sits above it: MUI's temporary `Drawer` (z-index 1200) is
+    below `Dialog` (1300), so give it `zIndex: modal + 1` (`components/PhoneForm.tsx`'s `Sheet`).
+  - A screen change is done when it's been looked at in a browser, at 1280 and 390 px, light and dark, in both
+    languages, next to the design: jsdom lays nothing out, so tests can't see gaps, misalignment or wrong colours.
+    Where the tests can, pin the computed style (`toHaveStyle`), as the colour and chip-height tests do.
 - **From the old app** (waterflow-docs, The old app, private): accounts left out of net worth are greyed out but
   clickable; category colours from a preset grid; "Add starter categories" on by default; the category picker
   on a transfer lists only transfer categories.
@@ -77,6 +97,8 @@ layout until the mobile app ships.
 
 - i18next's `<Trans>` drops tags named like HTML void elements (`<link>`, `<br>`, `<img>`...): use names like `<policy>`.
 - Queries that need a session pass `enabled`; the cache is cleared on sign-out (`main.tsx`).
+- MUI 9's `Typography` takes its `color` prop by name (`textSecondary`, `textDisabled`, `error`), not as a palette path:
+  `color="text.secondary"` is silently ignored. A path works in `sx` (`sx={{ color: 'text.secondary' }}`).
 - Fast refresh: files under `pages/` and `components/` export components only; shared functions go in `auth/` or `lib/`.
 - jsdom can't stand in for a browser everywhere: it lays nothing out, and MUI X's date field behaves differently
   there. Test such logic directly (`lib/dates.ts`) and check the screen in Chromium (Playwright).

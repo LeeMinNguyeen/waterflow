@@ -1,7 +1,7 @@
 # CLAUDE.md: backend
 
 The FastAPI API, its own sign-in, the daily jobs and the PostgreSQL schema for Waterflow, self-hosted only.
-Monorepo rules: `../CLAUDE.md`. Workspace rules: `~/projects/msaving/CLAUDE.md`. How it all works: the public
+Monorepo rules: `../CLAUDE.md`. Workspace rules: `~/projects/waterflow/CLAUDE.md`. How it all works: the public
 docs (https://waterflow-app.net/docs/, source `waterflow-landing/src/content/docs/`); a change to documented
 behaviour comes with a docs PR there. Decisions: the private waterflow-docs.
 
@@ -13,11 +13,12 @@ app/
   launch.py              the container's entry: secrets, wait for the db, backup + migrate, setup code, API + jobs
   admin.py               operator commands: reset-password, make-admin, repurge
   core/                  settings.py (env), sign_in.py (argon2id, TOTP, codes, tokens, rate limits),
-                         auth.py (session token -> user), db.py (per-request session, app.user_id)
+                         auth.py (session token -> user), db.py (per-request session, app.user_id),
+                         jobs.py (when each daily job is due), updates.py (the version, update checks), events.py
   api/                   main.py (app, web app files, CSP, /v1/instance), deps.py, errors.py, routes/v1/
                          (sign_in: setup, join, sign-in, 2FA, reset; admin; me; books, accounts, ...)
   domain/                transactions, bills, dashboard, export, book_setup
-  jobs/                  migrate, scheduler (daily), account_deletion, backup, fx_update
+  jobs/                  migrate, scheduler (daily), account_deletion, backup, restore, fx_update
 tests/                   conftest.py (throwaway database), test_schema, test_api, test_sign_in, test_backup
 scripts/dev.sh           the API from source with --reload, against the compose stack's database
 ```
@@ -25,7 +26,7 @@ scripts/dev.sh           the API from source with --reload, against the compose 
 ## Run and test
 
 ```bash
-source ~/projects/msaving/.venv/bin/activate
+source ~/projects/waterflow/.venv/bin/activate
 pip install -r requirements-dev.txt
 scripts/dev.sh                       # http://127.0.0.1:8000, reloads on change; web: npm run dev in ../web
 

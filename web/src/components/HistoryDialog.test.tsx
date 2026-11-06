@@ -48,4 +48,15 @@ describe('HistoryDialog (waterflow#18)', () => {
     expect(screen.queryByText(/2026-10-03/)).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Close' })).toBeInTheDocument()
   })
+
+  it('shows each entry as amounts are shown elsewhere: money out with a minus sign, in red', async () => {
+    fakeApi({
+      'GET /v1/currencies': currencies,
+      'GET /v1/books/b1/accounts': [{ id: 'cash', name: 'Cash' }],
+      'GET /v1/books/b1/categories': [],
+      'GET /v1/books/b1/transactions/t1/history': [version(1, 'created', -45_000)],
+    })
+    await renderApp(<HistoryDialog book={book} txnId="t1" onClose={() => {}} />)
+    expect(await screen.findByText('−₫45,000')).toHaveStyle({ color: '#C9372C' })
+  })
 })

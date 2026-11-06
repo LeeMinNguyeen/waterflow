@@ -12,7 +12,7 @@ export function FileField({ label, button, file, onChange, accept }: Props) {
         {button}
         <input type="file" hidden aria-label={label} accept={accept} onChange={(e) => onChange(e.target.files?.[0] ?? null)} />
       </Button>
-      <Typography variant="body2" color={file ? undefined : 'text.secondary'} noWrap>{file ? file.name : label}</Typography>
+      <Typography variant="body2" color={file ? undefined : 'textSecondary'} noWrap>{file ? file.name : label}</Typography>
     </Stack>
   )
 }

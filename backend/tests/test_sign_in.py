@@ -1,5 +1,6 @@
 """Tests that need a fresh server (setup, the migration runner) build their own database."""
 import json
+import logging
 import os
 import subprocess
 import sys
@@ -233,7 +234,7 @@ def test_idle_sign_out(client, database):
     _, neighbour = sign_up(client)
     assert me(client, token).json()["profile"]["idle_sign_out_minutes"] == 5            # the default
     assert client.patch("/v1/me", headers=bearer(neighbour), json={"idle_sign_out_minutes": 60}).status_code == 200
-    for bad in (0, 1441, "five"):
+    for bad in (0, 61, 1440, "five"):                                     # 1 to 60, or never
         assert client.patch("/v1/me", headers=bearer(token), json={"idle_sign_out_minutes": bad}).status_code == 422
 
     def unused_for(t, minutes):
@@ -316,6 +317,55 @@ def test_two_factor_with_recovery_codes(client):
     assert client.post("/v1/auth/two-factor/disable", headers=bearer(token),
                        json={"code": pyotp.TOTP(secret).now()}).status_code == 204
     assert sign_in(client, name).status_code == 200
+
+
+def test_two_step_on_again_needs_turning_off_first(client):
+    """A session left open somewhere can't swap the secret and the recovery codes."""
+    name, token = sign_up(client)
+    first = client.post("/v1/auth/two-factor/setup", headers=bearer(token)).json()["secret"]
+    client.post("/v1/auth/two-factor/enable", headers=bearer(token), json={"secret": first, "code": pyotp.TOTP(first).now()})
+    second = client.post("/v1/auth/two-factor/setup", headers=bearer(token)).json()["secret"]
+    again = client.post("/v1/auth/two-factor/enable", headers=bearer(token),
+                        json={"secret": second, "code": pyotp.TOTP(second).now()})
+    assert (again.status_code, again.json()) == (409, {"detail": "two_factor_on"})
+    assert sign_in(client, name, code=pyotp.TOTP(first).now()).status_code == 200
+
+
+def test_sign_up_without_a_way_in_never_says_whether_a_username_exists(client, admin, invite_only):
+    """With no invite on an invite-only server, a taken username and a free one get the same answer."""
+    taken, _ = admin
+    plain = client.post("/v1/auth/sign-up", json={"username": taken, "password": PASSWORD})
+    assert (plain.status_code, plain.json()) == (403, {"detail": "invite_required"})
+    made_up = client.post("/v1/auth/sign-up", json={"username": taken, "password": PASSWORD, "invite_code": "AAAA-BBBB"})
+    assert (made_up.status_code, made_up.json()) == (403, {"detail": "invite_invalid"})
+
+
+def test_database_errors_and_refused_requests_log_no_values(client, caplog):
+    """Neither a database error's values (a TOTP secret, a password hash) nor a refused request's input (a password)."""
+    from app.core.db import engine
+    assert engine.hide_parameters
+    with caplog.at_level(logging.INFO):
+        r = client.post("/v1/auth/sign-up", json={"username": "shortpass", "password": "sentinel1"})
+    assert r.status_code == 422 and "invalid request" in caplog.text and "sentinel1" not in caplog.text
+
+
+def test_operator_commands_refuse_accounts_they_cannot_help(client, database, monkeypatch):
+    """make-admin on a closing account and reset-password on a disabled one refuse, as neither would work."""
+    from app import admin as commands
+    monkeypatch.setattr(commands, "admin_url", lambda: database.url.set(drivername="postgresql").render_as_string(hide_password=False))
+    closing, _ = sign_up(client)
+    disabled, _ = sign_up(client)
+    with database.connect() as c:
+        c.execute(text("update users set deletion_requested_at = now() where username = :n"), {"n": closing})
+        c.execute(text("update users set disabled_at = now() where username = :n"), {"n": disabled})
+    with pytest.raises(SystemExit, match="closing"):
+        commands.make_admin(closing)
+    with pytest.raises(SystemExit, match="disabled"):
+        commands.reset_password(disabled)
+    with database.connect() as c:
+        assert not c.execute(text("select is_admin from users where username = :n"), {"n": closing}).scalar()
+        assert not c.execute(text("select count(*) from password_resets r join users u on u.id = r.user_id"
+                                  " where u.username = :n"), {"n": disabled}).scalar()
 
 
 def test_remembered_device_skips_the_code_until_cancelled(client, admin, database, monkeypatch):
@@ -505,12 +555,12 @@ def test_the_old_default_server_name_becomes_waterflow(fresh_server):
     from app.jobs import migrate
     url, _ = fresh_server
     with psycopg.connect(url, autocommit=True) as conn:
-        *before, last = migrate.pending(conn)
-        assert last.name.endswith("_waterflow.sql")
-        for migration in before:
+        pending = migrate.pending(conn)
+        rename = next(i for i, m in enumerate(pending) if m.name.endswith("_waterflow.sql"))
+        for migration in pending[:rename]:
             migrate.apply(conn, migration)
         assert conn.execute("select name from instance_settings").fetchone()[0] == "MSaving"
-        migrate.apply(conn, last)
+        migrate.apply(conn, pending[rename])
         assert conn.execute("select name from instance_settings").fetchone()[0] == "Waterflow"
 
 
@@ -590,6 +640,54 @@ def test_setup_creates_the_admin_once(fresh_server, monkeypatch):
     engine.dispose()
 
 
+def test_a_bad_database_url_never_prints_its_password():
+    """A typo in ADMIN_DATABASE_URL (a stray %, an unencoded @) never puts its password in the log."""
+    from app import launch
+    for url, secret in (("postgresql://u:ab%zzsecret@127.0.0.1:1/x", "zzsecret"), ("postgresql://u:cd@SECRET@127.0.0.1:1/x", "SECRET")):
+        with pytest.raises(SystemExit) as stopped:
+            launch.wait_for(url, 0)
+        assert secret not in str(stopped.value)
+
+
+@pytest.mark.parametrize("password", ["cd@SECRET/XY", "cd@SE:CRET", "cd@SECRET:54x", "cd@SECRET,XYZW", "cd@SECRET?XY",
+                                      "cd@SECR%41ET", "pw-one?two", "SECRET#XY"])
+def test_an_ambiguous_database_url_is_refused_before_it_is_read(monkeypatch, password):
+    """libpq and urlsplit would read part of such a password as the host, port or query, and quote it."""
+    from app import launch
+    monkeypatch.setenv("ADMIN_DATABASE_URL", f"postgresql://u:{password}@127.0.0.1:5432/x")
+    with pytest.raises(SystemExit) as stopped:
+        launch.admin_url()
+    assert not any(piece in str(stopped.value) for piece in ("SECRET", "SECR", "CRET", "XY", "pw-one", "two"))
+
+
+def test_the_access_log_leaves_out_query_strings(client, caplog):
+    """Reset links (/reset?token=) and invite links (/join?code=) carry their secret in the query string."""
+    import app.api.main  # noqa: F401  (adds the access log's filter)
+    with caplog.at_level(logging.INFO, logger="uvicorn.access"):
+        logging.getLogger("uvicorn.access").info('%s - "%s %s HTTP/%s" %d', "1.2.3.4:5", "GET", "/reset?token=sentinel", "1.1", 200)
+    assert '"GET /reset HTTP/1.1" 200' in caplog.text and "sentinel" not in caplog.text
+
+
+def test_an_update_whose_backup_fails_stops_with_a_plain_reason(monkeypatch):
+    """A database newer than the image's pg_dump (PostgreSQL 18) can't be backed up: the server says so in one line."""
+    from app import launch
+    from app.jobs import backup
+
+    def mismatch(*_):
+        raise backup.BackupError("pg_dump failed: pg_dump: error: aborting because of server version mismatch")
+    monkeypatch.setattr(backup, "run_backup", mismatch)
+    with pytest.raises(SystemExit) as stopped:
+        launch.backup_before_updating("postgresql://u:secret-pw@db/x", "/tmp")
+    assert "nothing was updated" in str(stopped.value) and "Own database" in str(stopped.value)
+
+    def full(*_):
+        raise backup.BackupError("no space left on device")
+    monkeypatch.setattr(backup, "run_backup", full)
+    with pytest.raises(SystemExit) as stopped:
+        launch.backup_before_updating("postgresql://u:secret-pw@db/x", "/tmp")
+    assert "no space left" in str(stopped.value) and "Own database" not in str(stopped.value)
+
+
 def test_launcher_builds_login_urls():
     from app.launch import login_url
     assert login_url("postgresql://postgres:x@db:5432/postgres?sslmode=disable", "api_login", "p@ss/w?rd") == \
@@ -666,9 +764,11 @@ def test_job_schedule_times(monkeypatch):
     assert due(t(2026, 10, 21, 23), last_started_at=t(2026, 10, 19, 19))                # off at 19:00: catches up
     assert not due(t(2026, 10, 21, 23), last_started_at=t(2026, 10, 19, 19), changed_at=t(2026, 10, 21, 22))
     assert not due(t(2026, 10, 21, 23), enabled=False)
-    # A run that failed: again an hour after it started, until it works.
+    # A run that failed: again at the next hourly run, until it works. That run may start a little earlier in the
+    # hour than the failed job did, which started after the jobs before it (Cloud Scheduler).
     failed_at = {"last_started_at": t(2026, 10, 21, 3, 30), "last_result": "failed"}
-    assert not due(t(2026, 10, 21, 4, 29), **failed_at) and due(t(2026, 10, 21, 4, 30), **failed_at)
+    assert not due(t(2026, 10, 21, 4, 10), **failed_at) and due(t(2026, 10, 21, 4, 30), **failed_at)
+    assert due(t(2026, 10, 21, 4, 29, 35), **failed_at) and due(t(2026, 10, 21, 4, 23, 50), **failed_at)
     assert not due(t(2026, 10, 21, 4, 30), **failed_at | {"last_result": "done"})
     assert not due(t(2026, 10, 21, 4, 30), **failed_at | {"enabled": False})
 
@@ -827,6 +927,16 @@ def test_admin_restores_a_backup_from_the_web(client, admin, restore_dir, a_back
     (backups / "restore" / "status").write_text(json.dumps({"status": "done", "at": "2026-10-22T08:00:00+00:00", "detail": None}))
     assert client.get("/v1/admin/restore", headers=bearer(token)).json()["status"] == "done"
     assert client.get("/v1/admin/restore", headers=bearer(someone)).json() == {"detail": "admin_only"}
+
+
+@pytest.mark.parametrize("path", ["/v1/setup/restore", "/v1/admin/restore"])
+def test_an_oversized_restore_is_refused_before_it_is_read(client, monkeypatch, path):
+    """Before anything checks who's asking, and before the body is read."""
+    from app.api.routes.v1 import restore
+    monkeypatch.setattr(restore, "MAX_DUMP", 1000)
+    monkeypatch.setattr(restore, "MAX_PURGED", 100)
+    r = client.post(path, files={"file": ("big.dump", b"x" * (3 * 2**20))}, data={"setup_code": "WRONG", "password": "x"})
+    assert (r.status_code, r.json()) == (413, {"detail": "restore_too_large"})
 
 
 def test_restoring_asks_for_the_two_factor_code(client, admin, restore_dir, a_backup):

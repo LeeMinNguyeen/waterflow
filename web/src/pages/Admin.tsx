@@ -9,7 +9,6 @@ import DialogTitle from '@mui/material/DialogTitle'
 import Checkbox from '@mui/material/Checkbox'
 import FormControlLabel from '@mui/material/FormControlLabel'
 import MenuItem from '@mui/material/MenuItem'
-import Paper from '@mui/material/Paper'
 import Stack from '@mui/material/Stack'
 import Switch from '@mui/material/Switch'
 import Table from '@mui/material/Table'
@@ -20,17 +19,20 @@ import TableRow from '@mui/material/TableRow'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useState, type FormEvent, type ReactNode } from 'react'
+import { useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
+import { FormSection, PageHeader } from '../components/Page'
 import { useErrorText } from '../components/errors'
 import { currentLanguage } from '../i18n'
 import { api, send, upload, type RestoreStatus } from '../lib/api'
 import { waitForServer } from '../lib/restart'
 import { session } from '../auth/session'
 import { FileField } from '../components/FileField'
-import { useInstance, useMe } from '../lib/queries'
+import { keys, useInstance, useMe } from '../lib/queries'
 import { updating, useUpdating, type UpdateInfo } from '../lib/updating'
 import { DialogFooter } from '../components/DialogFooter'
+import { copyText } from '../lib/clipboard'
+import { useToast } from '../lib/toast'
 
 type AdminUser = {
   id: string; username: string; display_name: string | null; is_admin: boolean; created_at: string
@@ -51,20 +53,12 @@ type Job = {
 const when = (iso: string | null) =>
   iso ? new Intl.DateTimeFormat(currentLanguage() === 'vi' ? 'vi-VN' : 'en-GB', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(iso)) : ''
 
-function Section({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <Paper variant="outlined" sx={{ p: 2.5 }}>
-      <Typography variant="h6" sx={{ mb: 2 }}>{title}</Typography>
-      <Stack spacing={2}>{children}</Stack>
-    </Paper>
-  )
-}
-
 // Something shown once (an invite or a reset link): copy it, or show the QR code.
 function ShowOnce({ title, body, link, qr, code, onClose }: {
   title: string; body: string; link: string; qr?: string | null; code?: string; onClose: () => void
 }) {
   const { t } = useTranslation()
+  const toast = useToast()
   return (
     <Dialog open onClose={onClose} fullWidth maxWidth="xs">
       <DialogTitle>{title}</DialogTitle>
@@ -77,7 +71,7 @@ function ShowOnce({ title, body, link, qr, code, onClose }: {
         </Stack>
       </DialogContent>
       <DialogFooter>
-        <Button onClick={() => navigator.clipboard?.writeText(link)}>{t('common.copy')}</Button>
+        <Button onClick={async () => toast(t(await copyText(link) ? 'toast.copied' : 'errors.unexpected_error'))}>{t('common.copy')}</Button>
         <Button variant="contained" onClick={onClose}>{t('common.done')}</Button>
       </DialogFooter>
     </Dialog>
@@ -90,7 +84,7 @@ export function Admin() {
   if (!me.data?.profile.is_admin) return <Alert severity="info">{t('errors.admin_only')}</Alert>
   return (
     <Stack spacing={2} sx={{ maxWidth: 960 }}>
-      <Typography variant="h5">{t('admin.title')}</Typography>
+      <PageHeader title={t('admin.title')} />
       <ServerSettings />
       <Updates />
       <Jobs timezone={me.data.profile.timezone} />
@@ -124,7 +118,7 @@ function ServerSettings() {
   }
 
   return (
-    <Section title={t('admin.server')}>
+    <FormSection title={t('admin.server')}>
       <Stack component="form" spacing={2} onSubmit={save}>
         <TextField label={t('setup.serverName')} required value={name ?? instance.data.name} onChange={(e) => setName(e.target.value)}
           helperText={t('setup.serverNameHint')} slotProps={{ htmlInput: { maxLength: 60 } }} />
@@ -135,9 +129,9 @@ function ServerSettings() {
         </TextField>
         {state.error ? <Alert severity="error">{errorText(state.error)}</Alert> : null}
         {state.saved ? <Alert severity="success">{t('profile.saved')}</Alert> : null}
-        <Button type="submit" variant="contained" loading={state.busy} sx={{ alignSelf: 'start' }}>{t('profile.save')}</Button>
+        <Button type="submit" variant="outlined" loading={state.busy} sx={{ alignSelf: 'start' }}>{t('profile.save')}</Button>
       </Stack>
-    </Section>
+    </FormSection>
   )
 }
 
@@ -152,7 +146,7 @@ function Jobs({ timezone }: { timezone: string }) {
   const jobs = useQuery({ queryKey: ['admin', 'jobs'], queryFn: () => api<Job[]>('/v1/admin/jobs') })
   const [edits, setEdits] = useState<Partial<Record<JobName, { minute?: number; enabled?: boolean }>>>({})
   const [state, setState] = useState<{ error?: unknown; saved?: boolean; busy?: boolean }>({})
-  if (jobs.isError) return <Section title={t('admin.jobs')}><Alert severity="error">{errorText(jobs.error)}</Alert></Section>
+  if (jobs.isError) return <FormSection title={t('admin.jobs')}><Alert severity="error">{errorText(jobs.error)}</Alert></FormSection>
   if (!jobs.data) return null
 
   const lang = currentLanguage() === 'vi' ? 'vi-VN' : 'en-GB'
@@ -169,17 +163,17 @@ function Jobs({ timezone }: { timezone: string }) {
     setEdits((e) => ({ ...e, [name]: { ...e[name], ...change } }))
   }
   const lastRun = (job: Job) => {
-    if (!job.last_started_at) return <Typography variant="body2" color="text.secondary">{t('admin.jobNever')}</Typography>
+    if (!job.last_started_at) return <Typography variant="body2" color="textSecondary">{t('admin.jobNever')}</Typography>
     if (!job.last_finished_at || Date.parse(job.last_finished_at) < Date.parse(job.last_started_at)) {
       return <Typography variant="body2">{t('admin.jobRunning', { when: at.format(new Date(job.last_started_at)) })}</Typography>
     }
     const failed = job.last_result === 'failed'
     return (
       <>
-        <Typography variant="body2" color={failed ? 'error' : 'success.main'}>
+        <Typography variant="body2" color={failed ? 'error' : 'success'}>
           {t(failed ? 'admin.jobFailed' : 'admin.jobDone', { when: at.format(new Date(job.last_finished_at)) })}
         </Typography>
-        {job.last_detail && <Typography variant="caption" color="text.secondary" sx={{ wordBreak: 'break-word' }}>{job.last_detail}</Typography>}
+        {job.last_detail && <Typography variant="caption" color="textSecondary" sx={{ wordBreak: 'break-word' }}>{job.last_detail}</Typography>}
       </>
     )
   }
@@ -203,8 +197,8 @@ function Jobs({ timezone }: { timezone: string }) {
   }
 
   return (
-    <Section title={t('admin.jobs')}>
-      <Typography variant="body2" color="text.secondary">{t('admin.jobsHint', { timezone })}</Typography>
+    <FormSection title={t('admin.jobs')}>
+      <Typography variant="body2" color="textSecondary">{t('admin.jobsHint', { timezone })}</Typography>
       <Box sx={{ overflowX: 'auto' }}>{/* phones: the table scrolls, not the page */}
         <Table size="small">
           <TableHead>
@@ -227,7 +221,7 @@ function Jobs({ timezone }: { timezone: string }) {
                       <Box>
                         <Switch size="small" checked={enabled} onChange={(e) => edit(job.name, { enabled: e.target.checked })}
                           slotProps={{ input: { 'aria-label': t('admin.jobRatesOn') } }} />
-                        <Typography component="span" variant="body2" color="text.secondary">
+                        <Typography component="span" variant="body2" color="textSecondary">
                           {t(enabled ? 'admin.jobOn' : 'admin.jobOff')}
                         </Typography>
                       </Box>
@@ -249,10 +243,10 @@ function Jobs({ timezone }: { timezone: string }) {
       </Box>
       {state.error ? <Alert severity="error">{errorText(state.error)}</Alert> : null}
       {state.saved ? <Alert severity="success">{t('profile.saved')}</Alert> : null}
-      <Button variant="contained" loading={state.busy} disabled={Object.keys(edits).length === 0} onClick={save} sx={{ alignSelf: 'start' }}>
+      <Button variant="outlined" loading={state.busy} disabled={Object.keys(edits).length === 0} onClick={save} sx={{ alignSelf: 'start' }}>
         {t('profile.save')}
       </Button>
-    </Section>
+    </FormSection>
   )
 }
 
@@ -283,7 +277,7 @@ function Updates() {
   if (!d) return null
   const notes = d.changelog_url ?? d.release_url
   return (
-    <Section title={t('admin.updates')}>
+    <FormSection title={t('admin.updates')}>
       <Typography>
         {t('admin.version', { version: d.current_version })}
         {d.latest_version && ' · ' + t('admin.latest', { version: d.latest_version })}
@@ -294,15 +288,15 @@ function Updates() {
         <Button href={notes} target="_blank" rel="noopener" sx={{ alignSelf: 'start' }}>{t('admin.releaseNotes')}</Button>
       )}
       {d.updater ? (
-        <Button variant="contained" loading={running} disabled={!d.update_available || !!update}
+        <Button variant="outlined" loading={running} disabled={!d.update_available || !!update}
           onClick={() => setConfirm(true)} sx={{ alignSelf: 'start' }}>{t('admin.updateNow')}</Button>
       ) : d.update_available && (
         <>
-          <Typography color="text.secondary">{t('admin.updateByHand')}</Typography>
+          <Typography color="textSecondary">{t('admin.updateByHand')}</Typography>
           <Box component="pre" sx={{ m: 0, p: 1.5, bgcolor: 'action.hover', borderRadius: 1, overflowX: 'auto' }}>
             git pull{'\n'}docker compose up -d --build
           </Box>
-          <Typography variant="body2" color="text.secondary">{t('admin.updaterHint')}</Typography>
+          <Typography variant="body2" color="textSecondary">{t('admin.updaterHint')}</Typography>
         </>
       )}
       {error ? <Alert severity="error">{errorText(error)}</Alert> : null}
@@ -314,7 +308,7 @@ function Updates() {
           <Button variant="contained" onClick={start}>{t('admin.updateNow')}</Button>
         </DialogFooter>
       </Dialog>
-    </Section>
+    </FormSection>
   )
 }
 
@@ -361,8 +355,8 @@ function Invites() {
           : t('admin.inviteOpen', { date: when(i.expires_at) })
 
   return (
-    <Section title={t('admin.invites')}>
-      <Typography color="text.secondary">{t('admin.invitesHint')}</Typography>
+    <FormSection title={t('admin.invites')}>
+      <Typography color="textSecondary">{t('admin.invitesHint')}</Typography>
       <Stack component="form" direction={{ xs: 'column', sm: 'row' }} spacing={1} onSubmit={create}>
         <TextField size="small" label={t('admin.inviteNote')} value={note} onChange={(e) => setNote(e.target.value)}
           slotProps={{ htmlInput: { maxLength: 100 } }} fullWidth />
@@ -370,7 +364,7 @@ function Invites() {
           sx={{ width: { sm: 160 }, flexShrink: 0 }}>
           {[1, 7, 30].map((d) => <MenuItem key={d} value={d}>{t('admin.days', { count: d })}</MenuItem>)}
         </TextField>
-        <Button type="submit" variant="contained" loading={busy} sx={{ flexShrink: 0, whiteSpace: 'nowrap' }}>{t('admin.createInvite')}</Button>
+        <Button type="submit" variant="outlined" loading={busy} sx={{ flexShrink: 0, whiteSpace: 'nowrap' }}>{t('admin.createInvite')}</Button>
       </Stack>
       {error ? <Alert severity="error">{errorText(error)}</Alert> : null}
       {invites.data && invites.data.length > 0 && (
@@ -405,7 +399,7 @@ function Invites() {
         <ShowOnce title={t('admin.inviteReady')} body={t('admin.inviteReadyBody', { date: when(created.expires_at) })}
           link={created.link ?? created.code} qr={created.qr} code={created.code} onClose={() => setCreated(null)} />
       )}
-    </Section>
+    </FormSection>
   )
 }
 
@@ -428,7 +422,7 @@ function Users({ selfId }: { selfId: string }) {
   }
 
   return (
-    <Section title={t('admin.users')}>
+    <FormSection title={t('admin.users')}>
       {error ? <Alert severity="error">{errorText(error)}</Alert> : null}
       <Box sx={{ overflowX: 'auto' }}>{/* phones: the table scrolls, not the page */}
         <Table size="small">
@@ -473,7 +467,7 @@ function Users({ selfId }: { selfId: string }) {
         <ShowOnce title={t('admin.resetReady', { name: reset.username })} body={t('admin.resetReadyBody')}
           link={reset.link} onClose={() => setReset(null)} />
       )}
-    </Section>
+    </FormSection>
   )
 }
 
@@ -484,7 +478,7 @@ function Restore() {
   const errorText = useErrorText()
   const lang = currentLanguage()
   const last = useQuery({ queryKey: ['admin', 'restore'], queryFn: () => api<RestoreStatus | null>('/v1/admin/restore') })
-  const twoFactor = useQuery({ queryKey: ['auth', 'two-factor'], queryFn: () => api<{ enabled: boolean }>('/v1/auth/two-factor') })
+  const twoFactor = useQuery({ queryKey: keys.twoFactor, queryFn: () => api<{ enabled: boolean }>('/v1/auth/two-factor') })
   const [file, setFile] = useState<File | null>(null)
   const [purged, setPurged] = useState<File | null>(null)
   const [password, setPassword] = useState('')
@@ -518,8 +512,8 @@ function Restore() {
   }
 
   return (
-    <Section title={t('restore.title')}>
-      <Typography color="text.secondary">{t('restore.intro')}</Typography>
+    <FormSection title={t('restore.title')}>
+      <Typography color="textSecondary">{t('restore.intro')}</Typography>
       {last.data && (
         <Typography variant="body2">
           {t('restore.last', { status: t(`restore.statuses.${last.data.status}`), date: when(last.data.at) })}
@@ -532,7 +526,7 @@ function Restore() {
         <Stack component="form" spacing={2} onSubmit={start}>
           <FileField label={t('restore.file')} button={t('restore.choose')} file={file} onChange={setFile} accept=".dump" />
           <FileField label={t('restore.purged')} button={t('restore.choose')} file={purged} onChange={setPurged} accept=".jsonl" />
-          <Typography variant="body2" color="text.secondary">{t('restore.purgedHint')}</Typography>
+          <Typography variant="body2" color="textSecondary">{t('restore.purgedHint')}</Typography>
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
             <TextField type="password" label={t('restore.password')} required value={password} onChange={(e) => setPassword(e.target.value)}
               autoComplete="current-password" sx={{ flex: 1 }} />
@@ -548,6 +542,6 @@ function Restore() {
           </Button>
         </Stack>
       )}
-    </Section>
+    </FormSection>
   )
 }

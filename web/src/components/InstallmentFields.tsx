@@ -7,8 +7,8 @@ import Typography from '@mui/material/Typography'
 import { useTranslation } from 'react-i18next'
 import { currentLanguage } from '../i18n'
 import type { Account } from '../lib/api'
-import { statementsFrom, validMonths, type PlanForm } from '../lib/installments'
-import { formatMoney } from '../lib/money'
+import { planDates, validMonths, type PlanForm } from '../lib/installments'
+import { Money } from './Money'
 import { AmountField } from './AmountField'
 import { DateField } from './DateField'
 
@@ -24,9 +24,7 @@ type Props = {
 export function InstallmentFields({ card, plan, onChange, purchaseDate, amount, minorUnit }: Props) {
   const { t } = useTranslation()
   const lang = currentLanguage()
-  const converted = plan.convertedOn || purchaseDate
-  const statements = card.statement_day && converted ? statementsFrom(converted, card.statement_day) : []
-  const first = statements.includes(plan.firstStatement) ? plan.firstStatement : statements[0] ?? ''
+  const { convertedOn: converted, firstStatement: first, statements } = planDates(plan, purchaseDate, card.statement_day)
   const dateFmt = new Intl.DateTimeFormat(lang === 'vi' ? 'vi-VN' : 'en-GB', { dateStyle: 'medium' })
   const months = validMonths(plan.months) ? Number(plan.months) : null
   const each = amount && months ? Math.floor(amount / months) : null
@@ -36,7 +34,7 @@ export function InstallmentFields({ card, plan, onChange, purchaseDate, amount, 
         control={<Switch checked={plan.on} disabled={!card.statement_day} onChange={(e) => onChange({ on: e.target.checked })} />}
         label={t('plan.switch')}
       />
-      {!card.statement_day && <Typography variant="body2" color="text.secondary">{t('plan.needsStatementDay')}</Typography>}
+      {!card.statement_day && <Typography variant="body2" color="textSecondary">{t('plan.needsStatementDay')}</Typography>}
       {plan.on && (
         <>
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
@@ -63,8 +61,8 @@ export function InstallmentFields({ card, plan, onChange, purchaseDate, amount, 
             label={t('plan.countsTowardLimit')}
           />
           {each !== null && months && (
-            <Typography variant="body2" color="text.secondary">
-              {`${months} × ${formatMoney(each, card.currency, minorUnit, lang)}`}
+            <Typography variant="body2" color="textSecondary">
+              {months} × <Money amount={each} currency={card.currency} kind="balance" quiet />
             </Typography>
           )}
         </>

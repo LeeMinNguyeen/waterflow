@@ -10,8 +10,7 @@ import { useTranslation } from 'react-i18next'
 import { Link as RouterLink } from 'react-router'
 import { useSignedInForm } from '../auth/forms'
 import { rememberedDevice } from '../auth/rememberedDevice'
-import { Centered } from '../components/Centered'
-import { FormError, PublicHeader } from '../components/AccountForm'
+import { FormError, PublicHeader, PublicPage } from '../components/AccountForm'
 import { ApiError, send, type SignedIn } from '../lib/api'
 import { useIdleNotice } from '../lib/idle'
 import { useInstance } from '../lib/queries'
@@ -45,9 +44,9 @@ export function SignIn() {
   }
 
   return (
-    <Centered>
+    <PublicPage>
       <Stack component="form" spacing={2} onSubmit={(e) => submit(e, signIn)}>
-        <PublicHeader title={t('auth.signInTitle')} languageSwitch={false} />
+        <PublicHeader title={t('auth.signInTitle')} />
         {idleMinutes && <Alert severity="info">{t('idle.signedOut', { minutes: idleMinutes })}</Alert>}
         <TextField name="username" label={t('auth.username')} required autoComplete="username"
           slotProps={{ htmlInput: { autoCapitalize: 'none' } }} />
@@ -61,13 +60,15 @@ export function SignIn() {
         )}
         {error instanceof ApiError && error.code === 'code_required' ? null : <FormError error={error} />}
         <Button type="submit" variant="contained" size="large" loading={busy}>{t('auth.signIn')}</Button>
-        <Typography variant="body2" color="text.secondary">
-          {instance.data?.signup === 'open'
-            ? <>{t('auth.noAccount')} <Button component={RouterLink} to="/join" size="small">{t('auth.toSignUp')}</Button></>
-            : t('auth.inviteOnly')}
-        </Typography>
-        <Typography variant="body2" color="text.secondary">{t('auth.forgotPassword')}</Typography>
+        <Stack spacing={1} sx={{ borderTop: 1, borderColor: 'divider', pt: 2 }}>
+          <Typography variant="body2" color="textSecondary">
+            {instance.data?.signup === 'open'
+              ? <>{t('auth.noAccount')} <Button component={RouterLink} to="/join" size="small">{t('auth.toSignUp')}</Button></>
+              : t('auth.inviteOnly')}
+          </Typography>
+          <Typography variant="body2" color="textSecondary">{t('auth.forgotPassword')}</Typography>
+        </Stack>
       </Stack>
-    </Centered>
+    </PublicPage>
   )
 }

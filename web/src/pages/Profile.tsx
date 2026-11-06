@@ -11,18 +11,18 @@ import List from '@mui/material/List'
 import ListItem from '@mui/material/ListItem'
 import ListItemText from '@mui/material/ListItemText'
 import MenuItem from '@mui/material/MenuItem'
-import Paper from '@mui/material/Paper'
 import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import { useColorScheme } from '@mui/material/styles'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useState, type FormEvent, type ReactNode } from 'react'
+import { useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
+import { FormSection, PageHeader } from '../components/Page'
 import { useErrorText } from '../components/errors'
 import { LanguagePicker } from '../components/LanguagePicker'
 import { TimezonePicker } from '../components/TimezonePicker'
-import { currentLanguage, setLanguage, type Language } from '../i18n'
+import { applyAccountLanguage, currentLanguage, type Language } from '../i18n'
 import { api, download, send, type DeviceSession, type Me, type Profile as ProfileT } from '../lib/api'
 import { keys, useMe } from '../lib/queries'
 
@@ -31,15 +31,8 @@ import { newAccountBody } from '../auth/forms'
 import { PasswordFields } from '../components/AccountForm'
 import { rememberedDevice } from '../auth/rememberedDevice'
 import { DialogFooter } from '../components/DialogFooter'
-
-function Section({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <Paper variant="outlined" sx={{ p: 2.5 }}>
-      <Typography variant="h6" sx={{ mb: 2 }}>{title}</Typography>
-      <Stack spacing={2}>{children}</Stack>
-    </Paper>
-  )
-}
+import { copyText } from '../lib/clipboard'
+import { useToast } from '../lib/toast'
 
 export function Profile() {
   const { t } = useTranslation()
@@ -47,7 +40,7 @@ export function Profile() {
   if (!me.data) return null
   return (
     <Stack spacing={2} sx={{ maxWidth: 720 }}>
-      <Typography variant="h5">{t('profile.title')}</Typography>
+      <PageHeader title={t('profile.title')} />
       <ProfileForm profile={me.data.profile} />
       <Appearance />
       <Security />
@@ -62,14 +55,14 @@ function Appearance() {
   const { t } = useTranslation()
   const { mode, setMode } = useColorScheme()
   return (
-    <Section title={t('profile.appearance')}>
+    <FormSection title={t('profile.appearance')}>
       <TextField select label={t('profile.theme')} value={mode ?? 'system'} helperText={t('profile.themeHint')}
         onChange={(e) => setMode(e.target.value as 'system' | 'light' | 'dark')}>
         <MenuItem value="system">{t('profile.themeSystem')}</MenuItem>
         <MenuItem value="light">{t('profile.themeLight')}</MenuItem>
         <MenuItem value="dark">{t('profile.themeDark')}</MenuItem>
       </TextField>
-    </Section>
+    </FormSection>
   )
 }
 
@@ -91,7 +84,8 @@ function ProfileForm({ profile }: { profile: ProfileT }) {
     try {
       const me = await send<Me>('PATCH', '/v1/me', { username: username.trim().toLowerCase(), display_name: displayName.trim(), language, timezone })
       qc.setQueryData(keys.me, me)
-      setLanguage(language)
+      rememberedDevice.rename(profile.username, me.profile.username)
+      applyAccountLanguage(language)
       setStatus({ saved: true })
     } catch (err) {
       setStatus({ error: err })
@@ -101,7 +95,7 @@ function ProfileForm({ profile }: { profile: ProfileT }) {
   }
 
   return (
-    <Section title={t('profile.profile')}>
+    <FormSection title={t('profile.profile')}>
       <Stack component="form" spacing={2} onSubmit={save}>
         <TextField label={t('profile.username')} required value={username} onChange={(e) => setUsername(e.target.value.toLowerCase())}
           helperText={t('welcome.usernameHint')} slotProps={{ htmlInput: { pattern: '[a-z0-9][a-z0-9_.]{2,29}', autoCapitalize: 'none' } }} />
@@ -110,9 +104,9 @@ function ProfileForm({ profile }: { profile: ProfileT }) {
         <TimezonePicker label={t('profile.timezone')} value={timezone} onChange={setTimezone} />
         {status.error ? <Alert severity="error">{errorText(status.error)}</Alert> : null}
         {status.saved ? <Alert severity="success">{t('profile.saved')}</Alert> : null}
-        <Button type="submit" variant="contained" loading={busy} disabled={!timezone} sx={{ alignSelf: 'start' }}>{t('profile.save')}</Button>
+        <Button type="submit" variant="outlined" loading={busy} disabled={!timezone} sx={{ alignSelf: 'start' }}>{t('profile.save')}</Button>
       </Stack>
-    </Section>
+    </FormSection>
   )
 }
 
@@ -121,9 +115,10 @@ type Enrolment = { secret: string; uri: string; qr: string }
 
 function Security() {
   const { t } = useTranslation()
+  const toast = useToast()
   const errorText = useErrorText()
   const qc = useQueryClient()
-  const twoFactor = useQuery({ queryKey: ['two-factor'], queryFn: () => api<TwoFactorState>('/v1/auth/two-factor') })
+  const twoFactor = useQuery({ queryKey: keys.twoFactor, queryFn: () => api<TwoFactorState>('/v1/auth/two-factor') })
   const [enroll, setEnroll] = useState<Enrolment | null>(null)
   const [recovery, setRecovery] = useState<string[] | null>(null)
   const [code, setCode] = useState('')
@@ -144,7 +139,7 @@ function Security() {
       setBusy(false)
     }
   }
-  const refresh = () => qc.invalidateQueries({ queryKey: ['two-factor'] })
+  const refresh = () => qc.invalidateQueries({ queryKey: keys.twoFactor })
 
   const finish = (e: FormEvent) => {
     e.preventDefault()
@@ -188,7 +183,7 @@ function Security() {
   const on = twoFactor.data?.enabled ?? false
 
   return (
-    <Section title={t('profile.security')}>
+    <FormSection title={t('profile.security')}>
       <Typography variant="subtitle1">{t('profile.password')}</Typography>
       <Stack component="form" spacing={2} onSubmit={changePassword}>
         <TextField name="current" label={t('profile.currentPassword')} type="password" required autoComplete="current-password" />
@@ -197,7 +192,7 @@ function Security() {
       </Stack>
       <Divider />
       <Typography variant="subtitle1">{t('mfa.title')}</Typography>
-      <Typography color="text.secondary">
+      <Typography color="textSecondary">
         {on ? t('mfa.enabled') : t('mfa.disabled')}
         {on && ' ' + t('mfa.codesLeft', { count: twoFactor.data?.recovery_codes_left ?? 0 })}
       </Typography>
@@ -220,7 +215,7 @@ function Security() {
           <TextField label={t('mfa.secret')} value={enroll.secret} slotProps={{ htmlInput: { readOnly: true } }} />
           <Typography>{t('mfa.setupStep2')}</Typography>
           {codeField}
-          <Button type="submit" variant="contained" loading={busy} disabled={code.length !== 6} sx={{ alignSelf: 'start' }}>{t('mfa.verify')}</Button>
+          <Button type="submit" variant="outlined" loading={busy} disabled={code.length !== 6} sx={{ alignSelf: 'start' }}>{t('mfa.verify')}</Button>
         </Stack>
       )}
       {notice && <Alert severity="success">{notice}</Alert>}
@@ -255,11 +250,13 @@ function Security() {
           </Stack>
         </DialogContent>
         <DialogFooter>
-          <Button onClick={() => navigator.clipboard?.writeText(recovery?.join('\n') ?? '')}>{t('common.copy')}</Button>
+          <Button onClick={async () => toast(t(await copyText(recovery?.join('\n') ?? '') ? 'toast.copied' : 'errors.unexpected_error'))}>
+            {t('common.copy')}
+          </Button>
           <Button variant="contained" onClick={() => setRecovery(null)}>{t('mfa.recoverySaved')}</Button>
         </DialogFooter>
       </Dialog>
-    </Section>
+    </FormSection>
   )
 }
 
@@ -294,7 +291,7 @@ function Devices({ profile }: { profile: ProfileT }) {
   }
 
   return (
-    <Section title={t('profile.devices')}>
+    <FormSection title={t('profile.devices')}>
       <TextField select label={t('profile.idleSignOut')} value={idle} helperText={t('profile.idleSignOutHint')} disabled={busy === 'idle'}
         onChange={(e) => run('idle', async () => {
           await send('PATCH', '/v1/me', { idle_sign_out_minutes: Number(e.target.value) || null })
@@ -302,7 +299,7 @@ function Devices({ profile }: { profile: ProfileT }) {
         }, t('profile.saved'))}>
         {idleChoices.map((m) => <MenuItem key={m} value={m}>{m ? t('profile.idleMinutes', { minutes: m }) : t('profile.idleOff')}</MenuItem>)}
       </TextField>
-      <Typography color="text.secondary">{t('profile.devicesHint')}</Typography>
+      <Typography color="textSecondary">{t('profile.devicesHint')}</Typography>
       {sessions.isError && <Alert severity="error">{errorText(sessions.error)}</Alert>}
       {sessions.data && (
         <List disablePadding>
@@ -330,7 +327,7 @@ function Devices({ profile }: { profile: ProfileT }) {
       )}
       {notice && <Alert severity="success">{notice}</Alert>}
       {error ? <Alert severity="error">{errorText(error)}</Alert> : null}
-    </Section>
+    </FormSection>
   )
 }
 
@@ -361,14 +358,14 @@ function YourData({ profile }: { profile: ProfileT }) {
   })
 
   return (
-    <Section title={t('profile.yourData')}>
-      <Typography color="text.secondary">{t('profile.exportHint')}</Typography>
+    <FormSection title={t('profile.yourData')}>
+      <Typography color="textSecondary">{t('profile.exportHint')}</Typography>
       <Button variant="outlined" loading={busy && !confirm} onClick={() => run(() => download('/v1/me/export'))} sx={{ alignSelf: 'start' }}>
         {t('profile.export')}
       </Button>
       <Divider />
       <Typography variant="subtitle1">{t('profile.deleteTitle')}</Typography>
-      <Typography color="text.secondary">{t('profile.deleteHint')}</Typography>
+      <Typography color="textSecondary">{t('profile.deleteHint')}</Typography>
       <Button color="error" variant="outlined" onClick={() => { setTyped(''); setConfirm(true) }} sx={{ alignSelf: 'start' }}>{t('profile.delete')}</Button>
       {error ? <Alert severity="error">{errorText(error)}</Alert> : null}
       <Dialog open={confirm} onClose={() => setConfirm(false)} fullWidth maxWidth="xs">
@@ -387,6 +384,6 @@ function YourData({ profile }: { profile: ProfileT }) {
           </Button>
         </DialogFooter>
       </Dialog>
-    </Section>
+    </FormSection>
   )
 }

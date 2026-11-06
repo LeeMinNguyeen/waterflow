@@ -1,0 +1,27 @@
+# The high-risk paths: CLAUDE.md, "Risk and review".
+/backend/migrations/                    @LeeMinNguyeen
+/backend/app/core/sign_in.py            @LeeMinNguyeen
+/backend/app/core/auth.py               @LeeMinNguyeen
+/backend/app/core/db.py                 @LeeMinNguyeen
+/backend/app/core/updates.py            @LeeMinNguyeen
+/backend/app/api/main.py                @LeeMinNguyeen
+/backend/app/api/routes/v1/sign_in.py   @LeeMinNguyeen
+/backend/app/api/routes/v1/admin.py     @LeeMinNguyeen
+/backend/app/api/routes/v1/restore.py   @LeeMinNguyeen
+/backend/app/domain/transactions.py     @LeeMinNguyeen
+/backend/app/jobs/migrate.py            @LeeMinNguyeen
+/backend/app/jobs/backup.py             @LeeMinNguyeen
+/backend/app/jobs/restore.py            @LeeMinNguyeen
+/backend/app/jobs/account_deletion.py   @LeeMinNguyeen
+/backend/app/jobs/scheduler.py          @LeeMinNguyeen
+/backend/app/core/jobs.py               @LeeMinNguyeen
+/backend/requirements.txt               @LeeMinNguyeen
+/backend/app/launch.py                  @LeeMinNguyeen
+/backend/app/admin.py                   @LeeMinNguyeen
+/web/src/lib/money.ts                   @LeeMinNguyeen
+/Dockerfile                             @LeeMinNguyeen
+/docker-compose.yml                     @LeeMinNguyeen
+/docker-compose.dev.yml                 @LeeMinNguyeen
+/.dockerignore                          @LeeMinNguyeen
+/scripts/                               @LeeMinNguyeen
+/.github/                               @LeeMinNguyeen

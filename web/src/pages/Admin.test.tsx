@@ -123,10 +123,7 @@ describe('updates on Server admin', () => {
 })
 
 describe('restoring a backup (waterflow#72)', () => {
-  const section = async () => {
-    const title = await screen.findByText('Restore a backup')
-    return within(title.closest('.MuiPaper-root') as HTMLElement)
-  }
+  const section = async () => within(await screen.findByRole('region', { name: 'Restore a backup' }))
 
   it('asks for the file, the password and the confirmation, then waits for the server', async () => {
     const api = server()

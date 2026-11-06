@@ -1,8 +1,8 @@
 from datetime import datetime
-from typing import Literal
+from typing import Annotated, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -118,3 +118,33 @@ def delete_book(book_id: UUID, version: int, db: Session = Depends(get_db)) -> R
         raise HTTPException(409, "conflict")
     db.commit()
     return Response(status_code=204)
+
+
+class Payee(BaseModel):
+    payee: str
+    count: int
+    account_id: UUID
+    category_id: UUID | None
+
+
+PAYEES = """
+select (array_agg(t.payee order by t.occurred_on desc, t.occurred_time desc, t.created_at desc))[1] as payee,
+       count(*)::int as count,
+       (array_agg(e.account_id order by t.occurred_on desc, t.occurred_time desc, t.created_at desc))[1] as account_id,
+       (array_agg(t.category_id order by t.occurred_on desc, t.occurred_time desc, t.created_at desc))[1] as category_id
+  from transactions t join entries e on e.transaction_id = t.id
+ where t.book_id = :b and t.type::text = any(:types) and btrim(t.payee) <> ''
+   and position(lower(cast(:q as text)) in lower(btrim(t.payee))) > 0
+ group by lower(btrim(t.payee))
+ order by bool_or(position(lower(cast(:q as text)) in lower(btrim(t.payee))) = 1) desc, count(*) desc,
+          max(t.occurred_on) desc, lower(btrim(t.payee))
+ limit 8"""
+
+
+@router.get("/{book_id}/payees")
+def list_payees(book_id: UUID, q: Annotated[str, Query(max_length=200)] = "",
+                type: Literal["expense", "income"] | None = None, db: Session = Depends(get_db)) -> list[Payee]:
+    """Payees containing q, case and surrounding spaces ignored: those starting with it first, then the most used."""
+    get_book(db, book_id)
+    rows = db.execute(text(PAYEES), {"b": book_id, "q": q.strip(), "types": [type] if type else ["expense", "income"]})
+    return [Payee(**r) for r in rows.mappings()]

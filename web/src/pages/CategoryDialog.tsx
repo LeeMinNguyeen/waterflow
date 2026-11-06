@@ -12,15 +12,15 @@ import MenuItem from '@mui/material/MenuItem'
 import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
-import { useQueryClient } from '@tanstack/react-query'
 import { useRef, useState, type FormEvent } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { BudgetBar } from '../components/BudgetBar'
 import { useErrorText } from '../components/errors'
 import { currentLanguage } from '../i18n'
-import { send, type Book, type Category, type CategoryKind } from '../lib/api'
+import { ApiError, send, type Book, type Category, type CategoryKind } from '../lib/api'
 import { categoryTree } from '../lib/categories'
-import { formatMoney } from '../lib/money'
+import { useFormatMoney } from '../lib/hideAmounts'
 import { useBudgets, useCurrencies } from '../lib/queries'
 import { newId } from '../lib/uuid'
 import { CategoryPicker } from '../components/CategoryPicker'
@@ -44,6 +44,7 @@ type Props = {
 // Add, show or edit a category. An existing one opens with its fields greyed
 // out and its budgets; Edit turns the fields on.
 export function CategoryDialog({ book, all, category, parent, editing: startEditing = false, onTransactions, onClose }: Props) {
+  const formatMoney = useFormatMoney()
   const { t } = useTranslation()
   const toast = useToast()
   const errorText = useErrorText()
@@ -59,6 +60,18 @@ export function CategoryDialog({ book, all, category, parent, editing: startEdit
   const [color, setColor] = useState(category?.color ?? parent?.color ?? '')
   const [error, setError] = useState<unknown>(null)
   const [busy, setBusy] = useState(false)
+  // After a 409 the list reloads: the form then shows the category as it is now, and saves with that version. A
+  // refetch while the user types leaves the form alone.
+  const [shown, setShown] = useState(category?.version)
+  const [conflict, setConflict] = useState(false)
+  if (category && shown !== category.version && (conflict || !editing)) {
+    setShown(category.version)
+    setConflict(false)
+    setName(category.name)
+    setKind(category.kind)
+    setParentId(category.parent_id ?? '')
+    setColor(category.color ?? '')
+  }
   const ro = !editing
   const mine = (budgets.data ?? []).filter((b) => b.category_id === category?.id && b.progress)
   const money = (v: number) => formatMoney(v, book.base_currency, currencies.data?.get(book.base_currency)?.minor_unit ?? 0, currentLanguage())
@@ -99,6 +112,7 @@ export function CategoryDialog({ book, all, category, parent, editing: startEdit
       onClose()
     } catch (err) {
       setError(err)
+      if (err instanceof ApiError && err.code === 'conflict') setConflict(true)
     } finally {
       setBusy(false)
       await qc.invalidateQueries({ queryKey: ['books', book.id, 'categories'] })
@@ -121,7 +135,7 @@ export function CategoryDialog({ book, all, category, parent, editing: startEdit
             </TextField>
             <CategoryPicker label={t('cat.parent')} disabled={ro} noneLabel={t('cat.topLevel')} options={parents} value={parentId} onChange={setParentId} />
             <Box>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>{t('cat.color')}</Typography>
+              <Typography variant="body2" color="textSecondary" sx={{ mb: 1 }}>{t('cat.color')}</Typography>
               <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(9, 32px)', gap: 1 }}>
                 {/* A colour from outside the grid (the starter categories have some) shows too */}
                 {['', ...COLORS, ...(category?.color && !COLORS.includes(category.color) ? [category.color] : [])].map((c) => (
@@ -135,11 +149,11 @@ export function CategoryDialog({ book, all, category, parent, editing: startEdit
             </Box>
             {category && mine.length > 0 && (
               <Box>
-                <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>{t('cat.budgets')}</Typography>
+                <Typography variant="body2" color="textSecondary" sx={{ mb: 1 }}>{t('cat.budgets')}</Typography>
                 <Stack spacing={1}>
                   {mine.map((b) => (
                     <BudgetBar key={b.id} label={t(`budget.periods.${b.period}`)} spent={b.progress!.spent} budget={b.amount}
-                      percent={b.progress!.percent_used} format={money} />
+                      percent={b.progress!.percent_used} color={color} format={money} />
                   ))}
                 </Stack>
               </Box>

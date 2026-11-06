@@ -1,53 +1,58 @@
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
-import Button from '@mui/material/Button'
+import Divider from '@mui/material/Divider'
 import Link from '@mui/material/Link'
 import List from '@mui/material/List'
 import ListItemButton from '@mui/material/ListItemButton'
 import ListItemText from '@mui/material/ListItemText'
-import Paper from '@mui/material/Paper'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
-import type { ReactNode } from 'react'
+import useMediaQuery from '@mui/material/useMediaQuery'
+import { useTheme } from '@mui/material/styles'
+import { Fragment, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link as RouterLink, useNavigate } from 'react-router'
+import { Bar } from '../components/Bar'
 import { BudgetBar } from '../components/BudgetBar'
 import { CashflowChart } from '../components/charts/CashflowChart'
 import { useChartColors } from '../components/charts/palette'
 import { useErrorText } from '../components/errors'
+import { Money } from '../components/Money'
+import { PageHeader, Section, SeeAll } from '../components/Page'
 import { useOpenTxn } from '../components/txnContext'
 import { currentLanguage } from '../i18n'
-import { api, type Book, type Transaction } from '../lib/api'
-import { todayIn } from '../lib/labels'
-import { formatMoney } from '../lib/money'
-import { useCategories, useCurrencies, useDashboard } from '../lib/queries'
-import { RefreshButton } from '../components/RefreshButton'
+import { api, type Book, type Category, type Transaction } from '../lib/api'
+import { shiftDay, todayIn } from '../lib/labels'
+import { useFormatMoney, useHideAmounts } from '../lib/hideAmounts'
+import { useCategories, useCurrencies, useDashboard, useInvalidateBook } from '../lib/queries'
+import { useToast } from '../lib/toast'
+import { BudgetDialog } from './BudgetDialog'
 
 // Credits some rate sources ask for (backend/app/jobs/fx_update.py); a proper name, not translated.
 const RATE_CREDITS: Record<string, { label: string; href: string }> = {
   'open.er-api.com': { label: 'Rates By Exchange Rate API', href: 'https://www.exchangerate-api.com' },
 }
 
-function Card({ title, action, children }: { title: string; action?: ReactNode; children: ReactNode }) {
+function Stat({ label, value, note, big = false }: { label: string; value: ReactNode; note?: ReactNode; big?: boolean }) {
   return (
-    <Paper variant="outlined" sx={{ p: 2, minWidth: 0 }}>
-      <Stack direction="row" sx={{ alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
-        <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>{title}</Typography>
-        {action}
-      </Stack>
-      {children}
-    </Paper>
+    <Box sx={{ minWidth: 0 }}>
+      <Typography variant="body2" color="textSecondary">{label}</Typography>
+      <Typography variant={big ? 'display' : 'h1'} component="p"
+        sx={{ mt: 0.75, fontVariantNumeric: 'tabular-nums', ...(!big && { fontSize: { xs: 18, md: 24 }, lineHeight: { xs: '24px', md: '32px' } }) }}>
+        {value}
+      </Typography>
+      {note && <Typography variant="caption" color="textDisabled" component="p" sx={{ mt: 0.5 }}>{note}</Typography>}
+    </Box>
   )
 }
 
-function Tile({ label, value, note }: { label: string; value: string; note?: string }) {
-  return (
-    <Paper variant="outlined" sx={{ p: 2 }}>
-      <Typography variant="body2" color="text.secondary">{label}</Typography>
-      <Typography variant="h4" sx={{ fontWeight: 600, fontVariantNumeric: 'tabular-nums', my: 0.5 }}>{value}</Typography>
-      {note && <Typography variant="body2" color="text.secondary">{note}</Typography>}
-    </Paper>
-  )
+const rowSx = {
+  px: 0, py: 0.75, minHeight: 52, gap: 1.5, '& .MuiListItemText-root': { my: 0 },
+  '&:not(:first-of-type)': { borderTop: 1, borderColor: 'divider' },
+} as const
+
+function Dot({ color }: { color?: string | null }) {
+  return <Box sx={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0, bgcolor: color || 'text.disabled' }} />
 }
 
 // The six month starts ending with the book's current month, YYYY-MM-01.
@@ -61,14 +66,20 @@ function lastSixMonths(today: string): string[] {
 
 // Everything from one API call, in the book's currency.
 export function Dashboard({ book }: { book: Book }) {
+  const formatMoney = useFormatMoney()
+  const { hidden } = useHideAmounts()
   const { t } = useTranslation()
   const errorText = useErrorText()
   const lang = currentLanguage()
   const navigate = useNavigate()
   const openTxn = useOpenTxn()
-  const colors = useChartColors()
+  const toast = useToast()
+  const invalidate = useInvalidateBook()
+  const desktop = useMediaQuery(useTheme().breakpoints.up('md'))
+  const chartColors = useChartColors()
   const dash = useDashboard(book.id)
   const categories = useCategories(book.id, true)
+  const [budgetFor, setBudgetFor] = useState<Category | null>(null)
   const currencies = useCurrencies()
   const minor = (c: string) => currencies.data?.get(c)?.minor_unit ?? 0
   const money = (amount: number, currency = book.base_currency) => formatMoney(amount, currency, minor(currency), lang)
@@ -101,11 +112,24 @@ export function Dashboard({ book }: { book: Book }) {
     const key = id ?? 'none'
     rolled.set(key, { id, spent: (rolled.get(key)?.spent ?? 0) + c.spent })
   }
-  const bars = [...rolled.values()].sort((a, b) => b.spent - a.spent).slice(0, 6)
+  const bars = [...rolled.values()].sort((a, b) => b.spent - a.spent).slice(0, desktop ? 6 : 3)
   const barMax = Math.max(1, ...bars.map((b) => b.spent))
 
   async function openRecent(id: string) {
-    openTxn(await api<Transaction>(`/v1/books/${book.id}/transactions/${id}`))
+    try {
+      openTxn(await api<Transaction>(`/v1/books/${book.id}/transactions/${id}`))
+    } catch (err) {
+      toast(errorText(err))
+      await invalidate(book.id)
+    }
+  }
+
+  // Recent transactions carry their category's name only: its colour, when that name means one colour.
+  const colorsByName = new Map<string, Set<string | null>>()
+  for (const c of categories.data ?? []) colorsByName.set(c.name, (colorsByName.get(c.name) ?? new Set()).add(c.color))
+  const colorNamed = (name: string | null) => {
+    const found = name ? colorsByName.get(name) : undefined
+    return found?.size === 1 ? [...found][0] : null
   }
 
   const own = d.accounts.filter((a) => a.kind !== 'person')
@@ -115,124 +139,165 @@ export function Dashboard({ book }: { book: Book }) {
   // The open exchange rate source's terms ask for this credit wherever its rates are used.
   const converts = d.accounts.some((a) => a.currency !== book.base_currency)
   const credit = converts ? RATE_CREDITS[d.rates_source ?? ''] : undefined
-  return (
-    <Stack spacing={2}>
-      <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
-        <Typography variant="h5">{t('dash.title')}</Typography>
-        <RefreshButton bookId={book.id} />
-      </Stack>
-      {empty && <Alert severity="info">{t(book.role === 'viewer' ? 'dash.emptyViewer' : 'dash.empty')}</Alert>}
-      <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', md: '2fr 1fr 1fr' } }}>
-        <Tile label={t('dash.netWorth')} value={money(d.net_worth)}
-          note={d.net_worth_missing_rates ? t('dash.missingRates', { count: d.net_worth_missing_rates }) : undefined} />
-        <Tile label={t('dash.spentThisMonth')} value={money(d.spent_this_month)} note={t('dash.vsLastMonth', { amount: money(d.spent_last_month) })} />
-        <Tile label={t('dash.incomeThisMonth')} value={money(d.income_this_month)} />
-      </Box>
+  const thisMonth = new Intl.DateTimeFormat(locale, { month: 'long', year: 'numeric' }).format(new Date(`${months[5]}T00:00:00`))
+  const seeAll = (to: string) => <SeeAll to={`/books/${book.id}${to}`}>{t('dash.seeAll')}</SeeAll>
+  const today = todayIn(book.timezone)
+  const when = (on: string) =>
+    on === today ? t('txn.today') : on === shiftDay(today, -1) ? t('txn.yesterday') : dayFmt.format(new Date(`${on}T00:00:00`))
+  const legend = (
+    <Stack direction="row" spacing={2}>
+      {(['spent', 'income'] as const).map((k) => (
+        <Stack key={k} direction="row" spacing={0.75} sx={{ alignItems: 'center' }}>
+          <Box sx={{ width: 8, height: 8, borderRadius: '2px', bgcolor: chartColors[k] }} />
+          <Typography variant="caption" color="textSecondary">{t(k === 'spent' ? 'dash.spent' : 'dash.income')}</Typography>
+        </Stack>
+      ))}
+    </Stack>
+  )
 
-      <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', lg: 'repeat(2, minmax(0, 1fr))', xl: 'repeat(3, minmax(0, 1fr))' }, alignItems: 'start' }}>
-        <Card title={t('dash.cashflow')}>
-          <CashflowChart
-            data={cashflow}
-            labels={{ spent: t('dash.spent'), income: t('dash.income'), month: t('dash.month') }}
-            formatMoney={(v) => money(v)}
-            formatAxis={(v) => axis.format(v / 10 ** minor(book.base_currency))}
-            formatMonth={(iso) => monthFmt.format(new Date(`${iso}T00:00:00`))}
-          />
-          {notConverted > 0 && <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>{t('dash.notConverted', { count: notConverted })}</Typography>}
-        </Card>
-
-        <Card title={t('dash.topCategories')}>
-          {bars.length === 0 && <Typography color="text.secondary">{t('dash.noSpending')}</Typography>}
-          <Stack spacing={1.5}>
-            {bars.map((b) => (
-              <Box key={b.id ?? 'none'} onClick={() => b.id && navigate(`/books/${book.id}/transactions?category_id=${b.id}`)}
-                sx={{ cursor: b.id ? 'pointer' : undefined }}>
-                <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'center', mb: 0.5 }}>
-                  <Stack direction="row" spacing={1} sx={{ alignItems: 'center', minWidth: 0 }}>
-                    <Box sx={{ width: 10, height: 10, borderRadius: '50%', flexShrink: 0, bgcolor: (b.id && colorOf.get(b.id)) || 'action.disabled' }} />
-                    <Typography variant="body2" noWrap>{b.id ? nameOf.get(b.id) : t('dash.uncategorized')}</Typography>
-                  </Stack>
-                  <Typography variant="body2" sx={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', ml: 1 }}>{money(b.spent)}</Typography>
-                </Stack>
-                <Box sx={{ height: 8, borderRadius: '4px', bgcolor: 'action.hover' }}>
-                  <Box sx={{ height: 8, borderRadius: '4px', bgcolor: colors.magnitude, width: `${(b.spent / barMax) * 100}%` }} />
-                </Box>
-              </Box>
-            ))}
-          </Stack>
-        </Card>
-
-        {d.budgets.length > 0 && (
-          <Card title={t('dash.budgets')} action={<Button size="small" component={RouterLink} to={`/books/${book.id}/categories`}>{t('dash.seeAll')}</Button>}>
-            <Stack spacing={2}>
-              {d.budgets.slice(0, 6).map((b) => (
-                <BudgetBar key={b.budget_id} label={`${b.category} · ${t(`budget.periods.${b.period}`)}`} spent={b.spent} budget={b.budget}
-                  percent={b.percent_used ?? 0} format={(v) => money(v)} />
-              ))}
+  const cashflowSection = (
+    <Section title={t('dash.cashflow')} action={legend}>
+      <CashflowChart
+        data={cashflow}
+        labels={{ spent: t('dash.spent'), income: t('dash.income'), month: t('dash.month') }}
+        formatMoney={(v) => money(v)}
+        formatAxis={(v) => (hidden ? '' : axis.format(v / 10 ** minor(book.base_currency)))}
+        formatMonth={(iso) => monthFmt.format(new Date(`${iso}T00:00:00`))}
+      />
+      {notConverted > 0 && <Typography variant="body2" color="textSecondary" sx={{ mt: 1 }}>{t('dash.notConverted', { count: notConverted })}</Typography>}
+    </Section>
+  )
+  const categoriesSection = (
+    <Section title={t('dash.topCategories')}>
+      {bars.length === 0 && <Typography color="textSecondary">{t('dash.noSpending')}</Typography>}
+      {bars.map((b) => {
+        const name = b.id ? nameOf.get(b.id) ?? '' : t('dash.uncategorized')
+        const color = b.id ? colorOf.get(b.id) : null
+        return (
+          <Box key={b.id ?? 'none'} {...(b.id && { component: RouterLink, to: `/books/${book.id}/transactions?category_id=${b.id}` })}
+            sx={{ display: 'block', py: 1.125, color: 'inherit', textDecoration: 'none', borderRadius: 1,
+              '&:focus-visible': { outline: 2, outlineColor: 'primary.main', outlineOffset: 2 } }}>
+            <Stack direction="row" spacing={1.25} sx={{ alignItems: 'center', mb: 1 }}>
+              <Dot color={color} />
+              <Typography noWrap sx={{ flex: 1, minWidth: 0 }}>{name}</Typography>
+              <Typography sx={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{money(b.spent)}</Typography>
             </Stack>
-          </Card>
-        )}
-        {d.people.length > 0 && (
-          <Card title={t('dash.people')} action={<Button size="small" component={RouterLink} to={`/books/${book.id}/people`}>{t('dash.seeAll')}</Button>}>
-            <List disablePadding dense>
-              {d.people.map((p) => (
-                <ListItemButton key={`${p.contact_id}-${p.currency}`} sx={{ px: 0 }} onClick={() => navigate(`/books/${book.id}/people`)}>
-                  <ListItemText primary={p.name} />
-                  <Stack sx={{ textAlign: 'right' }}>
-                    {p.owed_to_you > 0 && <Typography variant="body2" sx={{ fontVariantNumeric: 'tabular-nums' }}>{t('people.owesYou', { amount: money(p.owed_to_you, p.currency) })}</Typography>}
-                    {p.you_owe > 0 && <Typography variant="body2" sx={{ fontVariantNumeric: 'tabular-nums' }}>{t('people.youOwe', { amount: money(p.you_owe, p.currency) })}</Typography>}
-                  </Stack>
-                </ListItemButton>
-              ))}
-            </List>
-          </Card>
-        )}
+            <Bar label={name} percent={(b.spent / barMax) * 100} color={color || 'text.disabled'} />
+          </Box>
+        )
+      })}
+    </Section>
+  )
+  const recentSection = (
+    <Section title={t('dash.recent')} action={seeAll('/transactions')}>
+      <List disablePadding>
+        {d.recent_transactions.slice(0, 5).map((r) => (
+          <ListItemButton key={r.id} onClick={() => openRecent(r.id)} sx={rowSx}>
+            <Dot color={colorNamed(r.category)} />
+            <ListItemText primary={r.payee || t(`txn.types.${r.type}`)}
+              secondary={[when(r.occurred_on), r.category].filter(Boolean).join(' · ')}
+              slotProps={{ primary: { noWrap: true }, secondary: { noWrap: true } }} />
+            {r.amount !== null && r.currency && (
+              <Money amount={r.amount} currency={r.currency} kind={r.type === 'transfer' ? 'transfer' : 'flow'} sign />
+            )}
+          </ListItemButton>
+        ))}
+      </List>
+    </Section>
+  )
+  const accountsSection = (
+    <Section title={t('dash.accounts')} action={seeAll('/accounts')}>
+      <List disablePadding>
+        {shownAccounts.map((a) => (
+          <ListItemButton key={a.account_id} onClick={() => navigate(`/books/${book.id}/transactions?account_id=${a.account_id}`)}
+            sx={{ ...rowSx, opacity: a.in_net_worth ? 1 : 0.55 }}>
+            <ListItemText primary={a.name} secondary={t(`accounts.kinds.${a.kind}`)}
+              slotProps={{ primary: { noWrap: true } }} />
+            <Box sx={{ textAlign: 'right' }}>
+              <Money amount={a.balance} currency={a.currency} kind="balance" sx={{ display: 'block' }} />
+              {a.currency !== book.base_currency && (
+                <Typography variant="caption" color="textDisabled" sx={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
+                  {a.converted_balance === null ? t('dash.noRate') : `≈ ${money(a.converted_balance)}`}
+                </Typography>
+              )}
+            </Box>
+          </ListItemButton>
+        ))}
+      </List>
+      {!pinned.length && d.accounts.length > 0 && (
+        <Typography variant="caption" color="textDisabled" component="p" sx={{ mt: 1 }}>{t('dash.pinHint')}</Typography>
+      )}
+    </Section>
+  )
+  const budgetsSection = d.budgets.length > 0 && (
+    <Section title={t('dash.budgets')} action={seeAll('/categories')}>
+      <Stack spacing={2.5} sx={{ pt: 0.5 }}>
+        {d.budgets.slice(0, 6).map((b) => {
+          const category = categories.data?.find((c) => c.id === b.category_id)
+          return (
+            <BudgetBar key={b.budget_id} label={`${b.category} · ${t(`budget.periods.${b.period}`)}`} spent={b.spent} budget={b.budget}
+              percent={b.percent_used ?? 0} color={colorOf.get(b.category_id)} format={(v) => money(v)}
+              onClick={category && (() => setBudgetFor(category))} />
+          )
+        })}
+      </Stack>
+    </Section>
+  )
+  const peopleSection = d.people.length > 0 && (
+    <Section title={t('dash.people')} action={seeAll('/people')}>
+      <List disablePadding>
+        {d.people.map((p) => (
+          <ListItemButton key={`${p.contact_id}-${p.currency}`} sx={rowSx} onClick={() => navigate(`/books/${book.id}/people`)}>
+            <ListItemText primary={p.name} slotProps={{ primary: { noWrap: true } }} />
+            <Stack sx={{ textAlign: 'right' }}>
+              {p.owed_to_you > 0 && <Typography sx={{ fontVariantNumeric: 'tabular-nums' }}>{t('people.owesYou', { amount: money(p.owed_to_you, p.currency) })}</Typography>}
+              {p.you_owe > 0 && <Typography color="error" sx={{ fontVariantNumeric: 'tabular-nums' }}>{t('people.youOwe', { amount: money(p.you_owe, p.currency) })}</Typography>}
+            </Stack>
+          </ListItemButton>
+        ))}
+      </List>
+    </Section>
+  )
+  const column = (...parts: ReactNode[]) => (
+    <Stack divider={<Divider />} spacing={3} sx={{ minWidth: 0 }}>
+      {parts.filter(Boolean).map((part, i) => <Fragment key={i}>{part}</Fragment>)}
+    </Stack>
+  )
 
-        <Card title={t('dash.accounts')} action={<Button size="small" component={RouterLink} to={`/books/${book.id}/accounts`}>{t('dash.seeAll')}</Button>}>
-          <List disablePadding dense>
-            {shownAccounts.map((a) => (
-              <ListItemButton key={a.account_id} onClick={() => navigate(`/books/${book.id}/transactions?account_id=${a.account_id}`)}
-                sx={{ px: 0, opacity: a.in_net_worth ? 1 : 0.55 }}>
-                <ListItemText primary={a.name} secondary={t(`accounts.kinds.${a.kind}`)} />
-                <Box sx={{ textAlign: 'right', ml: 2 }}>
-                  <Typography variant="body2" sx={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{money(a.balance, a.currency)}</Typography>
-                  {a.currency !== book.base_currency && (
-                    <Typography variant="caption" color="text.secondary" sx={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
-                      {a.converted_balance === null ? t('dash.noRate') : `≈ ${money(a.converted_balance)}`}
-                    </Typography>
-                  )}
-                </Box>
-              </ListItemButton>
-            ))}
-          </List>
-          {!pinned.length && d.accounts.length > 0 && (
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>{t('dash.pinHint')}</Typography>
-          )}
-        </Card>
-
-        <Card title={t('dash.recent')} action={<Button size="small" component={RouterLink} to={`/books/${book.id}/transactions`}>{t('dash.seeAll')}</Button>}>
-          <List disablePadding dense>
-            {d.recent_transactions.slice(0, 5).map((r) => (
-              <ListItemButton key={r.id} onClick={() => openRecent(r.id)} sx={{ px: 0 }}>
-                <ListItemText primary={r.payee || t(`txn.types.${r.type}`)}
-                  secondary={[dayFmt.format(new Date(`${r.occurred_on}T00:00:00`)), r.category].filter(Boolean).join(' · ')} />
-                {r.amount !== null && r.currency && (
-                  <Typography variant="body2" sx={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', ml: 2,
-                    color: r.type === 'transfer' ? undefined : r.amount < 0 ? 'error.main' : 'success.main' }}>
-                    {money(r.type === 'transfer' ? Math.abs(r.amount) : r.amount, r.currency)}
-                  </Typography>
-                )}
-              </ListItemButton>
-            ))}
-          </List>
-        </Card>
+  return (
+    <Box>
+      {desktop && (
+        <PageHeader title={t('dash.title')} bookId={book.id}>
+          <Typography variant="body2" color="textSecondary">{thisMonth}</Typography>
+        </PageHeader>
+      )}
+      {empty && <Alert severity="info" sx={{ mt: 2 }}>{t(book.role === 'viewer' ? 'dash.emptyViewer' : 'dash.empty')}</Alert>}
+      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr 1fr', md: 'auto auto auto' }, justifyContent: { md: 'start' }, columnGap: { xs: 2, md: 8 },
+        rowGap: 2.5, mt: { xs: 0, md: 3.5 }, pb: { xs: 2.5, md: 4 }, borderBottom: 1, borderColor: 'divider' }}>
+        <Box sx={{ gridColumn: { xs: '1 / -1', md: 'auto' } }}>
+          <Stat big label={t('dash.netWorth')} value={<Money amount={d.net_worth} currency={book.base_currency} kind="balance" />}
+            note={d.net_worth_missing_rates ? t('dash.missingRates', { count: d.net_worth_missing_rates }) : undefined} />
+        </Box>
+        <Stat label={t('dash.spentThisMonth')} value={money(d.spent_this_month)} note={t('dash.vsLastMonth', { amount: money(d.spent_last_month) })} />
+        <Stat label={t('dash.incomeThisMonth')} value={money(d.income_this_month)} />
       </Box>
+
+      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'minmax(0, 1fr)', md: 'minmax(0, 2fr) minmax(0, 1fr)' }, columnGap: 8,
+        mt: { xs: 3, md: 4 }, alignItems: 'start' }}>
+        {desktop ? (
+          <>
+            {column(cashflowSection, recentSection)}
+            {column(categoriesSection, accountsSection, budgetsSection, peopleSection)}
+          </>
+        ) : column(cashflowSection, categoriesSection, recentSection, accountsSection, budgetsSection, peopleSection)}
+      </Box>
+      {budgetFor && <BudgetDialog book={book} category={budgetFor} onClose={() => setBudgetFor(null)} />}
       {credit && (
-        <Typography variant="caption" color="text.secondary">
+        <Typography variant="caption" color="textDisabled" component="p" sx={{ mt: 4 }}>
           {t('dash.ratesBy')}{' '}
           <Link href={credit.href} target="_blank" rel="noopener" color="inherit">{credit.label}</Link>
         </Typography>
       )}
-    </Stack>
+    </Box>
   )
 }

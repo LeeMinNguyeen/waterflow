@@ -55,8 +55,11 @@ export async function download(path: string): Promise<void> {
   const name = /filename="([^"]+)"/.exec(res.headers.get('Content-Disposition') ?? '')?.[1] ?? 'export.zip'
   const url = URL.createObjectURL(await res.blob())
   const a = Object.assign(document.createElement('a'), { href: url, download: name })
+  document.body.appendChild(a)
   a.click()
-  URL.revokeObjectURL(url)
+  a.remove()
+  // Revoked at once, some browsers (Safari, older Firefox) cancel the download they just started.
+  setTimeout(() => URL.revokeObjectURL(url), 60_000)
 }
 
 export type AccountStatus = { deletion_requested_at: string | null; deletes_on: string | null }
@@ -66,6 +69,8 @@ export const send = <T>(method: string, path: string, body?: unknown) =>
 
 // Filled into a new transaction from the user's own recent ones (GET .../transactions/suggest).
 export type Suggestion = { account_id: string; category_id: string | null; payee: string | null }
+export type Payee = { payee: string; count: number; account_id: string; category_id: string | null }
+export type Usual = { account_id: string; category_id: string | null; payee: string | null; amount: number; count: number; last_on: string }
 
 // Files and fields as multipart/form-data; the browser sets the boundary.
 export const upload = <T>(path: string, form: FormData) => api<T>(path, { method: 'POST', body: form })

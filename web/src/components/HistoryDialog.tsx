@@ -12,11 +12,11 @@ import { Fragment } from 'react'
 import { useTranslation } from 'react-i18next'
 import { currentLanguage } from '../i18n'
 import type { Book } from '../lib/api'
-import { formatMoney } from '../lib/money'
 import { personName } from '../lib/people'
-import { useAccounts, useCategories, useCurrencies, useHistory } from '../lib/queries'
+import { useAccounts, useCategories, useHistory } from '../lib/queries'
 import { useErrorText } from './errors'
 import { DialogFooter } from './DialogFooter'
+import { Money } from './Money'
 
 // Every saved version of a transaction, oldest first: created, each edit, deleted.
 export function HistoryDialog({ book, txnId, onClose }: { book: Book; txnId: string; onClose: () => void }) {
@@ -28,7 +28,6 @@ export function HistoryDialog({ book, txnId, onClose }: { book: Book; txnId: str
   const fresh = history.isFetchedAfterMount ? history.data : undefined
   const accounts = useAccounts(book.id, true)
   const categories = useCategories(book.id, true)
-  const currencies = useCurrencies()
   const accountName = (id: string) => accounts.data?.find((a) => a.id === id)?.name ?? ''
   const categoryName = (id: string | null) => (id ? categories.data?.find((c) => c.id === id)?.name ?? '' : '')
   const locale = lang === 'vi' ? 'vi-VN' : 'en-GB'
@@ -55,19 +54,17 @@ export function HistoryDialog({ book, txnId, onClose }: { book: Book; txnId: str
                   {h.changed_by ? ` · ${t('txn.by', { name: personName(h.changed_by, t) })}` : ''}
                 </Typography>
                 {h.action !== 'deleted' && (
-                  <Typography variant="body2" color="text.secondary">
+                  <Typography variant="body2" color="textSecondary">
                     {[
                       t(`txn.types.${h.type}`),
                       day.format(new Date(`${h.occurred_on}T00:00:00`)) + (h.occurred_time ? ` ${h.occurred_time.slice(0, 5)}` : ''),
-                      ...(h.entries ?? []).map(
-                        (e) => `${accountName(e.account_id)} ${formatMoney(e.amount, e.currency ?? '', currencies.data?.get(e.currency ?? '')?.minor_unit ?? 0, lang)}`,
-                      ),
+                      ...(h.entries ?? []).map((e) => <>{accountName(e.account_id)} <Money amount={e.amount} currency={e.currency ?? ''} /></>),
                       categoryName(h.category_id),
                       h.payee,
                       h.note,
                     ]
                       .filter(Boolean)
-                      .join(' · ')}
+                      .map((part, at) => <Fragment key={at}>{at > 0 && ' · '}{part}</Fragment>)}
                   </Typography>
                 )}
               </Stack>
