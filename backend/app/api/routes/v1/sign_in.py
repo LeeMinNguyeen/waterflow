@@ -120,10 +120,17 @@ class SignUp(NewAccount):
 
 
 @router.post("/auth/sign-up", status_code=201)
-def sign_up(body: SignUp, request: Request) -> Token:
+def sign_up(body: SignUp, request: Request, db: Session = Depends(get_public_db)) -> Token:
     """Without an invite code, the database refuses unless sign-up is open (403 invite_required)."""
     ip = _client_ip(request)
     _limit((si.sign_ups_per_ip, ip), (si.per_ip, f"invite:{ip}"))
+    # Checked before the users insert, so a taken username can't answer someone with no way in. The database's
+    # checks at commit stay the real guard.
+    if body.invite_code:
+        if not db.execute(text("select invite_is_valid(:c)"), {"c": si.code_hash(body.invite_code)}).scalar():
+            raise HTTPException(403, "invite_invalid")
+    elif db.execute(text("select signup from instance_info()")).scalar() != "open":
+        raise HTTPException(403, "invite_required")
     if body.invite_code:
         return _create_account(body, _device(request), None, "select claim_invite(:c)", si.code_hash(body.invite_code))
     return _create_account(body, _device(request), None, None, None)
@@ -311,6 +318,10 @@ class Enable(BaseModel):
 def two_factor_enable(body: Enable, caller: Caller = Depends(current_caller),
                       db: Session = Depends(get_db)) -> RecoveryCodes:
     _limit((si.per_user_action, str(caller.id)))
+    # Replacing an active secret would also replace the recovery codes, with no current code: turning it off first
+    # asks for one.
+    if db.execute(text("select totp_secret is not null from local_credentials where user_id = :u"), {"u": caller.id}).scalar():
+        raise HTTPException(409, "two_factor_on")
     if not si.totp_matches(body.secret, body.code):
         raise HTTPException(422, "invalid_code")
     db.execute(text("update local_credentials set totp_secret = :s, updated_at = now() where user_id = :u"),

@@ -1,5 +1,6 @@
 """Tests that need a fresh server (setup, the migration runner) build their own database."""
 import json
+import logging
 import os
 import subprocess
 import sys
@@ -316,6 +317,55 @@ def test_two_factor_with_recovery_codes(client):
     assert client.post("/v1/auth/two-factor/disable", headers=bearer(token),
                        json={"code": pyotp.TOTP(secret).now()}).status_code == 204
     assert sign_in(client, name).status_code == 200
+
+
+def test_two_step_on_again_needs_turning_off_first(client):
+    """A session left open somewhere can't swap the secret and the recovery codes."""
+    name, token = sign_up(client)
+    first = client.post("/v1/auth/two-factor/setup", headers=bearer(token)).json()["secret"]
+    client.post("/v1/auth/two-factor/enable", headers=bearer(token), json={"secret": first, "code": pyotp.TOTP(first).now()})
+    second = client.post("/v1/auth/two-factor/setup", headers=bearer(token)).json()["secret"]
+    again = client.post("/v1/auth/two-factor/enable", headers=bearer(token),
+                        json={"secret": second, "code": pyotp.TOTP(second).now()})
+    assert (again.status_code, again.json()) == (409, {"detail": "two_factor_on"})
+    assert sign_in(client, name, code=pyotp.TOTP(first).now()).status_code == 200
+
+
+def test_sign_up_without_a_way_in_never_says_whether_a_username_exists(client, admin, invite_only):
+    """With no invite on an invite-only server, a taken username and a free one get the same answer."""
+    taken, _ = admin
+    plain = client.post("/v1/auth/sign-up", json={"username": taken, "password": PASSWORD})
+    assert (plain.status_code, plain.json()) == (403, {"detail": "invite_required"})
+    made_up = client.post("/v1/auth/sign-up", json={"username": taken, "password": PASSWORD, "invite_code": "AAAA-BBBB"})
+    assert (made_up.status_code, made_up.json()) == (403, {"detail": "invite_invalid"})
+
+
+def test_database_errors_and_refused_requests_log_no_values(client, caplog):
+    """Neither a database error's values (a TOTP secret, a password hash) nor a refused request's input (a password)."""
+    from app.core.db import engine
+    assert engine.hide_parameters
+    with caplog.at_level(logging.INFO):
+        r = client.post("/v1/auth/sign-up", json={"username": "shortpass", "password": "sentinel1"})
+    assert r.status_code == 422 and "invalid request" in caplog.text and "sentinel1" not in caplog.text
+
+
+def test_operator_commands_refuse_accounts_they_cannot_help(client, database, monkeypatch):
+    """make-admin on a closing account and reset-password on a disabled one refuse, as neither would work."""
+    from app import admin as commands
+    monkeypatch.setattr(commands, "admin_url", lambda: database.url.set(drivername="postgresql").render_as_string(hide_password=False))
+    closing, _ = sign_up(client)
+    disabled, _ = sign_up(client)
+    with database.connect() as c:
+        c.execute(text("update users set deletion_requested_at = now() where username = :n"), {"n": closing})
+        c.execute(text("update users set disabled_at = now() where username = :n"), {"n": disabled})
+    with pytest.raises(SystemExit, match="closing"):
+        commands.make_admin(closing)
+    with pytest.raises(SystemExit, match="disabled"):
+        commands.reset_password(disabled)
+    with database.connect() as c:
+        assert not c.execute(text("select is_admin from users where username = :n"), {"n": closing}).scalar()
+        assert not c.execute(text("select count(*) from password_resets r join users u on u.id = r.user_id"
+                                  " where u.username = :n"), {"n": disabled}).scalar()
 
 
 def test_remembered_device_skips_the_code_until_cancelled(client, admin, database, monkeypatch):

@@ -3,7 +3,7 @@
 
 Codes and tokens are returned once, here; the database keeps only their SHA-256. Clients build the links from the
 address they reach the server at:
-    invite  https://<server>/join?code=<code>  (QR: waterflow://join?server=<server>&code=<code>)
+    invite  https://<server>/join?code=<code>  (the QR code holds the same link)
     reset   https://<server>/reset?token=<token>
 """
 from datetime import datetime, timedelta, timezone
