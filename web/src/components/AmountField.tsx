@@ -64,7 +64,10 @@ export function AmountField({ value, onChange, minorUnit, big = false, unit, ari
     <TextField
       {...props}
       value={hidden && !focused && typed ? '••••' : value}
-      onChange={(e) => onChange(groupWhileTyping(typedDecimal(value, e.target.value, e.target.selectionStart ?? e.target.value.length, minorUnit, lang), lang))}
+      onChange={(e) => {
+        const key = e.nativeEvent instanceof InputEvent && e.nativeEvent.inputType === 'insertText' ? e.nativeEvent.data : null
+        onChange(groupWhileTyping(typedDecimal(e.target.value, e.target.selectionStart ?? e.target.value.length, key, minorUnit, lang), lang))
+      }}
       onFocus={(e) => { setFocused(true); props.onFocus?.(e) }}
       onBlur={(e) => {
         setFocused(false)

@@ -175,6 +175,25 @@ describe("a phone's decimal key in the other language's style (review #166)", ()
     expect(screen.getByText("The amount isn't in the right format.")).toBeInTheDocument()
   })
 
+  it('never makes a decimal sign of a thousands separator left by a deletion', async () => {
+    await renderApp(<Field minorUnit={2} />)
+    const input = screen.getByLabelText('Amount')
+    await userEvent.type(input, '1250')
+    expect(input).toHaveValue('1,250')
+    await userEvent.type(input, '{ArrowLeft}{ArrowLeft}{Backspace}')
+    expect(input).toHaveValue('150')
+    await userEvent.clear(input)
+    await userEvent.type(input, '12345{ArrowLeft}{ArrowLeft}{ArrowLeft}{Delete}')
+    expect(input).toHaveValue('1,245')
+  })
+
+  it('keeps a thousands separator for a currency with three decimals, where 1,250 could be read either way', async () => {
+    await renderApp(<Field minorUnit={3} />)
+    const input = screen.getByLabelText('Amount')
+    await userEvent.type(input, '1,250')
+    expect(input).toHaveValue('1,250')
+  })
+
   it('keeps grouping a number without decimals', async () => {
     await renderApp(<Field />, { lang: 'vi' })
     const input = screen.getByRole('textbox')

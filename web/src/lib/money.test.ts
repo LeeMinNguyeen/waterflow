@@ -190,20 +190,26 @@ describe('the other sign of what was typed (waterflow#198)', () => {
 })
 
 describe("a phone's decimal key in the other language's style (review #166)", () => {
-  it('reads a separator typed on its own as the decimal sign, for a currency with decimals', () => {
-    expect(typedDecimal('12', '12.', 3, 2, 'vi')).toBe('12,')
-    expect(typedDecimal('12', '12,', 3, 2, 'en')).toBe('12.')
-    expect(typedDecimal('1.250', '1.250.', 6, 2, 'vi')).toBe('1.250,')
-    expect(typedDecimal('12,5+3', '12,5+3.', 7, 2, 'vi')).toBe('12,5+3,')
-    expect(typedDecimal('1250', '12.50', 3, 2, 'vi')).toBe('12,50')
-    expect(typedDecimal('12345', '12.5', 3, 2, 'vi')).toBe('12,5')
+  it('reads a separator typed on its own as the decimal sign, for a currency with one or two decimals', () => {
+    expect(typedDecimal('12.', 3, '.', 2, 'vi')).toBe('12,')
+    expect(typedDecimal('12,', 3, ',', 2, 'en')).toBe('12.')
+    expect(typedDecimal('1.250.', 6, '.', 2, 'vi')).toBe('1.250,')
+    expect(typedDecimal('12,5+3.', 7, '.', 2, 'vi')).toBe('12,5+3,')
+    expect(typedDecimal('12.50', 3, '.', 2, 'vi')).toBe('12,50')
+    expect(typedDecimal('12.5', 3, '.', 1, 'vi')).toBe('12,5')
   })
 
-  it("leaves the language's own decimal sign, a currency without decimals, a second decimal and a paste as they are", () => {
-    expect(typedDecimal('12', '12,', 3, 2, 'vi')).toBe('12,')
-    expect(typedDecimal('12', '12.', 3, 0, 'vi')).toBe('12.')
-    expect(typedDecimal('12,5', '12,5.', 5, 2, 'vi')).toBe('12,5.')
-    expect(typedDecimal('', '12.5', 4, 2, 'vi')).toBe('12.5')
-    expect(typedDecimal('12', '12.', 3, 2, 'en')).toBe('12.')
+  it("leaves the language's own decimal sign, a second decimal, a paste and a deletion as they are", () => {
+    expect(typedDecimal('12,', 3, ',', 2, 'vi')).toBe('12,')
+    expect(typedDecimal('12,5.', 5, '.', 2, 'vi')).toBe('12,5.')
+    expect(typedDecimal('12.5', 4, null, 2, 'vi')).toBe('12.5')
+    expect(typedDecimal('12.5', 4, '12.5', 2, 'vi')).toBe('12.5')
+    expect(typedDecimal('1,50', 2, null, 2, 'en')).toBe('1,50')
+    expect(typedDecimal('12.', 3, '.', 2, 'en')).toBe('12.')
+  })
+
+  it('keeps a separator a thousands separator where a typed one could be read either way: no decimals, or three', () => {
+    expect(typedDecimal('12.', 3, '.', 0, 'vi')).toBe('12.')
+    expect(typedDecimal('1,', 2, ',', 3, 'en')).toBe('1,')
   })
 })
