@@ -33,7 +33,7 @@ import { currentLanguage } from '../i18n'
 import { api, ApiError, categoryKindFor, liabilityKinds, send, type Account, type Book, type Entry, type Payee, type Suggestion, type Transaction, type TxnType, type Usual } from '../lib/api'
 import { categoryTree } from '../lib/categories'
 import { shiftDay, timeIn, todayIn } from '../lib/labels'
-import { amountText, parseAmount } from '../lib/money'
+import { amountText, negated, parseAmount } from '../lib/money'
 import { useFormatMoney } from '../lib/hideAmounts'
 import { personName } from '../lib/people'
 import { fromPlan, noPlan, planDates, validMonths, type PlanForm } from '../lib/installments'
@@ -54,14 +54,6 @@ import { useToast } from '../lib/toast'
 const mainTypes: TxnType[] = ['expense', 'income', 'transfer']
 const otherTypes: TxnType[] = ['refund', 'adjustment']
 const signedTypes: TxnType[] = ['adjustment', 'opening_balance']
-
-// For a sum, the + and - between its terms flip too: -(a + b) is -a - b.
-const negated = (text: string) => {
-  const t = text.trim()
-  if (t === '' || t === '-') return text
-  const flipped = t.replace(/(?<=[^+\-*/×÷\s]\s*)[+-]/g, (op) => (op === '+' ? '-' : '+'))
-  return flipped.startsWith('-') ? flipped.slice(1) : `-${flipped}`
-}
 
 type Form = {
   type: TxnType

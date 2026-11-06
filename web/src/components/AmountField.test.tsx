@@ -30,6 +30,19 @@ describe('AmountField', () => {
     expect(input).toHaveValue('45,000')
   })
 
+  it('flips the whole of a sum with ± (waterflow#198)', async () => {
+    await renderApp(<Field signed />)
+    const input = screen.getByLabelText('Amount')
+    await userEvent.type(input, '50000-8000')
+    await userEvent.click(screen.getByRole('button', { name: 'Change sign' }))
+    expect(input).toHaveValue('-50,000+8,000')
+    expect(screen.getByText('= -42,000')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Change sign' }))
+    expect(input).toHaveValue('50,000-8,000')
+    await userEvent.tab()
+    expect(input).toHaveValue('42,000')
+  })
+
   it('starts a negative amount with ± before any digit, without calling it wrong', async () => {
     await renderApp(<Field signed />)
     await userEvent.click(screen.getByRole('button', { name: 'Change sign' }))
@@ -88,6 +101,16 @@ describe('sums (waterflow#120)', () => {
     await userEvent.tab()
     expect(screen.getByText("The amount isn't in the right format.")).toBeInTheDocument()
     expect(input).toHaveValue('45,000+')
+  })
+
+  it('takes a minus after another sign, as a calculator does', async () => {
+    await renderApp(<Field />)
+    const input = screen.getByLabelText('Amount')
+    await userEvent.type(input, '50000+-8000')
+    expect(input).toHaveValue('50,000+-8,000')
+    expect(screen.getByText('= 42,000')).toBeInTheDocument()
+    await userEvent.tab()
+    expect(input).toHaveValue('42,000')
   })
 
   it('offers 000, + and − on a touch screen while the field has focus', async () => {

@@ -8,7 +8,7 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { currentLanguage } from '../i18n'
 import { useHideAmounts } from '../lib/hideAmounts'
-import { amountText, groupWhileTyping, parseAmount } from '../lib/money'
+import { amountText, groupWhileTyping, negated, parseAmount } from '../lib/money'
 
 type Props = Omit<TextFieldProps, 'value' | 'onChange'> & {
   value: string
@@ -53,7 +53,7 @@ export function AmountField({ value, onChange, minorUnit, big = false, unit, ari
       {unit}
       {signed && (
         <IconButton edge="end" size="small" aria-label={t('common.flipSign')} disabled={props.disabled}
-          onMouseDown={(e) => e.preventDefault()} onClick={() => onChange(typed.startsWith('-') ? typed.slice(1) : `-${typed}`)}
+          onMouseDown={(e) => e.preventDefault()} onClick={() => onChange(typed === '' ? '-' : typed === '-' ? '' : negated(typed))}
           sx={{ ml: unit ? 1 : 0, width: 32, height: 32, fontSize: 20, lineHeight: 1, color: 'text.secondary' }}>
           ±
         </IconButton>
