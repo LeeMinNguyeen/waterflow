@@ -164,3 +164,19 @@ describe('hidden amounts (waterflow#104)', () => {
     expect(document.body.textContent).not.toMatch(/\d,\d{3}/)
   })
 })
+
+describe('the page width', () => {
+  beforeEach(() => desktop(true))
+  afterEach(() => desktop(false))
+
+  it('uses the full width, like Transactions and the Overview', async () => {
+    server()
+    await renderApp(<Accounts book={book} />)
+    const title = await screen.findByRole('heading', { level: 1 })
+    let node: HTMLElement | null = title
+    while (node) {
+      expect(node).not.toHaveStyle({ maxWidth: '920px' })
+      node = node.parentElement
+    }
+  })
+})
