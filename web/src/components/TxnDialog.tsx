@@ -364,7 +364,7 @@ function TxnForm({ book, txn: initial, defaults, onClose, minorOf, carry, onSwit
   const amountHint = minus ? t('txn.noMinus') : form.type === 'adjustment' ? t('txn.adjustmentHint')
     : openingBalance && !owedOpening ? t('txn.openingHint') : undefined
   const waitingForAccount = openingBalance && !from
-  const accountLabel = (a: Account) => <>{a.name} · <Money amount={a.balance} currency={a.currency} kind="balance" /></>
+  const accountLabel = (a: Account) => <span>{a.name} · <Money amount={a.balance} currency={a.currency} kind="balance" /></span>
   const people = open.filter((a) => a.kind === 'person')
   const accountOptions = [
     ...open.filter((a) => a.kind !== 'person').map((a) => <MenuItem key={a.id} value={a.id}>{accountLabel(a)}</MenuItem>),

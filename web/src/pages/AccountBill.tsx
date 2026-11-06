@@ -193,7 +193,7 @@ function PayBillDialog({ book, account, bill, minorUnit, onClose }: {
             <Alert severity="info">{t('bill.noAccounts', { currency: account.currency })}</Alert>
           ) : (
             <TextField select label={t('bill.payFrom')} value={payFrom} onChange={(e) => setFrom(e.target.value)}>
-              {choices.map((a) => <MenuItem key={a.id} value={a.id}>{a.name} · <Money amount={a.balance} currency={a.currency} kind="balance" /></MenuItem>)}
+              {choices.map((a) => <MenuItem key={a.id} value={a.id}><span>{a.name} · <Money amount={a.balance} currency={a.currency} kind="balance" /></span></MenuItem>)}
             </TextField>
           )}
           <AmountField label={t('bill.amount')} required value={amount} onChange={setAmount} minorUnit={minorUnit}
