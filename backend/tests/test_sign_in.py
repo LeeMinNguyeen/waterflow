@@ -640,6 +640,26 @@ def test_setup_creates_the_admin_once(fresh_server, monkeypatch):
     engine.dispose()
 
 
+def test_an_update_whose_backup_fails_stops_with_a_plain_reason(monkeypatch):
+    """A database newer than the image's pg_dump (PostgreSQL 18) can't be backed up: the server says so in one line."""
+    from app import launch
+    from app.jobs import backup
+
+    def mismatch(*_):
+        raise backup.BackupError("pg_dump failed: pg_dump: error: aborting because of server version mismatch")
+    monkeypatch.setattr(backup, "run_backup", mismatch)
+    with pytest.raises(SystemExit) as stopped:
+        launch.backup_before_updating("postgresql://u:secret-pw@db/x", "/tmp")
+    assert "nothing was updated" in str(stopped.value) and "Own database" in str(stopped.value)
+
+    def full(*_):
+        raise backup.BackupError("no space left on device")
+    monkeypatch.setattr(backup, "run_backup", full)
+    with pytest.raises(SystemExit) as stopped:
+        launch.backup_before_updating("postgresql://u:secret-pw@db/x", "/tmp")
+    assert "no space left" in str(stopped.value) and "Own database" not in str(stopped.value)
+
+
 def test_launcher_builds_login_urls():
     from app.launch import login_url
     assert login_url("postgresql://postgres:x@db:5432/postgres?sslmode=disable", "api_login", "p@ss/w?rd") == \
