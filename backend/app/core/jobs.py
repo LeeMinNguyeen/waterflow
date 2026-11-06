@@ -10,7 +10,7 @@ from collections.abc import Mapping
 from datetime import UTC, date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
-# The jobs and their modules, in the order they run when due together.
+# The order they run in when due together is job_schedule()'s, in the database.
 JOBS = {"purge": "app.jobs.account_deletion", "backup": "app.jobs.backup", "rates": "app.jobs.fx_update"}
 RETRY = timedelta(hours=1)   # a job that failed runs again this long after it started
 
