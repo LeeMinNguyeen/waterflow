@@ -26,6 +26,9 @@ or a new server, as its owner. tests/test_backup.py runs the `$` lines.
        schema public itself, which every database already has:
        $ pg_restore --list "$DUMP" | grep -v -E ' (SCHEMA|COMMENT) - (SCHEMA )?public ' > waterflow.list
        $ pg_restore --no-owner --single-transaction --exit-on-error --use-list=waterflow.list --dbname="$NEW_DB_URL" "$DUMP"
+       Everyone signs in again: the dump's sessions, remembered devices and
+       reset links would work again, even ones ended after it.
+       $ psql -v ON_ERROR_STOP=1 "$NEW_DB_URL" <<< "select format('delete from public.%I', t) from unnest(array['sessions', 'remembered_devices', 'password_resets']) t where to_regclass('public.' || t) is not null \gexec"
     4. Start the server. Before anyone uses it, redo the purges made since the
        dump, which brought those accounts back:
            docker compose exec waterflow python -m app.admin repurge

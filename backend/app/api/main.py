@@ -23,6 +23,20 @@ SERVER_VERSION = updates.current_version()
 app = FastAPI(title="Waterflow API", docs_url=None, redoc_url=None, openapi_url="/v1/openapi.json")
 errors.install(app)
 
+# A restore's upload is refused by its size before FastAPI reads the whole body to disk, which it does before any
+# check of who's asking.
+RESTORES = {"/v1/admin/restore", "/v1/setup/restore"}
+
+
+@app.middleware("http")
+async def refuse_oversized_restores(request: Request, call_next):
+    if request.method == "POST" and request.url.path in RESTORES:
+        length = request.headers.get("content-length", "")
+        if ("transfer-encoding" in request.headers or not length.isdigit()
+                or int(length) > restore.MAX_DUMP + restore.MAX_PURGED + 2**20):
+            return JSONResponse({"detail": "restore_too_large"}, status_code=413)
+    return await call_next(request)
+
 # Only this server's own web app may call the API from a browser: browsers send Origin, so a copy of the web app
 # hosted anywhere else is refused before anything runs. Phones send no Origin. Behind a reverse proxy the browser's
 # address is in Host (Caddy, Tailscale and Cloudflare Tunnel keep it) or X-Forwarded-Host, which Vite's proxy also
