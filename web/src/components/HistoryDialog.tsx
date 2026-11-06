@@ -64,7 +64,7 @@ export function HistoryDialog({ book, txnId, onClose }: { book: Book; txnId: str
                       h.note,
                     ]
                       .filter(Boolean)
-                      .map((part, i) => <Fragment key={i}>{i > 0 && ' · '}{part}</Fragment>)}
+                      .map((part, at) => <Fragment key={at}>{at > 0 && ' · '}{part}</Fragment>)}
                   </Typography>
                 )}
               </Stack>
