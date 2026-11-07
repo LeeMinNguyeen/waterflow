@@ -81,7 +81,7 @@ def update_category(book_id: UUID, category_id: UUID, body: UpdateCategory, db: 
     require_role(get_book(db, book_id), "owner", "editor")
     get_category(db, book_id, category_id)
     if body.parent_id is not None:
-        # Two moves at once (A under B, B under A) would each pass the check below: the second waits, then sees the first.
+        # Else two moves at once (A under B, B under A) both pass the check.
         db.execute(text("select pg_advisory_xact_lock(hashtextextended('categories ' || cast(:b as text), 0))"),
                    {"b": book_id})
         loop = db.execute(text("select 1 from category_ancestors where category_id = :p and ancestor_id = :c"),
