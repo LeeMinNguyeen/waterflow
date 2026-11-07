@@ -1,3 +1,4 @@
+import MoreVertIcon from '@mui/icons-material/MoreVert'
 import SearchIcon from '@mui/icons-material/Search'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
@@ -5,6 +6,7 @@ import Button from '@mui/material/Button'
 import InputAdornment from '@mui/material/InputAdornment'
 import ListItemButton from '@mui/material/ListItemButton'
 import ListSubheader from '@mui/material/ListSubheader'
+import IconButton from '@mui/material/IconButton'
 import Menu from '@mui/material/Menu'
 import MenuItem from '@mui/material/MenuItem'
 import Popover from '@mui/material/Popover'
@@ -22,6 +24,7 @@ import { FilterChip } from '../components/FilterChip'
 import { Money } from '../components/Money'
 import { PageHeader } from '../components/Page'
 import { useOpenTxn } from '../components/txnContext'
+import { DeletedTransactions } from './DeletedTransactions'
 import { currentLanguage } from '../i18n'
 import { txnTypes, type Account, type Book, type Transaction } from '../lib/api'
 import { categoryTree } from '../lib/categories'
@@ -46,6 +49,8 @@ export function Transactions({ book }: { book: Book }) {
   const [menu, setMenu] = useState<{ el: HTMLElement; which: 'account' | 'category' | 'type' | 'dates' } | null>(null)
   // Clear starts the date fields afresh: a half-typed date isn't in the address, so clearing it wouldn't reach them.
   const [cleared, setCleared] = useState(0)
+  const [pageMenu, setPageMenu] = useState<HTMLElement | null>(null)
+  const [showDeleted, setShowDeleted] = useState(false)
   const txns = useTransactions(book.id, filters)
   const accounts = useAccounts(book.id, true)
   const categories = useCategories(book.id, true)
@@ -126,7 +131,13 @@ export function Transactions({ book }: { book: Book }) {
 
   return (
     <Box>
-      <PageHeader title={filteredAccount ? `${t('txn.title')} · ${filteredAccount.name}` : t('txn.title')} bookId={book.id} />
+      <PageHeader title={filteredAccount ? `${t('txn.title')} · ${filteredAccount.name}` : t('txn.title')} bookId={book.id}>
+        <IconButton aria-label={t('nav.more')} onClick={(e) => setPageMenu(e.currentTarget)}><MoreVertIcon /></IconButton>
+      </PageHeader>
+      <Menu anchorEl={pageMenu} open={!!pageMenu} onClose={() => setPageMenu(null)}>
+        <MenuItem onClick={() => { setPageMenu(null); setShowDeleted(true) }}>{t('txn.recentlyDeleted')}</MenuItem>
+      </Menu>
+      {showDeleted && <DeletedTransactions book={book} onClose={() => setShowDeleted(false)} />}
       <Stack direction={{ xs: 'column', md: 'row' }} spacing={{ xs: 1.5, md: 1 }} sx={{ mt: { xs: 2, md: 3 }, alignItems: { md: 'center' } }}>
         <TextField
           size="small"

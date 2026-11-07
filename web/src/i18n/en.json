@@ -205,7 +205,9 @@
     "restore_too_large": "That file is too large: 100 MB at most.",
     "installment_exists": "This purchase already has an installment plan.",
     "installment_invalid": "This installment plan doesn't fit its purchase: an expense on a credit card with a statement day, converted on or after its date.",
-    "person_account": "This is a person's own account: change it on People."
+    "person_account": "This is a person's own account: change it on People.",
+    "already_restored": "This transaction is back already.",
+    "restore_expired": "A deleted transaction can only be restored for 30 days."
   },
   "nav": {
     "transactions": "Transactions",
@@ -245,14 +247,14 @@
     "save": "Save",
     "saveAndAdd": "Save and add another",
     "delete": "Delete",
-    "deleteConfirm": "Delete this transaction?",
     "history": "Edit history",
     "duplicate": "Duplicate",
     "historyTitle": "Edit history",
     "actions": {
       "created": "Created",
       "edited": "Edited",
-      "deleted": "Deleted"
+      "deleted": "Deleted",
+      "restored": "Restored"
     },
     "by": "by {{name}}",
     "empty": "No transactions yet.",
@@ -275,7 +277,13 @@
     "noteHint": "Tap to add a note",
     "bookOf": "Book: {{name}}",
     "chooseAccount": "Choose an account",
-    "moreActions": "More actions"
+    "moreActions": "More actions",
+    "undo": "Undo",
+    "recentlyDeleted": "Recently deleted",
+    "restore": "Restore",
+    "noneDeleted": "Nothing deleted in the last 30 days.",
+    "deletedBy": "Deleted by {{name}}",
+    "deletedKept": "A deleted transaction can be restored for 30 days."
   },
   "filters": {
     "allAccounts": "All accounts",
@@ -648,6 +656,7 @@
     "accountSaved": "Account saved",
     "categorySaved": "Category saved",
     "personSaved": "Saved",
-    "paymentSaved": "Payment saved"
+    "paymentSaved": "Payment saved",
+    "txnRestored": "Transaction restored"
   }
 }

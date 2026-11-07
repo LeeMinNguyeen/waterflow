@@ -49,6 +49,7 @@ import { CategoryPills, PickRow, Pill, Sheet } from './PhoneForm'
 import { newId } from '../lib/uuid'
 import { DialogFooter } from './DialogFooter'
 import { useToast } from '../lib/toast'
+import { useRestoreTxn } from './restoreTxn'
 
 const mainTypes: TxnType[] = ['expense', 'income', 'transfer']
 const otherTypes: TxnType[] = ['refund', 'adjustment']
@@ -99,6 +100,7 @@ export function TxnDialog(props: Props) {
 function TxnForm({ book, txn: initial, defaults, onClose, minorOf, carry, onSwitchBook, onDuplicate }: FormProps) {
   const { t } = useTranslation()
   const toast = useToast()
+  const restoreTxn = useRestoreTxn(book.id)
   const errorText = useErrorText()
   const lang = currentLanguage()
   const fullScreen = useMediaQuery(useTheme().breakpoints.down('sm'))
@@ -111,7 +113,6 @@ function TxnForm({ book, txn: initial, defaults, onClose, minorOf, carry, onSwit
   const [form, setForm] = useState<Form>(() => ({ ...toForm(initial, book, minorOf, defaults), ...carry }))
   const [error, setError] = useState<unknown>(null)
   const [busy, setBusy] = useState(false)
-  const [confirmDelete, setConfirmDelete] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
   const [moreMenu, setMoreMenu] = useState<HTMLElement | null>(null)
   const [sheet, setSheet] = useState<'book' | 'account' | 'toAccount' | 'date' | 'time' | 'payee' | null>(null)
@@ -328,10 +329,10 @@ function TxnForm({ book, txn: initial, defaults, onClose, minorOf, carry, onSwit
     try {
       await send('DELETE', `/v1/books/${book.id}/transactions/${txn.id}?version=${txn.version}`)
       await invalidate(book.id)
-      toast(t('toast.txnDeleted'))
+      const gone = txn.id
+      toast(t('toast.txnDeleted'), { label: t('txn.undo'), run: () => restoreTxn(gone) })
       onClose()
     } catch (err) {
-      setConfirmDelete(false)
       if (err instanceof ApiError && err.status === 409) await reload(err)
       else setError(err)
     } finally {
@@ -400,15 +401,6 @@ function TxnForm({ book, txn: initial, defaults, onClose, minorOf, carry, onSwit
   )
   const extras = (
     <>
-      <Dialog open={confirmDelete} onClose={() => setConfirmDelete(false)}>
-        <DialogTitle>{t('txn.deleteConfirm')}</DialogTitle>
-        <DialogFooter>
-          <Button onClick={() => setConfirmDelete(false)}>{t('common.cancel')}</Button>
-          <Button color="error" variant="contained" loading={busy} onClick={remove}>
-            {t('txn.delete')}
-          </Button>
-        </DialogFooter>
-      </Dialog>
       {showHistory && txn && <HistoryDialog book={book} txnId={txn.id} onClose={() => setShowHistory(false)} />}
     </>
   )
@@ -557,7 +549,7 @@ function TxnForm({ book, txn: initial, defaults, onClose, minorOf, carry, onSwit
         <Menu anchorEl={actions} open={!!actions} onClose={() => setActions(null)}>
           <MenuItem onClick={() => { setActions(null); setShowHistory(true) }}>{t('txn.history')}</MenuItem>
           {canDuplicate && <MenuItem onClick={() => { setActions(null); duplicate() }}>{t('txn.duplicate')}</MenuItem>}
-          {!readOnly && <MenuItem onClick={() => { setActions(null); setConfirmDelete(true) }}>{t('txn.delete')}</MenuItem>}
+          {!readOnly && <MenuItem onClick={() => { setActions(null); remove() }}>{t('txn.delete')}</MenuItem>}
         </Menu>
         <Sheet open={sheet === 'book'} title={t('book.switch')} onClose={() => setSheet(null)}>
           {editable.map((b) => (
@@ -732,7 +724,7 @@ function TxnForm({ book, txn: initial, defaults, onClose, minorOf, carry, onSwit
               </Button>
             )}
             {!readOnly && (
-              <Button color="error" startIcon={<DeleteIcon />} onClick={() => setConfirmDelete(true)}>
+              <Button color="error" startIcon={<DeleteIcon />} loading={busy} onClick={remove}>
                 {t('txn.delete')}
               </Button>
             )}

@@ -253,6 +253,11 @@ export type HistoryEntry = {
   entries: Entry[] | null
 }
 
+export type DeletedTxn = Pick<Transaction, 'id' | 'type' | 'occurred_on' | 'occurred_time' | 'category_id' | 'payee' | 'entries'> & {
+  deleted_at: string
+  deleted_by: string | null
+}
+
 export type Dashboard = {
   currency: string | null
   rates_source: string | null
