@@ -50,7 +50,7 @@ export function Categories({ book }: { book: Book }) {
   const canEdit = book.role !== 'viewer'
   const budgets = useBudgets(book.id)
   const currencies = useCurrencies()
-  const [budgetFor, setBudgetFor] = useState<Category | null>(null)
+  const [budgetFor, setBudgetFor] = useState<{ category: Category | null } | null>(null)
   const money = (v: number) => formatMoney(v, book.base_currency, currencies.data?.get(book.base_currency)?.minor_unit ?? 0, currentLanguage())
   // The most used running budget of each category, shown under it.
   const shown = new Map<string, NonNullable<ReturnType<typeof running>>>()
@@ -81,6 +81,7 @@ export function Categories({ book }: { book: Book }) {
   return (
     <Stack spacing={2}>
       <PageHeader title={t('cat.title')} bookId={book.id}>
+        <Button onClick={() => setBudgetFor({ category: null })}>{t('budget.forAll')}</Button>
         {canEdit && (
           <Button variant="outlined" startIcon={<AddIcon />} onClick={() => setDialog({ category: null })}>
             {t('cat.add')}
@@ -111,7 +112,7 @@ export function Categories({ book }: { book: Book }) {
                       <ListItemText primary={c.name} secondary={shown.get(c.id) && (
                         <BudgetBar label={t(`budget.periods.${shown.get(c.id)!.period}`)} spent={shown.get(c.id)!.progress!.spent}
                           budget={shown.get(c.id)!.amount} percent={shown.get(c.id)!.progress!.percent_used} color={c.color} format={money}
-                          onClick={() => setBudgetFor(c)} />
+                          onClick={() => setBudgetFor({ category: c })} />
                       )} slotProps={{ secondary: { component: 'div' } }} sx={{ pr: 1 }} />
                       {c.archived_at && <Chip size="small" label={t('cat.archived')} />}
                     </ListItemButton>
@@ -127,14 +128,14 @@ export function Categories({ book }: { book: Book }) {
         <MenuItem onClick={() => { setDialog({ category: menu!.category, editing: true }); setMenu(null) }}>{t('cat.edit')}</MenuItem>
         <MenuItem onClick={() => { setDialog({ category: null, parent: menu!.category }); setMenu(null) }}>{t('cat.addSub')}</MenuItem>
         {menu?.category.kind === 'expense' && (
-          <MenuItem onClick={() => { setBudgetFor(menu.category); setMenu(null) }}>{t('budget.set')}</MenuItem>
+          <MenuItem onClick={() => { setBudgetFor({ category: menu.category }); setMenu(null) }}>{t('budget.set')}</MenuItem>
         )}
         <MenuItem onClick={() => menu && archive(menu.category, !menu.category.archived_at)}>
           {t(menu?.category.archived_at ? 'cat.unarchive' : 'cat.archive')}
         </MenuItem>
         <MenuItem onClick={() => menu && remove(menu.category)} sx={{ color: 'error.main' }}>{t('cat.delete')}</MenuItem>
       </Menu>
-      {budgetFor && <BudgetDialog book={book} category={budgetFor} onClose={() => setBudgetFor(null)} />}
+      {budgetFor && <BudgetDialog book={book} category={budgetFor.category} onClose={() => setBudgetFor(null)} />}
       {dialog && all.data && (
         <CategoryDialog key={dialog.category?.id ?? 'new'} book={book} all={all.data} category={dialog.category && (all.data.find((c) => c.id === dialog.category!.id) ?? dialog.category)} parent={dialog.parent}
           editing={dialog.editing} onTransactions={(c) => navigate(`/books/${book.id}/transactions?category_id=${c.id}`)} onClose={() => setDialog(null)} />

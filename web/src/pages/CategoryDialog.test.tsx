@@ -10,7 +10,7 @@ import { CategoryDialog } from './CategoryDialog'
 const book: Book = { id: 'b1', name: 'Personal', base_currency: 'VND', timezone: 'Asia/Ho_Chi_Minh', role: 'owner', archived_at: null, version: 1 }
 const wants: Category = { id: 'c1', parent_id: null, name: 'Wants', kind: 'expense', color: '#9333ea', archived_at: null, version: 1 }
 const dining: Category = { id: 'c2', parent_id: 'c1', name: 'Dining out', kind: 'expense', color: '#9333ea', archived_at: null, version: 2 }
-const monthly: Budget = { id: 'u1', category_id: 'c2', period: 'monthly', amount: 3_000_000, starts_on: '2026-07-01', ends_on: null, version: 1,
+const monthly: Budget = { id: 'u1', category_id: 'c2', excluded_category_ids: [], period: 'monthly', amount: 3_000_000, starts_on: '2026-07-01', ends_on: null, version: 1,
   progress: { period_start: '2026-10-01', period_end: '2026-10-31', spent: 2_425_000, remaining: 575_000, percent_used: 81, not_converted: 0 } }
 
 function server() {

@@ -398,7 +398,12 @@
     "over": "Vượt {{amount}}",
     "notActive": "Chưa đến hoặc đã qua thời gian áp dụng",
     "subcategoriesCount": "Gồm cả các danh mục con.",
-    "existing": "Ngân sách hiện có"
+    "existing": "Ngân sách hiện có",
+    "allSpending": "Tất cả chi tiêu",
+    "except": "trừ {{names}}",
+    "leaveOut": "Không tính",
+    "allCounts": "Mọi khoản chi đều được tính, dù có danh mục hay không, trừ các danh mục không tính.",
+    "forAll": "Ngân sách cho tất cả chi tiêu"
   },
   "mfa": {
     "title": "Xác minh hai bước",

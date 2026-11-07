@@ -67,7 +67,7 @@ export function Dashboard({ book }: { book: Book }) {
   const chartColors = useChartColors()
   const dash = useDashboard(book.id)
   const categories = useCategories(book.id, true)
-  const [budgetFor, setBudgetFor] = useState<Category | null>(null)
+  const [budgetFor, setBudgetFor] = useState<{ category: Category | null } | null>(null)
   const currencies = useCurrencies()
   const minor = (c: string) => currencies.data?.get(c)?.minor_unit ?? 0
   const money = (amount: number, currency = book.base_currency) => formatMoney(amount, currency, minor(currency), lang)
@@ -222,10 +222,12 @@ export function Dashboard({ book }: { book: Book }) {
       <Stack spacing={2.5} sx={{ pt: 0.5 }}>
         {d.budgets.slice(0, 6).map((b) => {
           const category = categories.data?.find((c) => c.id === b.category_id)
+          const leftOut = b.excluded_category_ids.map((id) => categories.data?.find((c) => c.id === id)?.name).filter(Boolean).join(', ')
+          const name = b.category_id ? b.category : [t('budget.allSpending'), leftOut && t('budget.except', { names: leftOut })].filter(Boolean).join(' ')
           return (
-            <BudgetBar key={b.budget_id} label={`${b.category} · ${t(`budget.periods.${b.period}`)}`} spent={b.spent} budget={b.budget}
-              percent={b.percent_used ?? 0} color={colorOf.get(b.category_id)} format={(v) => money(v)}
-              onClick={category && (() => setBudgetFor(category))} />
+            <BudgetBar key={b.budget_id} label={`${name} · ${t(`budget.periods.${b.period}`)}`} spent={b.spent} budget={b.budget}
+              percent={b.percent_used ?? 0} color={b.category_id ? colorOf.get(b.category_id) : undefined} format={(v) => money(v)}
+              onClick={b.category_id ? category && (() => setBudgetFor({ category })) : () => setBudgetFor({ category: null })} />
           )
         })}
       </Stack>
@@ -283,7 +285,7 @@ export function Dashboard({ book }: { book: Book }) {
           </>
         ) : column(cashflowSection, categoriesSection, recentSection, accountsSection, budgetsSection, peopleSection)}
       </Box>
-      {budgetFor && <BudgetDialog book={book} category={budgetFor} onClose={() => setBudgetFor(null)} />}
+      {budgetFor && <BudgetDialog book={book} category={budgetFor.category} onClose={() => setBudgetFor(null)} />}
       {credit && (
         <Typography variant="caption" color="textDisabled" component="p" sx={{ mt: 4 }}>
           {t('dash.ratesBy')}{' '}

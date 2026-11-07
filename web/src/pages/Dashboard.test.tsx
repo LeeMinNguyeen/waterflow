@@ -108,7 +108,7 @@ describe('colour for meaning (waterflow#143)', () => {
   })
 
   it('draws a budget in its category colour, and red with "over" once past its limit', async () => {
-    const budget = (id: string, category: string, spent: number) => ({ budget_id: id, category_id: 'c1', category, period: 'monthly',
+    const budget = (id: string, category: string, spent: number) => ({ budget_id: id, category_id: 'c1', excluded_category_ids: [], category, period: 'monthly',
       period_start: '2026-10-01', period_end: '2026-10-31', budget: 1_500_000, spent, remaining: 1_500_000 - spent,
       percent_used: Math.round((spent / 1_500_000) * 100), not_converted: 0 })
     dashServer({ budgets: [budget('b1', 'Food & drink', 1_640_000), budget('b2', 'Groceries', 500_000)] },
@@ -122,7 +122,7 @@ describe('colour for meaning (waterflow#143)', () => {
   })
 
   it("opens a budget's dialog from its bar, to change it (waterflow#139)", async () => {
-    dashServer({ budgets: [{ budget_id: 'bu1', category_id: 'c1', category: 'Food & drink', period: 'monthly', period_start: '2026-10-01',
+    dashServer({ budgets: [{ budget_id: 'bu1', category_id: 'c1', excluded_category_ids: [], category: 'Food & drink', period: 'monthly', period_start: '2026-10-01',
       period_end: '2026-10-31', budget: 1_500_000, spent: 600_000, remaining: 900_000, percent_used: 40, not_converted: 0 }] },
     { 'GET /v1/books/b1/categories': [food], 'GET /v1/books/b1/budgets': [] })
     await renderApp(<Dashboard book={book} />)
@@ -183,6 +183,18 @@ describe('two columns that take only the height they need (waterflow#150)', () =
     expect(next('By category')).toHaveRole('separator')
     expect(next('By category')!.nextElementSibling).toBe(screen.getByRole('region', { name: 'Accounts' }))
     expect(next('Spending and income')!.nextElementSibling).toBe(screen.getByRole('region', { name: 'Recent' }))
+  })
+})
+
+describe('the budget for all spending (waterflow#122)', () => {
+  it('comes first, named with what it leaves out, and opens its dialog', async () => {
+    dashServer({ budgets: [{ budget_id: 'bu9', category_id: null, category: null, excluded_category_ids: ['c1'], period: 'monthly',
+      period_start: '2026-11-01', period_end: '2026-11-30', budget: 15_000_000, spent: 600_000, remaining: 14_400_000, percent_used: 4,
+      not_converted: 0 }] }, { 'GET /v1/books/b1/categories': [food], 'GET /v1/books/b1/budgets': [] })
+    await renderApp(<Dashboard book={book} />)
+    const budgets = await cardOf('Budgets')
+    await userEvent.click(await budgets.findByText('All spending except Food & drink · Monthly'))
+    expect(await screen.findByRole('heading', { name: 'Budgets · All spending' })).toBeInTheDocument()
   })
 })
 
