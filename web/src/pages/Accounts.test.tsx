@@ -26,6 +26,9 @@ function server(accounts = all) {
     'GET /v1/currencies': [...currencies, { code: 'KWD', minor_unit: 3, name: 'Kuwaiti dinar' }],
     'GET /v1/books/b1/accounts': accounts,
     'GET /v1/books/b1/contacts': [],
+    'GET /v1/books/b1/dashboard': { currency: 'VND', rates_source: null, net_worth: -13_694_832, net_worth_missing_rates: 1,
+      assets: 4_307_836, debts: 18_002_668, spent_this_month: 0, spent_last_month: 0, income_this_month: 0, cashflow_6_months: [],
+      top_categories_this_month: [], budgets: [], accounts: [], people: [], recent_transactions: [] },
     'PUT /v1/books/b1/accounts/cash/pin': undefined,
     'DELETE /v1/books/b1/accounts/mom/pin': undefined,
   })
@@ -56,6 +59,15 @@ describe('Accounts grouped by kind (waterflow#64)', () => {
     expect(within(rows.find((r) => r.dataset.group === 'loan')!).getByText('−₫18,002,668')).toHaveStyle({ color: '#C9372C' })
     expect(within(rows.find((r) => r.textContent?.includes('Nợ mẹ'))!).getByText('−₫10,000,000')).toHaveStyle({ color: '#C9372C' })
     expect(within(rows.find((r) => r.textContent?.includes('Lent to Lan'))!).getByText('₫100,000')).toHaveStyle({ color: '#18181B' })
+  })
+
+  it('shows net worth, assets and debts at the top, as the Overview counts them (waterflow#138)', async () => {
+    server()
+    await renderApp(<Accounts book={book} />)
+    const top = await screen.findByRole('region', { name: 'Net worth' })
+    expect(top).toHaveTextContent('Net worth−₫13,694,832')
+    expect(top).toHaveTextContent('Assets₫4,307,836')
+    expect(top).toHaveTextContent('Debts₫18,002,668')
   })
 
   it('folds a group when its header is clicked', async () => {

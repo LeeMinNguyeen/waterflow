@@ -21,7 +21,14 @@ def dashboard(db: Session, book_id: UUID, today: date | None = None) -> dict:
     def rows(sql: str):
         return [dict(r) for r in db.execute(text(sql), p).mappings()]
 
-    nw = db.execute(text("select base_currency, net_worth, missing_rates from book_net_worth where book_id = :b"), p).mappings().first()
+    # One statement, so assets − debts = net worth even while a transaction commits in between.
+    nw = db.execute(text(
+        "select b.base_currency, coalesce(sum(bc.converted_balance), 0)::bigint as net_worth,"
+        "       count(bc.account_id) filter (where bc.converted_balance is null) as missing_rates,"
+        "       coalesce(sum(bc.converted_balance) filter (where bc.converted_balance > 0), 0)::bigint as assets,"
+        "       coalesce(-sum(bc.converted_balance) filter (where bc.converted_balance < 0), 0)::bigint as debts"
+        "  from books b left join book_balances_converted bc on bc.book_id = b.id and bc.in_net_worth"
+        " where b.id = :b group by b.base_currency"), p).mappings().first()
     cashflow = rows("select month, spent, income, not_converted from book_monthly_cashflow"
                     " where book_id = :b and month between :six and :this order by month")
     by_month = {r["month"]: r for r in cashflow}
@@ -31,6 +38,8 @@ def dashboard(db: Session, book_id: UUID, today: date | None = None) -> dict:
                         if nw else None,
         "net_worth": nw["net_worth"] if nw else 0,
         "net_worth_missing_rates": nw["missing_rates"] if nw else 0,
+        "assets": nw["assets"] if nw else 0,
+        "debts": nw["debts"] if nw else 0,
         "spent_this_month": by_month.get(this_month, {}).get("spent", 0),
         "spent_last_month": by_month.get(last_month, {}).get("spent", 0),
         "income_this_month": by_month.get(this_month, {}).get("income", 0),

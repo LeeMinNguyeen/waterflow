@@ -9,7 +9,7 @@ import { Dashboard } from './Dashboard'
 
 const book: Book = { id: 'b1', name: 'Personal', base_currency: 'VND', timezone: 'Asia/Ho_Chi_Minh', role: 'owner', archived_at: null, version: 1 }
 export const emptyDash: Dash = {
-  currency: 'VND', rates_source: null, net_worth: 0, net_worth_missing_rates: 0, spent_this_month: 0, spent_last_month: 0,
+  currency: 'VND', rates_source: null, net_worth: 0, net_worth_missing_rates: 0, assets: 0, debts: 0, spent_this_month: 0, spent_last_month: 0,
   income_this_month: 0, cashflow_6_months: [], top_categories_this_month: [], budgets: [], accounts: [], people: [], recent_transactions: [],
 }
 
@@ -183,6 +183,21 @@ describe('two columns that take only the height they need (waterflow#150)', () =
     expect(next('By category')).toHaveRole('separator')
     expect(next('By category')!.nextElementSibling).toBe(screen.getByRole('region', { name: 'Accounts' }))
     expect(next('Spending and income')!.nextElementSibling).toBe(screen.getByRole('region', { name: 'Recent' }))
+  })
+})
+
+describe('assets and debts (waterflow#138)', () => {
+  it('shows them under net worth in small text, the debts without a minus', async () => {
+    dashServer({ net_worth: 249_752_750, assets: 256_602_750, debts: 6_850_000 })
+    await renderApp(<Dashboard book={book} />)
+    const line = await screen.findByText((_, el) => el?.tagName === 'P' && /^Assets/.test(el.textContent ?? ''))
+    expect(line).toHaveTextContent('Assets ₫256,602,750 · Debts ₫6,850,000')
+  })
+
+  it('keeps the note about accounts without a rate', async () => {
+    dashServer({ net_worth: 100, assets: 100, debts: 0, net_worth_missing_rates: 1 })
+    await renderApp(<Dashboard book={book} />)
+    expect(await screen.findByText("1 account has no exchange rate yet, so it isn't counted.")).toBeInTheDocument()
   })
 })
 

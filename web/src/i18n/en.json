@@ -348,6 +348,8 @@
   "dash": {
     "title": "Overview",
     "netWorth": "Net worth",
+    "assets": "Assets",
+    "debts": "Debts",
     "spentThisMonth": "Spent this month",
     "incomeThisMonth": "Income this month",
     "vsLastMonth": "Last month {{amount}}",

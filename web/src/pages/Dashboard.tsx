@@ -18,6 +18,7 @@ import { CashflowChart } from '../components/charts/CashflowChart'
 import { useChartColors } from '../components/charts/palette'
 import { useErrorText } from '../components/errors'
 import { Money } from '../components/Money'
+import { Stat } from '../components/Stat'
 import { PageHeader, Section, SeeAll } from '../components/Page'
 import { useOpenTxn } from '../components/txnContext'
 import { currentLanguage } from '../i18n'
@@ -31,19 +32,6 @@ import { BudgetDialog } from './BudgetDialog'
 // Credits some rate sources ask for (backend/app/jobs/fx_update.py); a proper name, not translated.
 const RATE_CREDITS: Record<string, { label: string; href: string }> = {
   'open.er-api.com': { label: 'Rates By Exchange Rate API', href: 'https://www.exchangerate-api.com' },
-}
-
-function Stat({ label, value, note, big = false }: { label: string; value: ReactNode; note?: ReactNode; big?: boolean }) {
-  return (
-    <Box sx={{ minWidth: 0 }}>
-      <Typography variant="body2" color="textSecondary">{label}</Typography>
-      <Typography variant={big ? 'display' : 'h1'} component="p"
-        sx={{ mt: 0.75, fontVariantNumeric: 'tabular-nums', ...(!big && { fontSize: { xs: 18, md: 24 }, lineHeight: { xs: '24px', md: '32px' } }) }}>
-        {value}
-      </Typography>
-      {note && <Typography variant="caption" color="textDisabled" component="p" sx={{ mt: 0.5 }}>{note}</Typography>}
-    </Box>
-  )
 }
 
 const rowSx = {
@@ -276,9 +264,13 @@ export function Dashboard({ book }: { book: Book }) {
         rowGap: 2.5, mt: { xs: 0, md: 3.5 }, pb: { xs: 2.5, md: 4 }, borderBottom: 1, borderColor: 'divider' }}>
         <Box sx={{ gridColumn: { xs: '1 / -1', md: 'auto' } }}>
           <Stat big label={t('dash.netWorth')} value={<Money amount={d.net_worth} currency={book.base_currency} kind="balance" />}
-            note={d.net_worth_missing_rates ? t('dash.missingRates', { count: d.net_worth_missing_rates }) : undefined} />
+            notes={[
+              <>{t('dash.assets')} <Money amount={d.assets} currency={book.base_currency} kind="balance" quiet /> · {t('dash.debts')}{' '}
+                <Money amount={d.debts} currency={book.base_currency} kind="balance" quiet /></>,
+              d.net_worth_missing_rates ? t('dash.missingRates', { count: d.net_worth_missing_rates }) : null,
+            ]} />
         </Box>
-        <Stat label={t('dash.spentThisMonth')} value={money(d.spent_this_month)} note={t('dash.vsLastMonth', { amount: money(d.spent_last_month) })} />
+        <Stat label={t('dash.spentThisMonth')} value={money(d.spent_this_month)} notes={[t('dash.vsLastMonth', { amount: money(d.spent_last_month) })]} />
         <Stat label={t('dash.incomeThisMonth')} value={money(d.income_this_month)} />
       </Box>
 

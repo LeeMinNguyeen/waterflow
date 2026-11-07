@@ -928,6 +928,47 @@ def test_transactions_and_two_browsers(client):
     assert client.get(f"{base}/{tid}/history", headers=auth(stranger)).json() == {"detail": "not_found"}
 
 
+def test_assets_and_debts_add_up_to_net_worth(client, database):
+    """By balance, not by kind: an overdrawn account is a debt; a debt is a positive number; no rate, in neither."""
+    from datetime import date as d
+    today = d.today()
+    with database.connect() as c:
+        c.execute(text("insert into fx_rates (quote, as_of, rate, source) values ('VND', :t, 26000, 't')"
+                       " on conflict (quote, as_of) do update set rate = excluded.rate"), {"t": today})
+    u = signed_up(client)
+    bid = str(uuid.uuid4())
+    client.post("/v1/books", headers=auth(u), json={"id": bid, "name": "B", "base_currency": "VND", "timezone": "UTC",
+                                                    "starter_categories": False})
+
+    def acct(name, kind, ccy, amount, **kw):
+        r = client.post(f"/v1/books/{bid}/accounts", headers=auth(u), json={
+            "id": str(uuid.uuid4()), "name": name, "kind": kind, "currency": ccy, "opening_balance": amount,
+            "opened_on": today.isoformat(), **kw})
+        assert r.status_code == 201, r.text
+        return r.json()["id"]
+
+    cash = acct("Ví", "cash", "VND", 1_000_000)
+    acct("US bank", "checking", "USD", 10_000)                       # $100.00 = 2.600.000 ₫
+    acct("Visa", "credit_card", "VND", -2_000_000)
+    acct("Home loan", "loan", "VND", -5_000_000)
+    acct("Overdrawn", "checking", "VND", -300_000)
+    acct("Held for Mom", "cash", "VND", 3_000_000, in_net_worth=False)
+    acct("Kuwait", "checking", "KWD", 5_000)                         # no rate
+    acct("Kuwait loan", "loan", "KWD", -5_000)
+    minh = client.post(f"/v1/books/{bid}/contacts", headers=auth(u), json={"id": str(uuid.uuid4()), "name": "Minh"}).json()
+    client.post(f"/v1/books/{bid}/transactions", headers=auth(u), json={
+        "id": str(uuid.uuid4()), "type": "transfer", "occurred_on": today.isoformat(),
+        "entries": [{"account_id": cash, "amount": -400_000}, {"account_id": minh["id"], "amount": 400_000}]})
+
+    dash = client.get(f"/v1/books/{bid}/dashboard", headers=auth(u)).json()
+    assert (dash["assets"], dash["debts"]) == (600_000 + 2_600_000 + 400_000, 2_000_000 + 5_000_000 + 300_000)
+    assert dash["assets"] - dash["debts"] == dash["net_worth"]
+    assert dash["net_worth_missing_rates"] == 2
+
+    other = signed_up(client)
+    assert client.get(f"/v1/books/{bid}/dashboard", headers=auth(other)).json() == {"detail": "not_found"}
+
+
 def test_dashboard_converts_at_todays_rate(client, database):
     from datetime import date as d
     today = d.today()
