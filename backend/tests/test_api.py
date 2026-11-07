@@ -1260,6 +1260,16 @@ def test_a_budget_for_all_spending(client):
                                                        "amount": 1, "excluded_category_ids": [rent["id"]]})
     assert (on_food.status_code, on_food.json()) == (422, {"detail": "invalid"})
 
+    spare = add_category(client, u, bid, "Spare")
+    twice = client.patch(f"{base}/{b['id']}", headers=auth(u), json={"version": 3, "excluded_category_ids": [food["id"], spare["id"], spare["id"]]}).json()
+    assert twice["excluded_category_ids"] == [food["id"], spare["id"]]
+    client.delete(f"/v1/books/{bid}/categories/{spare['id']}?version=1", headers=auth(u))   # unused: deleted, not archived
+    after = client.patch(f"{base}/{b['id']}", headers=auth(u), json={"version": 5, "amount": 16_000_000})
+    assert after.status_code == 200, after.text
+    assert after.json()["excluded_category_ids"] == [food["id"]]
+    too_many = client.patch(f"{base}/{b['id']}", headers=auth(u), json={"version": 6, "excluded_category_ids": [str(uuid.uuid4())] * 201})
+    assert too_many.status_code == 422
+
     cat = next(c for c in client.get(f"/v1/books/{bid}/categories", headers=auth(u)).json() if c["id"] == food["id"])
     client.patch(f"/v1/books/{bid}/categories/{food['id']}", headers=auth(u), json={"version": cat["version"], "archived": True})
     assert progress()["progress"]["spent"] == 5_030_000
@@ -1267,7 +1277,7 @@ def test_a_budget_for_all_spending(client):
     rows = zipfile.ZipFile(io.BytesIO(client.get("/v1/me/export", headers=auth(u)).content)).read("budgets.csv")
     rows = rows.decode("utf-8-sig").splitlines()
     assert rows[0] == "Book,Category,Left out,Period,Amount,Currency,Starts,Ends"
-    assert any(row.startswith("B,All spending,Food,monthly,15000000,VND,") for row in rows), rows
+    assert any(row.startswith("B,All spending,Food,monthly,16000000,VND,") for row in rows), rows
 
     viewer_name = f"v_{uuid.uuid4().hex[:8]}"
     viewer = signed_up(client, viewer_name)

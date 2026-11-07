@@ -94,7 +94,7 @@ export function Categories({ book }: { book: Book }) {
       <Box sx={{ display: 'grid', columnGap: 5, rowGap: 3, gridTemplateColumns: { xs: '1fr', md: 'repeat(3, minmax(0, 1fr))' }, alignItems: 'start' }}>
         {KINDS.map((kind) => {
           const rows = categoryTree(categories.data ?? [], kind)
-          if (!rows.length) return null
+          if (!rows.length && !(kind === 'expense' && (canEdit || allSpending))) return null
           return (
             <Paper key={kind} variant="outlined">
               <List disablePadding subheader={<ListSubheader disableSticky sx={{ px: 0, typography: 'h2', lineHeight: '40px', color: 'text.primary', bgcolor: 'transparent',

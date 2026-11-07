@@ -16,9 +16,17 @@ describe('the budget for all spending on Categories (waterflow#122)', () => {
   it('comes first among expenses, with its bar, and opens its budgets', async () => {
     fakeApi({ 'GET /v1/currencies': currencies, 'GET /v1/books/b1/categories': [food], 'GET /v1/books/b1/budgets': [all] })
     await renderApp(<Categories book={book} />)
-    const rows = await screen.findAllByRole('button', { name: /All spending|Food/ })
-    expect(rows[0]).toHaveTextContent('All spendingMonthly₫600,000 of ₫15,000,000')
-    await userEvent.click(rows[0])
+    const row = await screen.findByRole('button', { name: /^All spending Monthly/ })
+    expect(row).toHaveTextContent('All spendingMonthly₫600,000 of ₫15,000,000')
+    expect(screen.getAllByRole('button', { name: /All spending|Food/ })[0]).toBe(row)
+    await userEvent.click(row)
+    expect(await screen.findByRole('heading', { name: 'Budgets · All spending' })).toBeInTheDocument()
+  })
+
+  it('is there in a book with no categories at all', async () => {
+    fakeApi({ 'GET /v1/currencies': currencies, 'GET /v1/books/b1/categories': [], 'GET /v1/books/b1/budgets': [] })
+    await renderApp(<Categories book={book} />)
+    await userEvent.click(await screen.findByRole('button', { name: 'All spending Set budget' }))
     expect(await screen.findByRole('heading', { name: 'Budgets · All spending' })).toBeInTheDocument()
   })
 

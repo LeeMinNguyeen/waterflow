@@ -243,7 +243,7 @@ def build_export(db: Session) -> bytes:
         select b.name as book, c.name as category, bu.period::text as period, bu.amount, b.base_currency,
                cur.minor_unit, bu.starts_on, bu.ends_on,
                (select string_agg(x.name, ', ' order by x.name) from categories x
-                 where x.id = any (bu.excluded_category_ids)) as left_out
+                 where x.book_id = bu.book_id and x.id = any (bu.excluded_category_ids)) as left_out
           from budgets bu join books b on b.id = bu.book_id left join categories c on c.id = bu.category_id
           join currencies cur on cur.code = b.base_currency order by 1, c.name nulls first""")
     out("budgets.csv", [{

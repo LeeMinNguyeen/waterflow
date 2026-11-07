@@ -4,12 +4,18 @@ alter table budgets alter column category_id drop not null;
 alter table budgets add column if not exists excluded_category_ids uuid[] not null default '{}';
 create unique index if not exists budgets_all_spending_period on budgets (book_id, period) where category_id is null;
 
+-- Only what a statement adds is checked: one left out earlier and since changed doesn't lock the budget.
 create or replace function budget_exclusions_valid() returns trigger
 language plpgsql set search_path = pg_catalog, public, pg_temp as $$
+declare
+  added uuid[] := new.excluded_category_ids;
 begin
-  if cardinality(new.excluded_category_ids) > 0 and (new.category_id is not null or exists (
-       select 1 from unnest(new.excluded_category_ids) x
-        where not exists (select 1 from categories c where c.id = x and c.book_id = new.book_id and c.kind = 'expense'))) then
+  if tg_op = 'UPDATE' then
+    added := array(select x from unnest(new.excluded_category_ids) x where x <> all (old.excluded_category_ids));
+  end if;
+  if cardinality(new.excluded_category_ids) > 0 and new.category_id is not null or exists (
+       select 1 from unnest(added) x
+        where not exists (select 1 from categories c where c.id = x and c.book_id = new.book_id and c.kind = 'expense')) then
     raise exception using errcode = 'check_violation',
       message = 'budget_exclusions: only a budget for all spending leaves out categories, and only its own book''s expense ones';
   end if;
@@ -19,6 +25,19 @@ drop trigger if exists budgets_exclusions_valid on budgets;
 create trigger budgets_exclusions_valid before insert or update of category_id, excluded_category_ids on budgets
   for each row execute function budget_exclusions_valid();
 grant execute on function budget_exclusions_valid() to app_user;
+
+create or replace function category_leaves_budgets() returns trigger
+language plpgsql set search_path = pg_catalog, public, pg_temp as $$
+begin
+  if not exists (select 1 from books where id = old.book_id) then return null; end if;   -- the whole book goes
+  update budgets set excluded_category_ids = array_remove(excluded_category_ids, old.id)
+   where book_id = old.book_id and old.id = any (excluded_category_ids);
+  return null;
+end $$;
+drop trigger if exists categories_leave_budgets on categories;
+create trigger categories_leave_budgets after delete on categories
+  for each row execute function category_leaves_budgets();
+grant execute on function category_leaves_budgets() to app_user;
 
 create or replace view budget_progress with (security_invoker = true) as
 with b as (

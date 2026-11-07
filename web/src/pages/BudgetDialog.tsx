@@ -41,8 +41,9 @@ export function BudgetDialog({ book, category, onClose }: { book: Book; category
   const currencies = useCurrencies()
   const minor = currencies.data?.get(book.base_currency)?.minor_unit ?? 0
   const money = (v: number) => formatMoney(v, book.base_currency, minor, lang)
-  const categories = useCategories(book.id)
-  const expenses = (categories.data ?? []).filter((c) => c.kind === 'expense' && !c.archived_at)
+  const categories = useCategories(book.id, true)
+  // An archived one stays on offer while it's left out, so it can be put back.
+  const expenses = (cats: string[]) => (categories.data ?? []).filter((c) => c.kind === 'expense' && (!c.archived_at || cats.includes(c.id)))
   const nameOf = new Map((categories.data ?? []).map((c) => [c.id, c.name]))
   const mine = (budgets.data ?? []).filter((b) => b.category_id === (category?.id ?? null))
   const [leftOut, setLeftOut] = useState<string[]>([])
@@ -51,7 +52,7 @@ export function BudgetDialog({ book, category, onClose }: { book: Book; category
   const leaveOut = (value: string[], onChange: (ids: string[]) => void) => (
     <TextField select label={t('budget.leaveOut')} value={value} onChange={(e) => onChange(e.target.value as unknown as string[])}
       slotProps={{ select: { multiple: true, renderValue: (ids) => (ids as string[]).map((id) => nameOf.get(id)).join(', ') } }}>
-      {expenses.map((c) => <MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>)}
+      {expenses(value).map((c) => <MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>)}
     </TextField>
   )
   const free = budgetPeriods.filter((p) => !mine.some((b) => b.period === p))
