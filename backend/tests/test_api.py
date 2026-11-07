@@ -657,7 +657,7 @@ def test_two_moves_at_the_same_moment_make_no_cycle(client, database):
 
 
 def test_transaction_filters_by_amount_and_no_category_with_a_summary(client, database):
-    """R-TXN-9: amount from and to, in each entry's own currency (a transfer by what left); no category; the
+    """R-TXN-10: amount from and to, in each entry's own currency (a transfer by what left); no category; the
     filtered list's count, spending, income and difference in the book's currency, missing rates counted."""
     u = signed_up(client)
     bid, accts = new_book_with_accounts(client, u)
