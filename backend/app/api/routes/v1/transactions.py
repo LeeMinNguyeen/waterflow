@@ -216,6 +216,46 @@ def usual(book_id: UUID, type: Literal["expense", "income"], db: Session = Depen
     return [Usual(**r) for r in db.execute(text(USUAL), {"b": book_id, "ty": type}).mappings()]
 
 
+class Deleted(BaseModel):
+    id: UUID
+    type: Type
+    occurred_on: date
+    occurred_time: time | None
+    category_id: UUID | None
+    payee: str | None
+    entries: list[Entry]                       # as last saved
+    deleted_at: datetime
+    deleted_by: str | None
+
+
+@router.get("/deleted")
+def deleted(book_id: UUID, db: Session = Depends(get_db)) -> list[Deleted]:
+    """Deleted in the last 30 days and not brought back, the latest deleted first."""
+    get_book(db, book_id)
+    rows = db.execute(text("""
+select distinct on (h.transaction_id) h.transaction_id as id, h.changed_at as deleted_at,
+       (select p.name from book_people p where p.book_id = h.book_id and p.user_id = h.changed_by) as deleted_by, s.snapshot
+  from transaction_history h
+  join lateral (select x.snapshot from transaction_history x where x.transaction_id = h.transaction_id and x.action <> 'deleted'
+                 order by x.version desc, x.id desc limit 1) s on true
+ where h.book_id = :b and h.action = 'deleted' and h.changed_at > now() - interval '30 days'
+   and not exists (select 1 from transactions t where t.id = h.transaction_id)
+ order by h.transaction_id, h.version desc, h.id desc"""), {"b": book_id}).mappings().all()
+    out = [Deleted(id=r["id"], deleted_at=r["deleted_at"], deleted_by=r["deleted_by"], type=r["snapshot"]["type"],
+                   occurred_on=r["snapshot"]["occurred_on"], occurred_time=r["snapshot"].get("occurred_time"),
+                   category_id=r["snapshot"].get("category_id"), payee=r["snapshot"].get("payee"),
+                   entries=r["snapshot"].get("entries") or []) for r in rows]
+    return sorted(out, key=lambda d: d.deleted_at, reverse=True)
+
+
+@router.post("/{txn_id}/restore")
+def restore(book_id: UUID, txn_id: UUID, db: Session = Depends(get_db)) -> Transaction:
+    require_role(get_book(db, book_id), "owner", "editor")
+    db.execute(text("select restore_transaction(:b, :t)"), {"b": book_id, "t": txn_id})
+    db.commit()
+    return get_transaction(db, book_id, txn_id)
+
+
 @router.get("/{txn_id}")
 def read(book_id: UUID, txn_id: UUID, db: Session = Depends(get_db)) -> Transaction:
     get_book(db, book_id)
@@ -253,7 +293,7 @@ def delete(book_id: UUID, txn_id: UUID, version: int, db: Session = Depends(get_
 
 class HistoryEntry(BaseModel):
     version: int
-    action: Literal["created", "edited", "deleted"]
+    action: Literal["created", "edited", "deleted", "restored"]
     changed_at: datetime
     changed_by: str | None                     # username, or "Deleted user"
     type: Type
