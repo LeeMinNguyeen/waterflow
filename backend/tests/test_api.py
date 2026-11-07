@@ -1205,7 +1205,7 @@ def test_budgets(client):
 
 
 def test_a_budget_for_all_spending(client):
-    """R-BUD-5: a budget with no category counts every expense and refund in the book, with or without a category,
+    """R-BUD-3: a budget with no category counts every expense and refund in the book, with or without a category,
     except the categories left out (with their sub-categories); one per period; archiving a category doesn't hide it."""
     import io
     import zipfile
