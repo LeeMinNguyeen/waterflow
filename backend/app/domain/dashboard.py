@@ -22,6 +22,10 @@ def dashboard(db: Session, book_id: UUID, today: date | None = None) -> dict:
         return [dict(r) for r in db.execute(text(sql), p).mappings()]
 
     nw = db.execute(text("select base_currency, net_worth, missing_rates from book_net_worth where book_id = :b"), p).mappings().first()
+    split = db.execute(text(
+        "select coalesce(sum(converted_balance) filter (where converted_balance > 0), 0)::bigint as assets,"
+        "       coalesce(-sum(converted_balance) filter (where converted_balance < 0), 0)::bigint as debts"
+        "  from book_balances_converted where book_id = :b and in_net_worth"), p).mappings().first()
     cashflow = rows("select month, spent, income, not_converted from book_monthly_cashflow"
                     " where book_id = :b and month between :six and :this order by month")
     by_month = {r["month"]: r for r in cashflow}
@@ -31,6 +35,8 @@ def dashboard(db: Session, book_id: UUID, today: date | None = None) -> dict:
                         if nw else None,
         "net_worth": nw["net_worth"] if nw else 0,
         "net_worth_missing_rates": nw["missing_rates"] if nw else 0,
+        "assets": split["assets"],
+        "debts": split["debts"],
         "spent_this_month": by_month.get(this_month, {}).get("spent", 0),
         "spent_last_month": by_month.get(last_month, {}).get("spent", 0),
         "income_this_month": by_month.get(this_month, {}).get("income", 0),

@@ -78,6 +78,8 @@ class Dashboard(BaseModel):
     rates_source: str | None             # e.g. open.er-api.com, whose terms ask for a visible credit
     net_worth: int
     net_worth_missing_rates: int
+    assets: int
+    debts: int                           # positive: what the accounts below zero owe
     spent_this_month: int
     spent_last_month: int
     income_this_month: int

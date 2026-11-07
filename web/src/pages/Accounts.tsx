@@ -32,10 +32,11 @@ import { useErrorText } from '../components/errors'
 import { send, type Account, type AccountKind, type Book } from '../lib/api'
 import { groupByKind, type AccountGroup } from '../lib/accounts'
 import { currencyLabel } from '../lib/labels'
-import { useAccounts, useCurrencies } from '../lib/queries'
+import { useAccounts, useCurrencies, useDashboard } from '../lib/queries'
 import { AccountDialog } from './AccountDialog'
 import { Money } from '../components/Money'
 import { PageHeader } from '../components/Page'
+import { Stat } from '../components/Stat'
 
 // A table on desktop, a list on phones. An account opens its details, which
 // lead to its transactions.
@@ -46,6 +47,7 @@ export function Accounts({ book }: { book: Book }) {
   const [showArchived, setShowArchived] = useState(false)
   const accounts = useAccounts(book.id, showArchived)
   const currencies = useCurrencies()
+  const dash = useDashboard(book.id).data
   const [dialog, setDialog] = useState<{ account: Account | null; editing: boolean } | null>(null)
   const [menu, setMenu] = useState<{ el: HTMLElement | null; id: string } | null>(null)
   const [error, setError] = useState<unknown>(null)
@@ -129,6 +131,17 @@ export function Accounts({ book }: { book: Book }) {
       {error ? <Alert severity="error" sx={{ mt: 2 }}>{errorText(error)}</Alert> : null}
       {accounts.isError && !accounts.data ? <Alert severity="error" sx={{ mt: 2 }}>{errorText(accounts.error)}</Alert> : null}
       {mine?.length === 0 && <Typography color="textSecondary" sx={{ mt: 3 }}>{t('accounts.empty')}</Typography>}
+      {dash && mine && mine.length > 0 && (
+        <Box component="section" aria-label={t('dash.netWorth')} sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr 1fr', md: 'auto auto auto' },
+          justifyContent: { md: 'start' }, columnGap: { xs: 2, md: 8 }, rowGap: 2, mt: { xs: 1, md: 3 }, pb: { xs: 2, md: 3 }, borderBottom: 1, borderColor: 'divider' }}>
+          <Box sx={{ gridColumn: { xs: '1 / -1', md: 'auto' } }}>
+            <Stat label={t('dash.netWorth')} value={<Money amount={dash.net_worth} currency={book.base_currency} kind="balance" />}
+              notes={[dash.net_worth_missing_rates ? t('dash.missingRates', { count: dash.net_worth_missing_rates }) : null]} />
+          </Box>
+          <Stat label={t('dash.assets')} value={<Money amount={dash.assets} currency={book.base_currency} kind="balance" />} />
+          <Stat label={t('dash.debts')} value={<Money amount={dash.debts} currency={book.base_currency} kind="balance" />} />
+        </Box>
+      )}
       {desktop && mine && mine.length > 0 && (
         <Table sx={{ mt: 1, '& td': { borderColor: 'divider' } }}>
           <TableBody>

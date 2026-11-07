@@ -348,6 +348,8 @@
   "dash": {
     "title": "Tổng quan",
     "netWorth": "Tài sản ròng",
+    "assets": "Tài sản",
+    "debts": "Nợ",
     "spentThisMonth": "Chi tiêu tháng này",
     "incomeThisMonth": "Thu nhập tháng này",
     "vsLastMonth": "Tháng trước {{amount}}",

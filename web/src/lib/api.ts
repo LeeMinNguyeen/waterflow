@@ -258,6 +258,8 @@ export type Dashboard = {
   rates_source: string | null
   net_worth: number
   net_worth_missing_rates: number
+  assets: number
+  debts: number
   spent_this_month: number
   spent_last_month: number
   income_this_month: number
