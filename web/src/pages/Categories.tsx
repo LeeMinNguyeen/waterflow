@@ -70,6 +70,7 @@ export function Categories({ book }: { book: Book }) {
       setNotice({ error: err })
     }
     await qc.invalidateQueries({ queryKey: ['books', book.id, 'categories'] })
+    await qc.invalidateQueries({ queryKey: ['books', book.id, 'budgets'] })
   }
   const archive = (c: Category, archived: boolean) =>
     act(() => send('PATCH', `/v1/books/${book.id}/categories/${c.id}`, { version: c.version, archived }))

@@ -42,8 +42,8 @@ export function BudgetDialog({ book, category, onClose }: { book: Book; category
   const minor = currencies.data?.get(book.base_currency)?.minor_unit ?? 0
   const money = (v: number) => formatMoney(v, book.base_currency, minor, lang)
   const categories = useCategories(book.id, true)
-  // An archived one stays on offer while it's left out, so it can be put back.
-  const expenses = (cats: string[]) => (categories.data ?? []).filter((c) => c.kind === 'expense' && (!c.archived_at || cats.includes(c.id)))
+  // One left out stays on offer, archived or no longer an expense, so it can be put back.
+  const expenses = (cats: string[]) => (categories.data ?? []).filter((c) => (c.kind === 'expense' && !c.archived_at) || cats.includes(c.id))
   const nameOf = new Map((categories.data ?? []).map((c) => [c.id, c.name]))
   const mine = (budgets.data ?? []).filter((b) => b.category_id === (category?.id ?? null))
   const [leftOut, setLeftOut] = useState<string[]>([])
