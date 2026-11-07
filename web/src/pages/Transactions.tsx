@@ -150,7 +150,7 @@ export function Transactions({ book }: { book: Book }) {
   return (
     <Box>
       <PageHeader title={filteredAccount ? `${t('txn.title')} · ${filteredAccount.name}` : t('txn.title')} bookId={book.id}>
-        <IconButton aria-label={t('nav.more')} onClick={(e) => setPageMenu(e.currentTarget)}><MoreVertIcon /></IconButton>
+        <IconButton aria-label={t('txn.moreActions')} onClick={(e) => setPageMenu(e.currentTarget)}><MoreVertIcon /></IconButton>
       </PageHeader>
       <Menu anchorEl={pageMenu} open={!!pageMenu} onClose={() => setPageMenu(null)}>
         <MenuItem onClick={() => { setPageMenu(null); setShowDeleted(true) }}>{t('txn.recentlyDeleted')}</MenuItem>

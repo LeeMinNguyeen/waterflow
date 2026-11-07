@@ -202,7 +202,7 @@ describe('recently deleted (waterflow#119)', () => {
   it("lists the book's recently deleted transactions from the page's menu, each with Restore", async () => {
     const api = deletedServer()
     await renderApp(<Transactions book={book} />)
-    await userEvent.click(await screen.findByRole('button', { name: 'More' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'More actions' }))
     await userEvent.click(screen.getByRole('menuitem', { name: 'Recently deleted' }))
     const list = await screen.findByRole('dialog', { name: 'Recently deleted' })
     const row = await within(list).findByText('Bánh mì')
@@ -215,7 +215,7 @@ describe('recently deleted (waterflow#119)', () => {
   it('shows a viewer the list without Restore', async () => {
     deletedServer()
     await renderApp(<Transactions book={{ ...book, role: 'viewer' }} />)
-    await userEvent.click(await screen.findByRole('button', { name: 'More' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'More actions' }))
     await userEvent.click(screen.getByRole('menuitem', { name: 'Recently deleted' }))
     const list = await screen.findByRole('dialog', { name: 'Recently deleted' })
     await within(list).findByText('Bánh mì')
