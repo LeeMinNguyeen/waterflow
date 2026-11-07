@@ -27,7 +27,7 @@ scripts/move-to-waterflow.sh  once, on a compose server from before the rename (
 backend/             see backend/CLAUDE.md
 web/                 see web/CLAUDE.md
 .github/workflows/   ci.yml (backend tests, web lint/test/build, image build), release.yml (run by hand on main: tag and GitHub release)
-.github/CODEOWNERS   the high-risk paths, which need the project owner's approval (Risk and review)
+.github/CODEOWNERS   the high-risk paths (Risk and review)
 ```
 
 ## Commands
@@ -61,7 +61,10 @@ A change's risk is set by what it touches, not by who wrote it.
 |---|---|---|
 | Low | Docs, string files, tests only, styling with no logic change, CLAUDE.md files | CI passes |
 | Medium | Everything else: features and fixes in `web/` and the API routes | CI passes, and `/code-review` at `low` in a fresh context with every Important finding fixed or answered in the PR |
-| High | The paths in `.github/CODEOWNERS` (migrations, sign-in, sessions, two-step codes, invites and resets, money parsing, backup, restore, purge and account deletion, updates, the image, compose and CI); anything else that changes how money is stored, signed or summed; a change to an existing `/v1` route | `/code-review` at `high` and `/security-review`, each in a fresh context; the PR says how to revert it; the project owner approves |
+| High | The paths in `.github/CODEOWNERS` (migrations, sign-in, sessions, two-step codes, invites and resets, money parsing, backup, restore, purge and account deletion, updates, the image, compose and CI); anything else that changes how money is stored, signed or summed; a change to an existing `/v1` route | `/code-review` at `high` and `/security-review`, each in a fresh context; the PR says how to revert it |
+
+No PR needs the project owner's approval to merge into `dev`. The release PR (`dev` into `main`) lists the high-risk
+PRs it carries, for the project owner to read before merging; only the project owner merges into `main`.
 
 Keep a PR under about 400 changed lines, tests not counted: split bigger work by layer into PRs merged one after
 another, never stacked.
