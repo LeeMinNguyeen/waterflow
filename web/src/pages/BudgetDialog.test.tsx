@@ -136,7 +136,8 @@ describe('a budget for all spending (waterflow#122)', () => {
       'GET /v1/books/b1/categories': [food, rent],
     })
     await renderApp(<BudgetDialog book={book} category={null} onClose={() => {}} />)
-    expect(await screen.findByText('Monthly · except Rent')).toBeInTheDocument()
+    expect(await screen.findByText('Monthly')).toBeInTheDocument()
+    expect(await screen.findByText('except Rent')).toBeInTheDocument()
     expect(screen.queryByText(/^Weekly/)).toBeNull()
   })
 })

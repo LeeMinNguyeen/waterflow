@@ -402,8 +402,7 @@
     "allSpending": "Tất cả chi tiêu",
     "except": "trừ {{names}}",
     "leaveOut": "Không tính",
-    "allCounts": "Mọi khoản chi đều được tính, dù có danh mục hay không, trừ các danh mục không tính.",
-    "forAll": "Ngân sách cho tất cả chi tiêu"
+    "allCounts": "Mọi khoản chi đều được tính, dù có danh mục hay không, trừ các danh mục không tính."
   },
   "mfa": {
     "title": "Xác minh hai bước",

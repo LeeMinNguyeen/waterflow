@@ -54,11 +54,12 @@ export function Categories({ book }: { book: Book }) {
   const money = (v: number) => formatMoney(v, book.base_currency, currencies.data?.get(book.base_currency)?.minor_unit ?? 0, currentLanguage())
   // The most used running budget of each category, shown under it.
   const shown = new Map<string, NonNullable<ReturnType<typeof running>>>()
-  function running(id: string) {
+  function running(id: string | null) {
     return (budgets.data ?? []).filter((b) => b.category_id === id && b.progress)
       .sort((a, b) => (b.progress!.percent_used) - (a.progress!.percent_used))[0]
   }
   for (const c of categories.data ?? []) { const b = running(c.id); if (b) shown.set(c.id, b) }
+  const allSpending = running(null)
 
   async function act(fn: () => Promise<unknown>) {
     setMenu(null)
@@ -81,7 +82,6 @@ export function Categories({ book }: { book: Book }) {
   return (
     <Stack spacing={2}>
       <PageHeader title={t('cat.title')} bookId={book.id}>
-        <Button onClick={() => setBudgetFor({ category: null })}>{t('budget.forAll')}</Button>
         {canEdit && (
           <Button variant="outlined" startIcon={<AddIcon />} onClick={() => setDialog({ category: null })}>
             {t('cat.add')}
@@ -99,6 +99,16 @@ export function Categories({ book }: { book: Book }) {
             <Paper key={kind} variant="outlined">
               <List disablePadding subheader={<ListSubheader disableSticky sx={{ px: 0, typography: 'h2', lineHeight: '40px', color: 'text.primary', bgcolor: 'transparent',
                 borderBottom: 1, borderColor: 'divider' }}>{t(`cat.kinds.${kind}`)}</ListSubheader>}>
+                {kind === 'expense' && (canEdit || allSpending) && (
+                  <ListItem disablePadding divider>
+                    <ListItemButton onClick={() => setBudgetFor({ category: null })}>
+                      <ListItemText primary={t('budget.allSpending')} secondary={allSpending ? (
+                        <BudgetBar label={t(`budget.periods.${allSpending.period}`)} spent={allSpending.progress!.spent} budget={allSpending.amount}
+                          percent={allSpending.progress!.percent_used} format={money} />
+                      ) : t('budget.set')} slotProps={{ secondary: { component: 'div' } }} sx={{ pr: 1 }} />
+                    </ListItemButton>
+                  </ListItem>
+                )}
                 {rows.map(({ category: c, depth }) => (
                   <ListItem key={c.id} disablePadding divider
                     secondaryAction={canEdit && (

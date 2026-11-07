@@ -402,8 +402,7 @@
     "allSpending": "All spending",
     "except": "except {{names}}",
     "leaveOut": "Leave out",
-    "allCounts": "Every expense counts, with or without a category, except the categories left out.",
-    "forAll": "Budget for all spending"
+    "allCounts": "Every expense counts, with or without a category, except the categories left out."
   },
   "mfa": {
     "title": "Two-step verification",

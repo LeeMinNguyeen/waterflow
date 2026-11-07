@@ -46,8 +46,8 @@ export function BudgetDialog({ book, category, onClose }: { book: Book; category
   const nameOf = new Map((categories.data ?? []).map((c) => [c.id, c.name]))
   const mine = (budgets.data ?? []).filter((b) => b.category_id === (category?.id ?? null))
   const [leftOut, setLeftOut] = useState<string[]>([])
-  const periodLabel = (b: Budget) => [t(`budget.periods.${b.period}`), ...(b.excluded_category_ids.length
-    ? [t('budget.except', { names: b.excluded_category_ids.map((id) => nameOf.get(id)).filter(Boolean).join(', ') })] : [])].join(' · ')
+  const except = (b: Budget) => b.excluded_category_ids.length > 0
+    ? t('budget.except', { names: b.excluded_category_ids.map((id) => nameOf.get(id)).filter(Boolean).join(', ') }) : null
   const leaveOut = (value: string[], onChange: (ids: string[]) => void) => (
     <TextField select label={t('budget.leaveOut')} value={value} onChange={(e) => onChange(e.target.value as unknown as string[])}
       slotProps={{ select: { multiple: true, renderValue: (ids) => (ids as string[]).map((id) => nameOf.get(id)).join(', ') } }}>
@@ -149,9 +149,12 @@ export function BudgetDialog({ book, category, onClose }: { book: Book; category
                   <Stack key={b.id} direction="row" spacing={1} sx={{ alignItems: 'center' }}>
                     <Stack sx={{ flex: 1, minWidth: 0 }}>
                       {b.progress ? (
-                        <BudgetBar label={periodLabel(b)} spent={b.progress.spent} budget={b.amount} percent={b.progress.percent_used} color={category?.color} format={money} />
+                        <>
+                          <BudgetBar label={t(`budget.periods.${b.period}`)} spent={b.progress.spent} budget={b.amount} percent={b.progress.percent_used} color={category?.color} format={money} />
+                          {except(b) && <Typography variant="caption" color="textSecondary" sx={{ mt: 0.5 }}>{except(b)}</Typography>}
+                        </>
                       ) : (
-                        <Typography variant="body2">{periodLabel(b)} · {money(b.amount)} · {t('budget.notActive')}</Typography>
+                        <Typography variant="body2">{[t(`budget.periods.${b.period}`), except(b), money(b.amount), t('budget.notActive')].filter(Boolean).join(' · ')}</Typography>
                       )}
                     </Stack>
                     {canEdit && (
