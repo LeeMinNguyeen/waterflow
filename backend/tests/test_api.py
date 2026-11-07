@@ -665,9 +665,13 @@ def test_transaction_filters_by_amount_and_no_category_with_a_summary(client, da
     kwd = str(uuid.uuid4())
     client.post(f"/v1/books/{bid}/accounts", headers=auth(u), json={"id": kwd, "name": "Kuwait", "kind": "cash",
                                                                    "currency": "KWD", "opened_on": "2026-10-01"})
+    usd = str(uuid.uuid4())
+    client.post(f"/v1/books/{bid}/accounts", headers=auth(u), json={"id": usd, "name": "US bank", "kind": "checking",
+                                                                   "currency": "USD", "opened_on": "2026-10-01"})
     food = add_category(client, u, bid, "Food")
     coffee = add_category(client, u, bid, "Coffee", parent=food["id"])
     salary = add_category(client, u, bid, "Salary", kind="income")
+    gadgets = add_category(client, u, bid, "Gadgets")
 
     def add(type_, entries, category=None, payee=None):
         r = client.post(base, headers=auth(u), json={"id": str(uuid.uuid4()), "type": type_, "occurred_on": "2026-10-05",
@@ -683,15 +687,22 @@ def test_transaction_filters_by_amount_and_no_category_with_a_summary(client, da
     paid = add("income", [(accts["Bank"], 1_000_000)], payee="Side job")
     add("income", [(accts["Bank"], 9_000_000)], salary["id"], "Salary")
     moved = add("transfer", [(accts["Bank"], -500_000), (accts["Cash"], 500_000)])
-    abroad = add("expense", [(kwd, -1_000)], payee="Kuwait shop")
+    abroad = add("expense", [(kwd, -1_000)], payee="Kuwait shop")                  # 1.000 KWD
+    espresso = add("expense", [(usd, -300)], gadgets["id"], "Espresso")            # $3.00
+    laptop = add("expense", [(usd, -25_000)], gadgets["id"], "Laptop")              # $250.00
+    dollars = add("transfer", [(accts["Bank"], -2_600_000), (usd, 10_000)])        # $100.00 in
 
     def ids(**params):
         return {i["id"] for i in client.get(base, headers=auth(u), params=params).json()["items"]}
 
     assert ids(min=40_000, max=600_000) == {latte, dinner, moved}
     assert ids(min=900_000, type="income") == {paid, *ids(category_id=salary["id"])}
-    assert ids(max=1_000) == {abroad}
+    assert ids(max=1_000) == {abroad, espresso, laptop}                            # 1, 3 and 250 in their own currency
+    assert ids(min=2, max=5) == {espresso}
+    assert laptop not in ids(min=20_000, max=30_000)
+    assert ids(account_id=usd, min=5_000, max=15_000) == {dollars}                # $50 to $150, on that account's side
     assert ids(category_id="none") == {loose, paid, abroad}
+    assert ids(category_id="none", type="transfer") == {moved, dollars}
     assert client.get(base, headers=auth(u), params={"category_id": "nothing"}).status_code == 422
     assert client.get(base, headers=auth(u), params={"min": -1}).status_code == 422
 

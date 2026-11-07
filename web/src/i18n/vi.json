@@ -299,7 +299,9 @@
     "count_one": "{{count}} giao dịch",
     "count_other": "{{count}} giao dịch",
     "spent": "Chi tiêu",
-    "income": "Thu nhập"
+    "income": "Thu nhập",
+    "notIncluded_one": "{{count}} giao dịch chưa tính",
+    "notIncluded_other": "{{count}} giao dịch chưa tính"
   },
   "cat": {
     "title": "Danh mục",

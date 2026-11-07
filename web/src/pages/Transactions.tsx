@@ -126,7 +126,7 @@ export function Transactions({ book }: { book: Book }) {
   const columns = `48px minmax(0, 1.6fr) minmax(0, 1fr) minmax(0, 1.2fr) 150px${filteredAccount ? ' 140px' : ''}`
   const accountName = filters.account_id ? accountById.get(filters.account_id)?.name : undefined
   const categoryName = filters.category_id === 'none' ? t('filters.noCategory') : filters.category_id ? categoryById.get(filters.category_id)?.name : undefined
-  const amountCurrency = (filteredAccount ?? accountById.get(filters.account_id ?? ''))?.currency ?? book.base_currency
+  const amountCurrency = filteredAccount?.currency ?? book.base_currency
   const minorUnit = currencies.data?.get(amountCurrency)?.minor_unit ?? 0
   const amountOf = (v: string) => formatMoney(Number(v), amountCurrency, minorUnit, lang)
   const amountValue = filters.min && filters.max ? `${amountOf(filters.min)} – ${amountOf(filters.max)}`
@@ -222,7 +222,7 @@ export function Transactions({ book }: { book: Book }) {
           {t('filters.count', { count: summary.count })} · {t('filters.spent')}{' '}
           <Money amount={summary.spent} currency={book.base_currency} kind="balance" quiet /> · {t('filters.income')}{' '}
           <Money amount={summary.income} currency={book.base_currency} kind="balance" quiet />
-          {summary.not_converted > 0 && ` · ${t('accounts.notIncluded', { count: summary.not_converted })}`}
+          {summary.not_converted > 0 && ` · ${t('filters.notIncluded', { count: summary.not_converted })}`}
         </Typography>
       )}
       {txns.isError && !txns.data && <Alert severity="error" sx={{ mt: 3 }}>{errorText(txns.error)}</Alert>}

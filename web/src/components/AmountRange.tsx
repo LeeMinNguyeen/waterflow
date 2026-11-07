@@ -1,5 +1,5 @@
 import Stack from '@mui/material/Stack'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { currentLanguage } from '../i18n'
 import { amountText, parseAmount } from '../lib/money'
@@ -14,6 +14,9 @@ export function AmountRange({ min, max, minorUnit, onChange }: Range & { minorUn
   const shown = (v?: string) => (v ? amountText(Number(v), minorUnit, lang) : '')
   const [from, setFrom] = useState(shown(min))
   const [to, setTo] = useState(shown(max))
+  const pending = useRef<Range | null>(null)
+  const send = useRef(onChange)
+  useEffect(() => { send.current = onChange })
 
   useEffect(() => {
     const read = (text: string) => {
@@ -21,13 +24,18 @@ export function AmountRange({ min, max, minorUnit, onChange }: Range & { minorUn
       const minor = parseAmount(text, minorUnit, lang)
       return minor !== null && minor >= 0 ? String(minor) : null
     }
+    const range = { min: read(from), max: read(to) }
+    if (range.min === null || range.max === null) return
+    pending.current = range as Range
     const id = setTimeout(() => {
-      const range = { min: read(from), max: read(to) }
-      if (range.min !== null && range.max !== null) onChange(range as Range)
+      pending.current = null
+      send.current(range as Range)
     }, 350)
     return () => clearTimeout(id)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [from, to])
+  }, [from, to, minorUnit, lang])
+
+  // Closed before the pause ended: what was typed still applies.
+  useEffect(() => () => { if (pending.current) send.current(pending.current) }, [])
 
   return (
     <Stack spacing={2}>

@@ -147,6 +147,21 @@ describe("amount and no-category filters, with the list's total (waterflow#103)"
     expect(screen.getByTestId('where')).toHaveTextContent(/^\/books\/b1\/transactions$/)
   })
 
+  it('says in Vietnamese that transactions, not accounts, were left out', async () => {
+    withSummary({ count: 3, spent: 30_000, income: 0, net: -30_000, not_converted: 1 })
+    await renderApp(<Transactions book={book} />, { route: '/books/b1/transactions?category_id=none', lang: 'vi' })
+    expect(await screen.findByText(/1 giao dịch chưa tính/)).toBeInTheDocument()
+  })
+
+  it('keeps an amount typed just before the box closes', async () => {
+    withSummary()
+    await renderApp(<Transactions book={book} />, { route: '/books/b1/transactions' })
+    await userEvent.click(await screen.findByRole('button', { name: 'Amount' }))
+    await userEvent.type(screen.getByRole('textbox', { name: 'From' }), '40000')
+    await userEvent.keyboard('{Escape}')
+    await waitFor(() => expect(screen.getByTestId('where')).toHaveTextContent('/books/b1/transactions?min=40000'))
+  })
+
   it('shows no total without a filter', async () => {
     const api = withSummary()
     await renderApp(<Transactions book={book} />, { route: '/books/b1/transactions' })

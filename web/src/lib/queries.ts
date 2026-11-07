@@ -93,7 +93,6 @@ export type TxnFilters = {
   max?: string
 }
 
-// Newest first, a page at a time ("Load more").
 export function useTxnSummary(bookId: string, filters: TxnFilters, enabled: boolean) {
   return useQuery({
     queryKey: [...keys.transactions(bookId, filters), 'summary'],
@@ -102,6 +101,7 @@ export function useTxnSummary(bookId: string, filters: TxnFilters, enabled: bool
   })
 }
 
+// Newest first, a page at a time ("Load more").
 export function useTransactions(bookId: string, filters: TxnFilters) {
   return useInfiniteQuery({
     queryKey: keys.transactions(bookId, filters),

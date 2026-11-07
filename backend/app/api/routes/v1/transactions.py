@@ -90,12 +90,14 @@ def _uncursor(c: str) -> tuple[date, time, datetime, UUID]:
 class Filters(BaseModel):
     account_id: UUID | None = None
     category_id: UUID | None = None            # includes its sub-categories
-    no_category: bool = False                  # expenses, income and refunds without one
+    no_category: bool = False                  # without one: expenses, income and refunds, or any of the type asked
     type: Type | None = None
     date_from: date | None = None
     date_to: date | None = None
     q: str | None = None                       # in payee or note
-    min: int | None = None                     # the amount in its own currency; a transfer's is what left
+    # Minor units of the filtered account's currency, else the book's; each amount is read in its own currency,
+    # without its sign: the filtered account's side, else what left.
+    min: int | None = None
     max: int | None = None
 
     def params(self) -> dict:
@@ -122,14 +124,22 @@ def filters(
 FILTERS = """
    and (cast(:acc as uuid) is null or exists (select 1 from entries e where e.transaction_id = t.id and e.account_id = cast(:acc as uuid)))
    and (cast(:cat as uuid) is null or t.category_id in (select category_id from category_ancestors where ancestor_id = cast(:cat as uuid)))
-   and (not cast(:no_cat as boolean) or (t.category_id is null and t.type in ('expense', 'income', 'refund')))
+   and (not cast(:no_cat as boolean)
+        or (t.category_id is null and (cast(:type as text) is not null or t.type in ('expense', 'income', 'refund'))))
    and (cast(:type as text) is null or t.type = cast(:type as txn_type))
    and (cast(:from as date) is null or t.occurred_on >= cast(:from as date))
    and (cast(:to as date) is null or t.occurred_on <= cast(:to as date))
    and (cast(:q as text) is null
         or position(lower(cast(:q as text)) in lower(coalesce(t.payee, '') || ' ' || coalesce(t.note, ''))) > 0)
    and ((cast(:min as bigint) is null and cast(:max as bigint) is null)
-        or (select abs(sum(e.amount)) from entries e where e.transaction_id = t.id and (t.type <> 'transfer' or e.amount < 0))
+        or (select abs(sum(e.amount * power(10::numeric, ref.minor_unit - c.minor_unit)))
+              from entries e join accounts a on a.id = e.account_id join currencies c on c.code = a.currency,
+                   (select minor_unit from currencies where code = coalesce(
+                      (select currency from accounts where id = cast(:acc as uuid)),
+                      (select base_currency from books where id = :b))) ref
+             where e.transaction_id = t.id
+               and case when cast(:acc as uuid) is not null then e.account_id = cast(:acc as uuid)
+                        else t.type <> 'transfer' or e.amount < 0 end)
            between coalesce(cast(:min as bigint), 0) and coalesce(cast(:max as bigint), 9223372036854775807))"""
 
 

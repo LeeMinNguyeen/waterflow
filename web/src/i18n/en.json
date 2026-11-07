@@ -299,7 +299,9 @@
     "count_one": "{{count}} transaction",
     "count_other": "{{count}} transactions",
     "spent": "Spent",
-    "income": "Income"
+    "income": "Income",
+    "notIncluded_one": "{{count}} not included",
+    "notIncluded_other": "{{count}} not included"
   },
   "cat": {
     "title": "Categories",
