@@ -184,3 +184,41 @@ describe("amount and no-category filters, with the list's total (waterflow#103)"
     expect(screen.queryByText(/transactions ·/)).toBeNull()
   })
 })
+
+describe('recently deleted (waterflow#119)', () => {
+  beforeEach(() => desktop(true))
+  afterEach(() => desktop(false))
+  const gone = [{ id: 't9', type: 'expense', occurred_on: '2025-10-20', occurred_time: '09:00:00', category_id: null, payee: 'Bánh mì',
+    entries: [{ account_id: 'cash', amount: -30_000, currency: 'VND' }], deleted_at: '2025-10-21T02:00:00Z', deleted_by: 'lan' }]
+  const deletedServer = () => fakeApi({
+    'GET /v1/currencies': currencies,
+    'GET /v1/books/b1/transactions': { items, next: null },
+    'GET /v1/books/b1/transactions/deleted': gone,
+    'POST /v1/books/b1/transactions/t9/restore': { ...items[0], id: 't9' },
+    'GET /v1/books/b1/accounts': accounts,
+    'GET /v1/books/b1/categories': [],
+  })
+
+  it("lists the book's recently deleted transactions from the page's menu, each with Restore", async () => {
+    const api = deletedServer()
+    await renderApp(<Transactions book={book} />)
+    await userEvent.click(await screen.findByRole('button', { name: 'More actions' }))
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Recently deleted' }))
+    const list = await screen.findByRole('dialog', { name: 'Recently deleted' })
+    const row = await within(list).findByText('Bánh mì')
+    expect(row.closest('li')).toHaveTextContent(/Bánh mì.*Cash.*Deleted by lan.*−₫30,000/)
+    await userEvent.click(within(list).getByRole('button', { name: 'Restore' }))
+    await waitFor(() => expect(api.writes()).toMatchObject([{ method: 'POST', path: '/v1/books/b1/transactions/t9/restore' }]))
+    expect(await screen.findByText('Transaction restored')).toBeInTheDocument()
+  })
+
+  it('shows a viewer the list without Restore', async () => {
+    deletedServer()
+    await renderApp(<Transactions book={{ ...book, role: 'viewer' }} />)
+    await userEvent.click(await screen.findByRole('button', { name: 'More actions' }))
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Recently deleted' }))
+    const list = await screen.findByRole('dialog', { name: 'Recently deleted' })
+    await within(list).findByText('Bánh mì')
+    expect(within(list).queryByRole('button', { name: 'Restore' })).toBeNull()
+  })
+})

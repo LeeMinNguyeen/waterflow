@@ -205,7 +205,10 @@
     "restore_too_large": "Tệp quá lớn: tối đa 100 MB.",
     "installment_exists": "Khoản mua này đã có kế hoạch trả góp.",
     "installment_invalid": "Khoản trả góp này không khớp với giao dịch: phải là chi tiêu trên thẻ tín dụng có ngày sao kê, chuyển đổi vào hoặc sau ngày mua.",
-    "person_account": "Đây là tài khoản riêng của một người: hãy sửa ở mục Vay mượn."
+    "person_account": "Đây là tài khoản riêng của một người: hãy sửa ở mục Vay mượn.",
+    "already_restored": "Giao dịch này đã được khôi phục.",
+    "restore_expired": "Chỉ khôi phục được giao dịch đã xóa trong vòng 30 ngày.",
+    "restore_changed": "Một tài khoản của giao dịch này đã bị xóa hoặc đã đổi loại tiền, nên không thể khôi phục như cũ."
   },
   "nav": {
     "transactions": "Giao dịch",
@@ -245,14 +248,14 @@
     "save": "Lưu",
     "saveAndAdd": "Lưu và thêm tiếp",
     "delete": "Xóa",
-    "deleteConfirm": "Xóa giao dịch này?",
     "history": "Lịch sử chỉnh sửa",
     "duplicate": "Sao chép",
     "historyTitle": "Lịch sử chỉnh sửa",
     "actions": {
       "created": "Tạo",
       "edited": "Sửa",
-      "deleted": "Xóa"
+      "deleted": "Xóa",
+      "restored": "Khôi phục"
     },
     "by": "bởi {{name}}",
     "empty": "Chưa có giao dịch nào.",
@@ -275,7 +278,13 @@
     "noteHint": "Chạm để thêm ghi chú",
     "bookOf": "Sổ: {{name}}",
     "chooseAccount": "Chọn tài khoản",
-    "moreActions": "Thao tác khác"
+    "moreActions": "Thao tác khác",
+    "undo": "Hoàn tác",
+    "recentlyDeleted": "Đã xóa gần đây",
+    "restore": "Khôi phục",
+    "noneDeleted": "Không có giao dịch nào bị xóa trong 30 ngày qua.",
+    "deletedBy": "{{name}} đã xóa",
+    "deletedKept": "Giao dịch đã xóa có thể khôi phục trong 30 ngày."
   },
   "filters": {
     "allAccounts": "Mọi tài khoản",
@@ -663,6 +672,7 @@
     "accountSaved": "Đã lưu tài khoản",
     "categorySaved": "Đã lưu danh mục",
     "personSaved": "Đã lưu",
-    "paymentSaved": "Đã lưu khoản thanh toán"
+    "paymentSaved": "Đã lưu khoản thanh toán",
+    "txnRestored": "Đã khôi phục giao dịch"
   }
 }
