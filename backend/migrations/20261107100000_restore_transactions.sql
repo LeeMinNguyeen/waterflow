@@ -79,7 +79,7 @@ begin
             where c.id = (s->>'category_id')::uuid and c.book_id = p_book and (c.kind = 'transfer') = (s->>'type' = 'transfer')),
           s->>'payee', s->>'note',
           (select id from users where id = (s->>'created_by')::uuid), (s->>'created_at')::timestamptz, gone.version + 1)
-  on conflict (id) do nothing;   -- another restore of it at the same moment, which waits for this one
+  on conflict do nothing;        -- another restore of it committed first; this one waited for it
   if not found then
     raise exception 'already_restored: this transaction is back already';
   end if;
