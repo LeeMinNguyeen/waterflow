@@ -18,6 +18,7 @@ import { useTheme } from '@mui/material/styles'
 import { useEffect, useId, useMemo, useState, type MouseEvent, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useSearchParams } from 'react-router'
+import { AmountRange } from '../components/AmountRange'
 import { DateField } from '../components/DateField'
 import { useErrorText } from '../components/errors'
 import { FilterChip } from '../components/FilterChip'
@@ -29,9 +30,10 @@ import { currentLanguage } from '../i18n'
 import { txnTypes, type Account, type Book, type Transaction } from '../lib/api'
 import { categoryTree } from '../lib/categories'
 import { shiftDay, todayIn } from '../lib/labels'
-import { useAccounts, useCategories, useTransactions, type TxnFilters } from '../lib/queries'
+import { useFormatMoney } from '../lib/hideAmounts'
+import { useAccounts, useCategories, useCurrencies, useTransactions, useTxnSummary, type TxnFilters } from '../lib/queries'
 
-const FILTERS = ['account_id', 'category_id', 'type', 'from', 'to', 'q'] as const
+const FILTERS = ['account_id', 'category_id', 'type', 'from', 'to', 'q', 'min', 'max'] as const
 type Filter = (typeof FILTERS)[number]
 // What a day's total adds up: money that came in or went out, not money moved between your own accounts.
 const COUNTED = new Set(['expense', 'income', 'refund'])
@@ -46,7 +48,7 @@ export function Transactions({ book }: { book: Book }) {
   const [params, setParams] = useSearchParams()
   const filters: TxnFilters = Object.fromEntries(FILTERS.map((k) => [k, params.get(k) ?? undefined]).filter(([, v]) => v))
   const [search, setSearch] = useState(filters.q ?? '')
-  const [menu, setMenu] = useState<{ el: HTMLElement; which: 'account' | 'category' | 'type' | 'dates' } | null>(null)
+  const [menu, setMenu] = useState<{ el: HTMLElement; which: 'account' | 'category' | 'type' | 'dates' | 'amount' } | null>(null)
   // Clear starts the date fields afresh: a half-typed date isn't in the address, so clearing it wouldn't reach them.
   const [cleared, setCleared] = useState(0)
   const [pageMenu, setPageMenu] = useState<HTMLElement | null>(null)
@@ -54,6 +56,8 @@ export function Transactions({ book }: { book: Book }) {
   const txns = useTransactions(book.id, filters)
   const accounts = useAccounts(book.id, true)
   const categories = useCategories(book.id, true)
+  const currencies = useCurrencies()
+  const formatMoney = useFormatMoney()
 
   // Search as the user types, a moment after they stop.
   useEffect(() => {
@@ -62,19 +66,26 @@ export function Transactions({ book }: { book: Book }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search])
 
-  function setFilter(key: Filter, value: string) {
+  // One update for several keys: two calls in a row would each start from the same address, and the second would win.
+  function setFilters(values: Partial<Record<Filter, string>>) {
     setParams(
       (p) => {
-        if (value) p.set(key, value)
-        else p.delete(key)
+        for (const [key, value] of Object.entries(values)) {
+          if (value) p.set(key, value)
+          else p.delete(key)
+        }
         return p
       },
       { replace: true },
     )
   }
+  const setFilter = (key: Filter, value: string) => setFilters({ [key]: value })
   const pick = (key: Filter, value: string) => {
     setMenu(null)
-    setFilter(key, value)
+    // An amount is in the filtered account's currency: another currency starts it afresh.
+    const currencyOf = (id?: string) => (id && accountById.get(id)?.currency) || book.base_currency
+    if (key === 'account_id' && currencyOf(value) !== currencyOf(filters.account_id)) setFilters({ account_id: value, min: '', max: '' })
+    else setFilter(key, value)
   }
 
   const accountById = useMemo(() => new Map((accounts.data ?? []).map((a) => [a.id, a])), [accounts.data])
@@ -82,6 +93,7 @@ export function Transactions({ book }: { book: Book }) {
   const tree = useMemo(() => categoryTree(categories.data ?? []), [categories.data])
   const items = txns.data?.pages.flatMap((p) => p.items) ?? []
   const filtered = Object.keys(filters).length > 0
+  const summary = useTxnSummary(book.id, filters, filtered).data
   const locale = lang === 'vi' ? 'vi-VN' : 'en-GB'
   const fullDay = new Intl.DateTimeFormat(locale, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
   const dayThisYear = new Intl.DateTimeFormat(locale, { weekday: 'short', day: 'numeric', month: 'short' })
@@ -121,7 +133,13 @@ export function Transactions({ book }: { book: Book }) {
 
   const columns = `48px minmax(0, 1.6fr) minmax(0, 1fr) minmax(0, 1.2fr) 150px${filteredAccount ? ' 140px' : ''}`
   const accountName = filters.account_id ? accountById.get(filters.account_id)?.name : undefined
-  const categoryName = filters.category_id ? categoryById.get(filters.category_id)?.name : undefined
+  const categoryName = filters.category_id === 'none' ? t('filters.noCategory') : filters.category_id ? categoryById.get(filters.category_id)?.name : undefined
+  const amountCurrency = filteredAccount?.currency ?? book.base_currency
+  const minorUnit = currencies.data?.get(amountCurrency)?.minor_unit ?? 0
+  const amountOf = (v: string) => formatMoney(Number(v), amountCurrency, minorUnit, lang)
+  const amountValue = filters.min && filters.max ? `${amountOf(filters.min)} – ${amountOf(filters.max)}`
+    : filters.min ? t('filters.atLeast', { amount: amountOf(filters.min) })
+      : filters.max ? t('filters.atMost', { amount: amountOf(filters.max) }) : undefined
   const datesValue =
     filters.from && filters.to ? `${shortDate.format(date(filters.from))} – ${shortDate.format(date(filters.to))}`
       : filters.from ? t('filters.since', { date: shortDate.format(date(filters.from)) })
@@ -155,8 +173,11 @@ export function Transactions({ book }: { book: Book }) {
           <FilterChip label={t('filters.type')} value={filters.type ? t(`txn.types.${filters.type}`) : undefined} onClick={open('type')}
             onClear={() => setFilter('type', '')} clearLabel={t('filters.clearOne', { name: t('filters.type') })} />
           <FilterChip label={t('filters.dates')} value={datesValue} onClick={open('dates')}
-            onClear={() => { setCleared((n) => n + 1); setFilter('from', ''); setFilter('to', '') }}
+            onClear={() => { setCleared((n) => n + 1); setFilters({ from: '', to: '' }) }}
             clearLabel={t('filters.clearOne', { name: t('filters.dates') })} />
+          <FilterChip label={t('filters.amount')} value={amountValue} onClick={open('amount')}
+            onClear={() => { setCleared((n) => n + 1); setFilters({ min: '', max: '' }) }}
+            clearLabel={t('filters.clearOne', { name: t('filters.amount') })} />
           {filtered && (
             <Button sx={{ flexShrink: 0 }} onClick={() => { setSearch(''); setCleared((n) => n + 1); setParams({}, { replace: true }) }}>
               {t('filters.clear')}
@@ -177,6 +198,7 @@ export function Transactions({ book }: { book: Book }) {
       </Menu>
       <Menu anchorEl={menu?.el} open={menu?.which === 'category'} onClose={() => setMenu(null)} slotProps={{ paper: { sx: { maxHeight: 420 } } }}>
         <MenuItem selected={!filters.category_id} onClick={() => pick('category_id', '')}>{t('filters.allCategories')}</MenuItem>
+        <MenuItem selected={filters.category_id === 'none'} onClick={() => pick('category_id', 'none')}>{t('filters.noCategory')}</MenuItem>
         {tree.map(({ category: c, depth }) => (
           <MenuItem key={c.id} selected={c.id === filters.category_id} onClick={() => pick('category_id', c.id)} sx={{ pl: 2 + depth * 2, gap: 1.25 }}>
             <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: c.color || 'text.disabled', flexShrink: 0 }} />
@@ -196,13 +218,27 @@ export function Transactions({ book }: { book: Book }) {
           <DateField key={`from-${cleared}`} label={t('filters.from')} value={filters.from ?? ''} onChange={(v) => setFilter('from', v)} />
           <DateField key={`to-${cleared}`} label={t('filters.to')} value={filters.to ?? ''} onChange={(v) => setFilter('to', v)} />
           {(filters.from || filters.to) && (
-            <Button sx={{ alignSelf: 'start' }} onClick={() => { setCleared((n) => n + 1); setFilter('from', ''); setFilter('to', ''); setMenu(null) }}>
+            <Button sx={{ alignSelf: 'start' }} onClick={() => { setCleared((n) => n + 1); setFilters({ from: '', to: '' }); setMenu(null) }}>
               {t('filters.clearDates')}
             </Button>
           )}
         </Stack>
       </Popover>
 
+      <Popover anchorEl={menu?.el} open={menu?.which === 'amount'} onClose={() => setMenu(null)}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }} slotProps={{ paper: { sx: { p: 2, mt: 1, width: 300 } } }}>
+        <AmountRange key={`amount-${cleared}-${amountCurrency}-${minorUnit}`} min={filters.min} max={filters.max} minorUnit={minorUnit}
+          onChange={({ min, max }) => setFilters({ min: min ?? '', max: max ?? '' })} />
+      </Popover>
+
+      {filtered && summary && (
+        <Typography variant="body2" color="textSecondary" component="p" sx={{ mt: 2.5 }}>
+          {t('filters.count', { count: summary.count })} · {t('filters.spent')}{' '}
+          <Money amount={summary.spent} currency={book.base_currency} kind="balance" quiet /> · {t('filters.income')}{' '}
+          <Money amount={summary.income} currency={book.base_currency} kind="balance" quiet />
+          {summary.not_converted > 0 && ` · ${t('filters.notIncluded', { count: summary.not_converted })}`}
+        </Typography>
+      )}
       {txns.isError && !txns.data && <Alert severity="error" sx={{ mt: 3 }}>{errorText(txns.error)}</Alert>}
       {txns.isSuccess && items.length === 0 && (
         <Typography color="textSecondary" sx={{ mt: 3 }}>{t(filtered ? 'txn.noMatch' : 'txn.empty')}</Typography>

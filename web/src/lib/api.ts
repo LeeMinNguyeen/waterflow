@@ -258,6 +258,8 @@ export type DeletedTxn = Pick<Transaction, 'id' | 'type' | 'occurred_on' | 'occu
   deleted_by: string | null
 }
 
+export type TxnSummary = { count: number; spent: number; income: number; net: number; not_converted: number }
+
 export type Dashboard = {
   currency: string | null
   rates_source: string | null

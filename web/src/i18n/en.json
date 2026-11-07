@@ -298,7 +298,18 @@
     "since": "From {{date}}",
     "until": "Until {{date}}",
     "clearDates": "Clear dates",
-    "clearOne": "Clear {{name}}"
+    "clearOne": "Clear {{name}}",
+    "amount": "Amount",
+    "noCategory": "No category",
+    "atLeast": "From {{amount}}",
+    "atMost": "Up to {{amount}}",
+    "clearAmount": "Clear amount",
+    "count_one": "{{count}} transaction",
+    "count_other": "{{count}} transactions",
+    "spent": "Spent",
+    "income": "Income",
+    "notIncluded_one": "{{count}} not included",
+    "notIncluded_other": "{{count}} not included"
   },
   "cat": {
     "title": "Categories",

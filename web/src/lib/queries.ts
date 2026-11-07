@@ -1,6 +1,6 @@
 import { keepPreviousData, useInfiniteQuery, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
-import { api, type Account, type Bill, type Book, type Budget, type Category, type Contact, type Currency, type Dashboard, type HistoryEntry, type Instance, type InstallmentPlan, type Me, type Member, type BookInvite, type Payee, type TxnPage, type Usual } from './api'
+import { api, type Account, type Bill, type Book, type Budget, type Category, type Contact, type Currency, type Dashboard, type HistoryEntry, type Instance, type InstallmentPlan, type Me, type Member, type BookInvite, type Payee, type TxnPage, type TxnSummary, type Usual } from './api'
 
 export const keys = {
   me: ['me'] as const,
@@ -89,6 +89,16 @@ export type TxnFilters = {
   from?: string
   to?: string
   q?: string
+  min?: string
+  max?: string
+}
+
+export function useTxnSummary(bookId: string, filters: TxnFilters, enabled: boolean) {
+  return useQuery({
+    queryKey: [...keys.transactions(bookId, filters), 'summary'],
+    queryFn: () => api<TxnSummary>(`/v1/books/${bookId}/transactions/summary?${new URLSearchParams(Object.entries(filters).filter(([, v]) => v) as [string, string][])}`),
+    enabled,
+  })
 }
 
 // Newest first, a page at a time ("Load more").
