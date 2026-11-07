@@ -31,8 +31,9 @@ class CategorySpend(BaseModel):
 
 class Budget(BaseModel):
     budget_id: UUID
-    category_id: UUID
-    category: str
+    category_id: UUID | None             # None = all spending
+    category: str | None
+    excluded_category_ids: list[UUID]
     period: str
     period_start: date
     period_end: date

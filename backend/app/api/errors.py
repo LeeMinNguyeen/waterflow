@@ -23,6 +23,7 @@ UNIQUE = {
     "accounts_book_id_name_key": "name_taken",
     "categories_book_id_parent_id_name_key": "name_taken",
     "budgets_category_id_period_key": "budget_exists",
+    "budgets_all_spending_period": "budget_exists",
     "contacts_book_id_name_key": "name_taken",
     "books_pkey": "conflict",              # a client id already used for someone else's book
     "accounts_pkey": "conflict",
