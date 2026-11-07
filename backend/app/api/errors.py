@@ -27,7 +27,6 @@ UNIQUE = {
     "contacts_book_id_name_key": "name_taken",
     "books_pkey": "conflict",              # a client id already used for someone else's book
     "accounts_pkey": "conflict",
-    "transactions_pkey": "already_restored",    # two restores at once; creating uses on conflict
     "installment_plans_transaction_id_key": "installment_exists",
 }
 

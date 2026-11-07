@@ -42,6 +42,7 @@ language plpgsql security definer set search_path = pg_catalog, public, pg_temp 
 declare
   gone transaction_history;
   s jsonb;
+  plan installment_plans;
 begin
   if not can_write_book(p_book) then
     raise exception 'not allowed to change this book' using errcode = 'insufficient_privilege';
@@ -77,21 +78,52 @@ begin
           (select c.id from categories c                -- a category deleted or changed since is left off
             where c.id = (s->>'category_id')::uuid and c.book_id = p_book and (c.kind = 'transfer') = (s->>'type' = 'transfer')),
           s->>'payee', s->>'note',
-          (select id from users where id = (s->>'created_by')::uuid), (s->>'created_at')::timestamptz, gone.version + 1);
+          (select id from users where id = (s->>'created_by')::uuid), (s->>'created_at')::timestamptz, gone.version + 1)
+  on conflict (id) do nothing;   -- another restore of it at the same moment, which waits for this one
+  if not found then
+    raise exception 'already_restored: this transaction is back already';
+  end if;
   insert into entries (book_id, transaction_id, account_id, amount)
   select p_book, p_txn, (e->>'account_id')::uuid, (e->>'amount')::bigint from jsonb_array_elements(s->'entries') e;
 
-  -- The plan deleted with it: its audit row has the same time as the deletion. One that no longer fits the card
-  -- stays off, and the purchase comes back without it.
-  begin
-    insert into installment_plans
-    select (jsonb_populate_record(null::installment_plans, a.old_row)).*
-      from audit_log a
-     where a.table_name = 'installment_plans' and a.action = 'DELETE' and a.book_id = p_book
-       and a.old_row->>'transaction_id' = p_txn::text and a.at = gone.changed_at
-     order by a.id desc limit 1;
-  exception when check_violation or raise_exception then   -- installment_plan_fits() refusing it
-    null;
-  end;
+  -- The plan deleted with it: its audit row has the same time as the deletion. It comes back while the purchase is
+  -- still an expense on a card with a statement day, converted when it was, even if the purchase moved later since.
+  select p.* into plan
+    from audit_log a, jsonb_populate_record(null::installment_plans, a.old_row) p
+   where a.table_name = 'installment_plans' and a.action = 'DELETE' and a.book_id = p_book
+     and a.old_row->>'transaction_id' = p_txn::text and a.at = gone.changed_at
+   order by a.id desc limit 1;
+  if found and s->>'type' = 'expense' and jsonb_array_length(s->'entries') = 1 and exists (
+       select 1 from accounts a where a.id = (s->'entries'->0->>'account_id')::uuid and a.book_id = p_book
+          and a.kind = 'credit_card' and a.statement_day is not null) then
+    perform set_config('waterflow.restoring_plan', plan.id::text, true);
+    insert into installment_plans values (plan.*) on conflict do nothing;
+    perform set_config('waterflow.restoring_plan', '', true);
+  end if;
 end $$;
 grant execute on function restore_transaction(uuid, uuid) to app_user;
+
+-- As in 20261101210000_review_fixes.sql, except a plan restore_transaction() brings back keeps its conversion date.
+create or replace function installment_plan_fits() returns trigger
+language plpgsql set search_path = pg_catalog, public, pg_temp as $$
+declare
+  t record;
+begin
+  select tx.type, tx.occurred_on, a.id as account_id, a.kind, a.statement_day,
+         (select count(*) from entries x where x.transaction_id = tx.id) as entry_count
+    into t
+    from transactions tx join entries e on e.transaction_id = tx.id join accounts a on a.id = e.account_id
+   where tx.id = new.transaction_id
+   limit 1;
+  if not found or t.type <> 'expense' or t.entry_count <> 1 or t.kind <> 'credit_card' or t.statement_day is null then
+    raise exception 'installment_invalid: an installment plan needs an expense on a credit card with a statement day';
+  end if;
+  if (tg_op = 'INSERT' and current_setting('waterflow.restoring_plan', true) is distinct from new.id::text)
+     or (tg_op = 'UPDATE' and (new.converted_on is distinct from old.converted_on or new.transaction_id <> old.transaction_id)) then
+    if new.converted_on < t.occurred_on then
+      raise exception 'installment_invalid: a purchase is converted on or after its date';
+    end if;
+  end if;
+  new.account_id := t.account_id;
+  return new;
+end $$;

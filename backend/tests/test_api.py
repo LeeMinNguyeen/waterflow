@@ -853,6 +853,18 @@ def test_a_restore_after_things_changed(client, database):
     assert client.post(f"{base}/{buy}/restore", headers=auth(u)).status_code == 200
     assert client.get(f"/v1/books/{bid}/installments", headers=auth(u)).json() == []
 
+    card2 = account(kind="credit_card", statement_day=20)
+    moved = str(uuid.uuid4())
+    client.post(base, headers=auth(u), json={"id": moved, "type": "expense", "occurred_on": "2026-10-01",
+                                             "entries": [{"account_id": card2, "amount": -3_000_000}]})
+    plan = client.post(f"/v1/books/{bid}/installments", headers=auth(u), json={"id": str(uuid.uuid4()), "transaction_id": moved, "months": 3}).json()
+    client.put(f"{base}/{moved}", headers=auth(u), json={"version": 1, "type": "expense", "occurred_on": "2026-10-05",
+                                                         "entries": [{"account_id": card2, "amount": -3_000_000}]})
+    client.delete(f"{base}/{moved}?version=2", headers=auth(u))
+    assert client.post(f"{base}/{moved}/restore", headers=auth(u)).status_code == 200
+    plans = client.get(f"/v1/books/{bid}/installments", headers=auth(u)).json()
+    assert [(p["id"], p["converted_on"]) for p in plans] == [(plan["id"], plan["converted_on"])]   # kept though the purchase moved later
+
     lunch = add(accts["Cash"], -50_000)
     result = {}
 
