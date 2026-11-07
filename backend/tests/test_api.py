@@ -713,6 +713,22 @@ def test_a_deleted_transaction_comes_back(client, database):
     assert client.get(f"{base}/deleted", headers=auth(stranger)).json() == {"detail": "not_found"}
     assert client.post(f"{base}/{uuid.uuid4()}/restore", headers=auth(owner)).json() == {"detail": "not_found"}
 
+    # The same id reused in another book, edited past this one's version and deleted there, doesn't stand in for it.
+    reused = str(uuid.uuid4())
+    client.post(base, headers=auth(owner), json={"id": reused, "type": "expense", "occurred_on": "2026-10-06", "payee": "Mine",
+                                                "entries": [{"account_id": accts["Cash"], "amount": -10_000}]})
+    client.delete(f"{base}/{reused}?version=1", headers=auth(owner))
+    other_bid, other_accts = new_book_with_accounts(client, stranger)
+    other = f"/v1/books/{other_bid}/transactions"
+    body = {"type": "expense", "occurred_on": "2026-10-06", "payee": "Theirs", "entries": [{"account_id": other_accts["Cash"], "amount": -5}]}
+    assert client.post(other, headers=auth(stranger), json={"id": reused, **body}).status_code == 201
+    for v in (1, 2):
+        client.put(f"{other}/{reused}", headers=auth(stranger), json={"version": v, **body, "note": f"v{v + 1}"})
+    client.delete(f"{other}/{reused}?version=3", headers=auth(stranger))
+    assert [g["payee"] for g in client.get(f"{base}/deleted", headers=auth(owner)).json()] == ["Mine"]
+    mine = client.post(f"{base}/{reused}/restore", headers=auth(owner))
+    assert (mine.status_code, mine.json()["payee"]) == (200, "Mine"), mine.text
+
     card = str(uuid.uuid4())
     client.post(f"/v1/books/{bid}/accounts", headers=auth(owner), json={"id": card, "name": "Visa", "kind": "credit_card",
                                                                        "opened_on": "2026-08-01", "statement_day": 20})

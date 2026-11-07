@@ -279,7 +279,8 @@ def deleted(book_id: UUID, db: Session = Depends(get_db)) -> list[Deleted]:
 select distinct on (h.transaction_id) h.transaction_id as id, h.changed_at as deleted_at,
        (select p.name from book_people p where p.book_id = h.book_id and p.user_id = h.changed_by) as deleted_by, s.snapshot
   from transaction_history h
-  join lateral (select x.snapshot from transaction_history x where x.transaction_id = h.transaction_id and x.action <> 'deleted'
+  join lateral (select x.snapshot from transaction_history x
+                 where x.book_id = h.book_id and x.transaction_id = h.transaction_id and x.action <> 'deleted'
                  order by x.version desc, x.id desc limit 1) s on true
  where h.book_id = :b and h.action = 'deleted' and h.changed_at > now() - interval '30 days'
    and not exists (select 1 from transactions t where t.id = h.transaction_id)

@@ -57,8 +57,13 @@ begin
   if gone.changed_at < now() - interval '30 days' then
     raise exception 'restore_expired: a deleted transaction can be brought back for 30 days';
   end if;
+  -- This book's own snapshot: ids come from clients, and another book may have used the same one since.
   select snapshot into s from transaction_history
-   where transaction_id = p_txn and action <> 'deleted' order by version desc, id desc limit 1;
+   where book_id = p_book and transaction_id = p_txn and action <> 'deleted' and version <= gone.version
+   order by version desc, id desc limit 1;
+  if s is null then
+    raise exception 'not_found: no saved version of this transaction in this book';
+  end if;
 
   insert into transactions (id, book_id, type, occurred_on, occurred_time, category_id, payee, note,
                             created_by, created_at, version)
