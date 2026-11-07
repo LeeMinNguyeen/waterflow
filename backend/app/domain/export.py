@@ -102,7 +102,7 @@ VI = {
     "owner": "chủ sở hữu", "editor": "người chỉnh sửa", "viewer": "người xem", "invited": "chưa chấp nhận",
     "daily": "hằng ngày", "weekly": "hằng tuần", "monthly": "hằng tháng", "quarterly": "hằng quý",
     "yearly": "hằng năm",
-    "created": "tạo", "edited": "sửa", "deleted": "xóa", "insert": "thêm", "update": "sửa", "delete": "xóa",
+    "created": "tạo", "edited": "sửa", "deleted": "xóa", "restored": "khôi phục", "insert": "thêm", "update": "sửa", "delete": "xóa",
     "books": "sổ", "book members": "thành viên sổ", "contacts": "người liên quan", "accounts": "tài khoản",
     "categories": "danh mục", "transactions": "giao dịch", "entries": "bút toán", "budgets": "ngân sách",
     "book fx rates": "tỷ giá riêng", "installment plans": "trả góp",

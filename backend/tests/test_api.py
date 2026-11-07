@@ -808,6 +808,72 @@ def test_transaction_filters_by_amount_and_no_category_with_a_summary(client, da
     assert client.get(f"{base}/summary", headers=auth(other)).json() == {"detail": "not_found"}
 
 
+def test_a_restore_after_things_changed(client, database):
+    """What changed since the delete: a category gone is left off; an account in another currency or gone is refused;
+    a plan that no longer fits stays off; two restores at once, one wins."""
+    u = signed_up(client)
+    bid, accts = new_book_with_accounts(client, u)
+    base = f"/v1/books/{bid}/transactions"
+
+    def add(account, amount, **fields):
+        tid = str(uuid.uuid4())
+        r = client.post(base, headers=auth(u), json={"id": tid, "type": "expense", "occurred_on": "2026-10-05",
+                                                     "entries": [{"account_id": account, "amount": amount}], **fields})
+        assert r.status_code == 201, r.text
+        client.delete(f"{base}/{tid}?version=1", headers=auth(u))
+        return tid
+
+    def account(**fields):
+        aid = str(uuid.uuid4())
+        assert client.post(f"/v1/books/{bid}/accounts", headers=auth(u),
+                           json={"id": aid, "name": f"A {aid[:6]}", "opened_on": "2026-08-01", **fields}).status_code == 201
+        return aid
+
+    snacks = add_category(client, u, bid, "Snacks")
+    snack = add(accts["Cash"], -20_000, category_id=snacks["id"])
+    client.delete(f"/v1/books/{bid}/categories/{snacks['id']}?version=1", headers=auth(u))
+    back = client.post(f"{base}/{snack}/restore", headers=auth(u))
+    assert (back.status_code, back.json()["category_id"]) == (200, None), back.text
+
+    usd = account(kind="checking", currency="USD")
+    dollars = add(usd, -500)
+    v = next(a for a in client.get(f"/v1/books/{bid}/accounts", headers=auth(u)).json() if a["id"] == usd)["version"]
+    assert client.patch(f"/v1/books/{bid}/accounts/{usd}", headers=auth(u), json={"version": v, "currency": "VND"}).status_code == 200
+    changed = client.post(f"{base}/{dollars}/restore", headers=auth(u))
+    assert (changed.status_code, changed.json()) == (409, {"detail": "restore_changed"})
+
+    card = account(kind="credit_card", statement_day=20)
+    buy = str(uuid.uuid4())
+    client.post(base, headers=auth(u), json={"id": buy, "type": "expense", "occurred_on": "2026-10-01",
+                                             "entries": [{"account_id": card, "amount": -3_000_000}]})
+    client.post(f"/v1/books/{bid}/installments", headers=auth(u), json={"id": str(uuid.uuid4()), "transaction_id": buy, "months": 3})
+    client.delete(f"{base}/{buy}?version=1", headers=auth(u))
+    v = next(a for a in client.get(f"/v1/books/{bid}/accounts", headers=auth(u)).json() if a["id"] == card)["version"]
+    assert client.patch(f"/v1/books/{bid}/accounts/{card}", headers=auth(u), json={"version": v, "kind": "checking"}).status_code == 200
+    assert client.post(f"{base}/{buy}/restore", headers=auth(u)).status_code == 200
+    assert client.get(f"/v1/books/{bid}/installments", headers=auth(u)).json() == []
+
+    lunch = add(accts["Cash"], -50_000)
+    result = {}
+
+    def restore():
+        result["r"] = client.post(f"{base}/{lunch}/restore", headers=auth(u))
+
+    with database.connect() as other:                 # another restore of it, not committed yet
+        other.exec_driver_sql("begin")
+        other.execute(text("select set_config('app.user_id', :u, true)"), {"u": str(u)})
+        other.execute(text("select restore_transaction(:b, :t)"), {"b": bid, "t": lunch})
+        second = threading.Thread(target=restore)
+        second.start()
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline and "r" not in result and not other.execute(text(
+                "select count(*) from pg_locks where locktype = 'transactionid' and not granted")).scalar():
+            time.sleep(0.05)
+        other.exec_driver_sql("commit")
+        second.join(10)
+    assert (result["r"].status_code, result["r"].json()) == (409, {"detail": "already_restored"})
+
+
 def test_transactions_have_a_time_of_day(client):
     """R-TXN-6: every transaction has a date and a time of day; lists sort by both; one saved without a time has
     00:00, and an edit that leaves the time out keeps it."""

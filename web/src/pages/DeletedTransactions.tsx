@@ -17,6 +17,7 @@ import { Money } from '../components/Money'
 import { useRestoreTxn } from '../components/restoreTxn'
 import { currentLanguage } from '../i18n'
 import { api, type Book, type DeletedTxn } from '../lib/api'
+import { personName } from '../lib/people'
 import { useAccounts, useCategories } from '../lib/queries'
 
 export function DeletedTransactions({ book, onClose }: { book: Book; onClose: () => void }) {
@@ -46,7 +47,7 @@ export function DeletedTransactions({ book, onClose }: { book: Book; onClose: ()
                 <ListItemText primary={g.payee || t(`txn.types.${g.type}`)}
                   secondary={[day.format(new Date(`${g.occurred_on}T00:00:00`)), g.category_id && categories.get(g.category_id),
                     g.entries.map((e) => accounts.get(e.account_id)).filter(Boolean).join(' → '),
-                    g.deleted_by && t('txn.deletedBy', { name: g.deleted_by })].filter(Boolean).join(' · ')} />
+                    g.deleted_by && t('txn.deletedBy', { name: personName(g.deleted_by, t) })].filter(Boolean).join(' · ')} />
                 <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexShrink: 0 }}>
                   {out && <Money amount={out.amount} currency={out.currency ?? book.base_currency} kind={g.type === 'transfer' ? 'transfer' : 'flow'} sign />}
                   {canEdit && (

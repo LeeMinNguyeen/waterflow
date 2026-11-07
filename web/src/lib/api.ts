@@ -241,7 +241,7 @@ export type TxnPage = { items: Transaction[]; next: string | null }
 
 export type HistoryEntry = {
   version: number
-  action: 'created' | 'edited' | 'deleted'
+  action: 'created' | 'edited' | 'deleted' | 'restored'
   changed_at: string
   changed_by: string | null
   type: TxnType

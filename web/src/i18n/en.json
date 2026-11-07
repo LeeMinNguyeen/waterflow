@@ -207,7 +207,8 @@
     "installment_invalid": "This installment plan doesn't fit its purchase: an expense on a credit card with a statement day, converted on or after its date.",
     "person_account": "This is a person's own account: change it on People.",
     "already_restored": "This transaction is back already.",
-    "restore_expired": "A deleted transaction can only be restored for 30 days."
+    "restore_expired": "A deleted transaction can only be restored for 30 days.",
+    "restore_changed": "An account of this transaction is gone or has another currency now, so it can't come back as it was."
   },
   "nav": {
     "transactions": "Transactions",

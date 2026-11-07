@@ -64,21 +64,34 @@ begin
   if s is null then
     raise exception 'not_found: no saved version of this transaction in this book';
   end if;
+  -- The same number in another currency would be another amount.
+  if exists (select 1 from jsonb_array_elements(s->'entries') e
+               left join accounts a on a.id = (e->>'account_id')::uuid and a.book_id = p_book
+              where a.id is null or a.currency is distinct from e->>'currency') then
+    raise exception 'restore_changed: an account of this transaction is gone or has another currency now';
+  end if;
 
   insert into transactions (id, book_id, type, occurred_on, occurred_time, category_id, payee, note,
                             created_by, created_at, version)
   values (p_txn, p_book, (s->>'type')::txn_type, (s->>'occurred_on')::date, coalesce((s->>'occurred_time')::time, '00:00'),
-          (s->>'category_id')::uuid, s->>'payee', s->>'note',
+          (select c.id from categories c                -- a category deleted or changed since is left off
+            where c.id = (s->>'category_id')::uuid and c.book_id = p_book and (c.kind = 'transfer') = (s->>'type' = 'transfer')),
+          s->>'payee', s->>'note',
           (select id from users where id = (s->>'created_by')::uuid), (s->>'created_at')::timestamptz, gone.version + 1);
   insert into entries (book_id, transaction_id, account_id, amount)
   select p_book, p_txn, (e->>'account_id')::uuid, (e->>'amount')::bigint from jsonb_array_elements(s->'entries') e;
 
-  -- The plan deleted with it: its audit row has the same time as the deletion.
-  insert into installment_plans
-  select (jsonb_populate_record(null::installment_plans, a.old_row)).*
-    from audit_log a
-   where a.table_name = 'installment_plans' and a.action = 'DELETE' and a.book_id = p_book
-     and a.old_row->>'transaction_id' = p_txn::text and a.at = gone.changed_at
-   order by a.id desc limit 1;
+  -- The plan deleted with it: its audit row has the same time as the deletion. One that no longer fits the card
+  -- stays off, and the purchase comes back without it.
+  begin
+    insert into installment_plans
+    select (jsonb_populate_record(null::installment_plans, a.old_row)).*
+      from audit_log a
+     where a.table_name = 'installment_plans' and a.action = 'DELETE' and a.book_id = p_book
+       and a.old_row->>'transaction_id' = p_txn::text and a.at = gone.changed_at
+     order by a.id desc limit 1;
+  exception when check_violation or raise_exception then   -- installment_plan_fits() refusing it
+    null;
+  end;
 end $$;
 grant execute on function restore_transaction(uuid, uuid) to app_user;
