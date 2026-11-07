@@ -48,8 +48,9 @@ def dashboard(db: Session, book_id: UUID, today: date | None = None) -> dict:
             "select category_id, category, category_parent_id, spent, not_converted from book_monthly_category_spend"
             " where book_id = :b and month = :this and (spent > 0 or not_converted > 0) order by spent desc"),
         "budgets": rows(
-            "select budget_id, category_id, category, period, period_start, period_end, budget, spent, remaining, percent_used, not_converted"
-            "  from budget_progress where book_id = :b order by percent_used desc"),
+            "select budget_id, category_id, category, excluded_category_ids, period, period_start, period_end, budget, spent,"
+            "       remaining, percent_used, not_converted"
+            "  from budget_progress where book_id = :b order by category_id is null desc, percent_used desc"),
         "accounts": rows(
             "select bc.account_id, bc.name, bc.kind, bc.currency, bc.balance, bc.converted_balance, bc.in_net_worth,"
             "       exists (select 1 from account_pins p where p.account_id = bc.account_id) as pinned"

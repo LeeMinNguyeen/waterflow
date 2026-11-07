@@ -179,7 +179,7 @@
     "has_subcategories": "This category still has sub-categories. Move or delete them first.",
     "txn_shape": "This transaction isn't valid: check the amounts and accounts.",
     "category_kind": "Transfers take only transfer categories, and the other way round.",
-    "budget_exists": "This category already has a budget for that period.",
+    "budget_exists": "There's already a budget for that period here.",
     "card_has_installments": "This card has installment plans, which bill on its statements: it keeps its statement day and stays a credit card while they're there.",
     "budget_expense_only": "Budgets go on expense categories only.",
     "not_restorable": "It's been more than 30 days; the account can't be restored.",
@@ -417,7 +417,11 @@
     "over": "{{amount}} over",
     "notActive": "Not running today (outside its dates)",
     "subcategoriesCount": "Sub-categories count too.",
-    "existing": "Current budgets"
+    "existing": "Current budgets",
+    "allSpending": "All spending",
+    "except": "except {{names}}",
+    "leaveOut": "Leave out",
+    "allCounts": "Every expense counts, with or without a category, except the categories left out."
   },
   "mfa": {
     "title": "Two-step verification",

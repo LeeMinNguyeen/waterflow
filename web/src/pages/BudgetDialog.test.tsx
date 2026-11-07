@@ -29,7 +29,7 @@ describe('BudgetDialog', () => {
 })
 
 describe('changing a budget (waterflow#139)', () => {
-  const monthly: Budget = { id: 'bu1', category_id: 'food', period: 'monthly', amount: 1_500_000, starts_on: '2026-10-01', ends_on: null,
+  const monthly: Budget = { id: 'bu1', category_id: 'food', excluded_category_ids: [], period: 'monthly', amount: 1_500_000, starts_on: '2026-10-01', ends_on: null,
     version: 3, progress: { period_start: '2026-11-01', period_end: '2026-11-30', spent: 600_000, remaining: 900_000, percent_used: 40, not_converted: 0 } }
   // The server's copy: a PATCH changes it, as the API does.
   function budgetServer(start: Budget, patch?: (body: Record<string, unknown>) => unknown) {
@@ -98,5 +98,46 @@ describe('changing a budget (waterflow#139)', () => {
     expect(screen.queryByRole('button', { name: 'Delete budget' })).not.toBeInTheDocument()
     expect(screen.queryByText('Add budget')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument()
+  })
+})
+
+describe('a budget for all spending (waterflow#122)', () => {
+  const rent: Category = { id: 'rent', name: 'Rent', kind: 'expense', parent_id: null, color: null, archived_at: null, version: 1 }
+  const salary: Category = { id: 'salary', name: 'Salary', kind: 'income', parent_id: null, color: null, archived_at: null, version: 1 }
+
+  it('adds one, leaving out the expense categories picked', async () => {
+    const api = fakeApi({
+      'GET /v1/currencies': currencies,
+      'GET /v1/books/b1/budgets': [],
+      'GET /v1/books/b1/categories': [food, rent, salary],
+      'POST /v1/books/b1/budgets': ({ body }: { body: unknown }) => body,
+    })
+    await renderApp(<BudgetDialog book={book} category={null} onClose={() => {}} />)
+    expect(await screen.findByRole('heading', { name: 'Budgets · All spending' })).toBeInTheDocument()
+    await userEvent.type(screen.getByLabelText(/^Limit/), '15000000')
+    await userEvent.click(screen.getByRole('combobox', { name: 'Leave out' }))
+    const options = await screen.findAllByRole('option')
+    expect(options.map((o) => o.textContent)).toEqual(['Food', 'Rent'])
+    await userEvent.click(screen.getByRole('option', { name: 'Rent' }))
+    await userEvent.keyboard('{Escape}')
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(api.writes()).toHaveLength(1))
+    expect(api.writes()[0].body).toMatchObject({ category_id: null, excluded_category_ids: ['rent'], period: 'monthly', amount: 15_000_000 })
+  })
+
+  it('lists only the budgets for all spending, named with what they leave out', async () => {
+    const all: Budget = { id: 'bu9', category_id: null, excluded_category_ids: ['rent'], period: 'monthly', amount: 15_000_000,
+      starts_on: '2026-10-01', ends_on: null, version: 1,
+      progress: { period_start: '2026-11-01', period_end: '2026-11-30', spent: 600_000, remaining: 14_400_000, percent_used: 4, not_converted: 0 } }
+    const onFood: Budget = { ...all, id: 'bu1', category_id: 'food', excluded_category_ids: [], period: 'weekly' }
+    fakeApi({
+      'GET /v1/currencies': currencies,
+      'GET /v1/books/b1/budgets': [all, onFood],
+      'GET /v1/books/b1/categories': [food, rent],
+    })
+    await renderApp(<BudgetDialog book={book} category={null} onClose={() => {}} />)
+    expect(await screen.findByText('Monthly')).toBeInTheDocument()
+    expect(await screen.findByText('except Rent')).toBeInTheDocument()
+    expect(screen.queryByText(/^Weekly/)).toBeNull()
   })
 })
