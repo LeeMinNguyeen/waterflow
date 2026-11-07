@@ -1,6 +1,8 @@
 """Users sign up through the API: the test database has open sign-up. Invite-only and setup are in test_sign_in.py."""
 import csv
 import re
+import threading
+import time
 import uuid
 from datetime import date
 
@@ -623,6 +625,35 @@ def test_categories(client):
     kind = client.patch(f"{base}/{out['id']}", headers=auth(u), json={"version": 4, "kind": "transfer"})
     assert (kind.status_code, kind.json()) == (422, {"detail": "category_kind"})
     assert client.patch(f"{base}/{savings['id']}", headers=auth(u), json={"version": 9, "name": "x"}).json() == {"detail": "conflict"}
+
+
+def test_two_moves_at_the_same_moment_make_no_cycle(client, database):
+    """A under B while B goes under A: the second move waits for the first, then sees it and is refused."""
+    u = signed_up(client)
+    bid, _ = new_book_with_accounts(client, u)
+    a, b = add_category(client, u, bid, "A"), add_category(client, u, bid, "B")
+    result = {}
+
+    def move_a_under_b():
+        result["r"] = client.patch(f"/v1/books/{bid}/categories/{a['id']}", headers=auth(u),
+                                   json={"version": 1, "parent_id": b["id"]})
+
+    with database.connect() as other:                 # the other move, between its check and its commit
+        other.exec_driver_sql("begin")
+        other.execute(text("select pg_advisory_xact_lock(hashtextextended('categories ' || cast(:b as text), 0))"),
+                      {"b": bid})
+        other.execute(text("update categories set parent_id = :a where id = :b"), {"a": a["id"], "b": b["id"]})
+        mover = threading.Thread(target=move_a_under_b)
+        mover.start()
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline and "r" not in result and not other.execute(text(
+                "select count(*) from pg_locks where locktype = 'advisory' and not granted")).scalar():
+            time.sleep(0.05)
+        other.exec_driver_sql("commit")
+        mover.join(10)
+    assert (result["r"].status_code, result["r"].json()) == (422, {"detail": "invalid"})
+    with database.connect() as owner:
+        assert owner.execute(text("select parent_id from categories where id = :a"), {"a": a["id"]}).scalar() is None
 
 
 def test_transactions_have_a_time_of_day(client):
