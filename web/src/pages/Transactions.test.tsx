@@ -162,6 +162,20 @@ describe("amount and no-category filters, with the list's total (waterflow#103)"
     await waitFor(() => expect(screen.getByTestId('where')).toHaveTextContent('/books/b1/transactions?min=40000'))
   })
 
+  it('starts the amount afresh when the account picked is in another currency', async () => {
+    fakeApi({
+      'GET /v1/currencies': currencies,
+      'GET /v1/books/b1/transactions': { items, next: null },
+      'GET /v1/books/b1/transactions/summary': { count: 0, spent: 0, income: 0, net: 0, not_converted: 0 },
+      'GET /v1/books/b1/accounts': [...accounts, { ...blank, id: 'usd', name: 'US bank', kind: 'checking', currency: 'USD', balance: 0 }],
+      'GET /v1/books/b1/categories': [],
+    })
+    await renderApp(<Transactions book={book} />, { route: '/books/b1/transactions?min=40000' })
+    await userEvent.click(await screen.findByRole('button', { name: 'Account' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'US bank' }))
+    expect(screen.getByTestId('where')).toHaveTextContent(/^\/books\/b1\/transactions\?account_id=usd$/)
+  })
+
   it('shows no total without a filter', async () => {
     const api = withSummary()
     await renderApp(<Transactions book={book} />, { route: '/books/b1/transactions' })

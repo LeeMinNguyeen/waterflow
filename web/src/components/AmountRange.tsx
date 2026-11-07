@@ -34,8 +34,11 @@ export function AmountRange({ min, max, minorUnit, onChange }: Range & { minorUn
     return () => clearTimeout(id)
   }, [from, to, minorUnit, lang])
 
-  // Closed before the pause ended: what was typed still applies.
-  useEffect(() => () => { if (pending.current) send.current(pending.current) }, [])
+  // Closed before the pause ended: what was typed still applies, unless the page itself was left.
+  useEffect(() => {
+    const page = window.location.pathname
+    return () => { if (pending.current && window.location.pathname === page) send.current(pending.current) }
+  }, [])
 
   return (
     <Stack spacing={2}>

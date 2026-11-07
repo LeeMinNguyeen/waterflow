@@ -77,7 +77,10 @@ export function Transactions({ book }: { book: Book }) {
   const setFilter = (key: Filter, value: string) => setFilters({ [key]: value })
   const pick = (key: Filter, value: string) => {
     setMenu(null)
-    setFilter(key, value)
+    // An amount is in the filtered account's currency: another currency starts it afresh.
+    const currencyOf = (id?: string) => (id && accountById.get(id)?.currency) || book.base_currency
+    if (key === 'account_id' && currencyOf(value) !== currencyOf(filters.account_id)) setFilters({ account_id: value, min: '', max: '' })
+    else setFilter(key, value)
   }
 
   const accountById = useMemo(() => new Map((accounts.data ?? []).map((a) => [a.id, a])), [accounts.data])
@@ -213,7 +216,7 @@ export function Transactions({ book }: { book: Book }) {
 
       <Popover anchorEl={menu?.el} open={menu?.which === 'amount'} onClose={() => setMenu(null)}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }} slotProps={{ paper: { sx: { p: 2, mt: 1, width: 300 } } }}>
-        <AmountRange key={`amount-${cleared}-${amountCurrency}`} min={filters.min} max={filters.max} minorUnit={minorUnit}
+        <AmountRange key={`amount-${cleared}-${amountCurrency}-${minorUnit}`} min={filters.min} max={filters.max} minorUnit={minorUnit}
           onChange={({ min, max }) => setFilters({ min: min ?? '', max: max ?? '' })} />
       </Popover>
 
