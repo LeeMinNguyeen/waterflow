@@ -253,6 +253,8 @@ export type HistoryEntry = {
   entries: Entry[] | null
 }
 
+export type TxnSummary = { count: number; spent: number; income: number; net: number; not_converted: number }
+
 export type Dashboard = {
   currency: string | null
   rates_source: string | null

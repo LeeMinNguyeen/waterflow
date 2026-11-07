@@ -1,4 +1,4 @@
-import { screen, within } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { Account, Book, Transaction } from '../lib/api'
@@ -95,5 +95,92 @@ describe('hidden amounts (waterflow#104)', () => {
     await renderApp(<Transactions book={book} />, { route: '/books/b1/transactions' })
     expect((await screen.findAllByText(/••••/)).length).toBeGreaterThan(0)
     expect(document.body.textContent).not.toMatch(/\d,\d{3}/)
+  })
+})
+
+describe("amount and no-category filters, with the list's total (waterflow#103)", () => {
+  beforeEach(() => desktop(true))
+  afterEach(() => desktop(false))
+
+  const withSummary = (summary = { count: 0, spent: 0, income: 0, net: 0, not_converted: 0 }) => fakeApi({
+    'GET /v1/currencies': currencies,
+    'GET /v1/books/b1/transactions': { items, next: null },
+    'GET /v1/books/b1/transactions/summary': summary,
+    'GET /v1/books/b1/accounts': accounts,
+    'GET /v1/books/b1/categories': [],
+  })
+
+  it('filters by amount from and to, kept in the address and sent to the server', async () => {
+    const api = withSummary()
+    await renderApp(<Transactions book={book} />, { route: '/books/b1/transactions' })
+    await userEvent.click(await screen.findByRole('button', { name: 'Amount' }))
+    await userEvent.type(screen.getByRole('textbox', { name: 'From' }), '40000')
+    await userEvent.type(screen.getByRole('textbox', { name: 'To' }), '600000')
+    await waitFor(() => expect(screen.getByTestId('where')).toHaveTextContent('/books/b1/transactions?min=40000&max=600000'))
+    await waitFor(() => expect(api.calls.some((c) => c.path === '/v1/books/b1/transactions' && /min=40000&max=600000/.test(c.url))).toBe(true))
+    await userEvent.keyboard('{Escape}')
+    expect(screen.getByRole('button', { name: 'Amount: ₫40,000 – ₫600,000' })).toBeInTheDocument()
+  })
+
+  it('offers No category first in the category filter', async () => {
+    withSummary()
+    await renderApp(<Transactions book={book} />, { route: '/books/b1/transactions' })
+    await userEvent.click(await screen.findByRole('button', { name: 'Category' }))
+    expect((await screen.findAllByRole('menuitem')).map((i) => i.textContent).slice(0, 2)).toEqual(['All categories', 'No category'])
+    await userEvent.click(screen.getByRole('menuitem', { name: 'No category' }))
+    expect(screen.getByTestId('where')).toHaveTextContent('/books/b1/transactions?category_id=none')
+    expect(screen.getByRole('button', { name: 'Category: No category' })).toBeInTheDocument()
+  })
+
+  it("shows the filtered list's count, spending and income, and what a missing rate left out", async () => {
+    const api = withSummary({ count: 42, spent: 1_250_000, income: 0, net: -1_250_000, not_converted: 1 })
+    await renderApp(<Transactions book={book} />, { route: '/books/b1/transactions?type=expense' })
+    const line = await screen.findByText((_, el) => el?.tagName === 'P' && /^42 transactions/.test(el.textContent ?? ''))
+    expect(line).toHaveTextContent('42 transactions · Spent ₫1,250,000 · Income ₫0 · 1 not included')
+    expect(api.calls.some((c) => c.path === '/v1/books/b1/transactions/summary' && c.url.includes('type=expense'))).toBe(true)
+  })
+
+  it('clears both dates at once', async () => {
+    withSummary()
+    await renderApp(<Transactions book={book} />, { route: '/books/b1/transactions?from=2025-10-01&to=2025-10-31' })
+    await userEvent.click(await screen.findByRole('button', { name: 'Clear Dates' }))
+    expect(screen.getByTestId('where')).toHaveTextContent(/^\/books\/b1\/transactions$/)
+  })
+
+  it('says in Vietnamese that transactions, not accounts, were left out', async () => {
+    withSummary({ count: 3, spent: 30_000, income: 0, net: -30_000, not_converted: 1 })
+    await renderApp(<Transactions book={book} />, { route: '/books/b1/transactions?category_id=none', lang: 'vi' })
+    expect(await screen.findByText(/1 giao dịch chưa tính/)).toBeInTheDocument()
+  })
+
+  it('keeps an amount typed just before the box closes', async () => {
+    withSummary()
+    await renderApp(<Transactions book={book} />, { route: '/books/b1/transactions' })
+    await userEvent.click(await screen.findByRole('button', { name: 'Amount' }))
+    await userEvent.type(screen.getByRole('textbox', { name: 'From' }), '40000')
+    await userEvent.keyboard('{Escape}')
+    await waitFor(() => expect(screen.getByTestId('where')).toHaveTextContent('/books/b1/transactions?min=40000'))
+  })
+
+  it('starts the amount afresh when the account picked is in another currency', async () => {
+    fakeApi({
+      'GET /v1/currencies': currencies,
+      'GET /v1/books/b1/transactions': { items, next: null },
+      'GET /v1/books/b1/transactions/summary': { count: 0, spent: 0, income: 0, net: 0, not_converted: 0 },
+      'GET /v1/books/b1/accounts': [...accounts, { ...blank, id: 'usd', name: 'US bank', kind: 'checking', currency: 'USD', balance: 0 }],
+      'GET /v1/books/b1/categories': [],
+    })
+    await renderApp(<Transactions book={book} />, { route: '/books/b1/transactions?min=40000' })
+    await userEvent.click(await screen.findByRole('button', { name: 'Account' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'US bank' }))
+    expect(screen.getByTestId('where')).toHaveTextContent(/^\/books\/b1\/transactions\?account_id=usd$/)
+  })
+
+  it('shows no total without a filter', async () => {
+    const api = withSummary()
+    await renderApp(<Transactions book={book} />, { route: '/books/b1/transactions' })
+    await screen.findByText('Phở Thìn')
+    expect(api.calls.some((c) => c.path.endsWith('/summary'))).toBe(false)
+    expect(screen.queryByText(/transactions ·/)).toBeNull()
   })
 })

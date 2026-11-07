@@ -290,7 +290,18 @@
     "since": "Từ {{date}}",
     "until": "Đến {{date}}",
     "clearDates": "Xóa ngày",
-    "clearOne": "Bỏ lọc {{name}}"
+    "clearOne": "Bỏ lọc {{name}}",
+    "amount": "Số tiền",
+    "noCategory": "Chưa có danh mục",
+    "atLeast": "Từ {{amount}}",
+    "atMost": "Đến {{amount}}",
+    "clearAmount": "Xóa số tiền",
+    "count_one": "{{count}} giao dịch",
+    "count_other": "{{count}} giao dịch",
+    "spent": "Chi tiêu",
+    "income": "Thu nhập",
+    "notIncluded_one": "{{count}} giao dịch chưa tính",
+    "notIncluded_other": "{{count}} giao dịch chưa tính"
   },
   "cat": {
     "title": "Danh mục",
