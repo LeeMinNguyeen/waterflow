@@ -656,6 +656,61 @@ def test_two_moves_at_the_same_moment_make_no_cycle(client, database):
         assert owner.execute(text("select parent_id from categories where id = :a"), {"a": a["id"]}).scalar() is None
 
 
+def test_transaction_filters_by_amount_and_no_category_with_a_summary(client, database):
+    """R-TXN-9: amount from and to, in each entry's own currency (a transfer by what left); no category; the
+    filtered list's count, spending, income and difference in the book's currency, missing rates counted."""
+    u = signed_up(client)
+    bid, accts = new_book_with_accounts(client, u)
+    base = f"/v1/books/{bid}/transactions"
+    kwd = str(uuid.uuid4())
+    client.post(f"/v1/books/{bid}/accounts", headers=auth(u), json={"id": kwd, "name": "Kuwait", "kind": "cash",
+                                                                   "currency": "KWD", "opened_on": "2026-10-01"})
+    food = add_category(client, u, bid, "Food")
+    coffee = add_category(client, u, bid, "Coffee", parent=food["id"])
+    salary = add_category(client, u, bid, "Salary", kind="income")
+
+    def add(type_, entries, category=None, payee=None):
+        r = client.post(base, headers=auth(u), json={"id": str(uuid.uuid4()), "type": type_, "occurred_on": "2026-10-05",
+                                                     "category_id": category, "payee": payee,
+                                                     "entries": [{"account_id": a, "amount": m} for a, m in entries]})
+        assert r.status_code == 201, r.text
+        return r.json()["id"]
+
+    latte = add("expense", [(accts["Cash"], -50_000)], coffee["id"], "Latte")
+    dinner = add("expense", [(accts["Bank"], -200_000)], food["id"], "Dinner")
+    loose = add("expense", [(accts["Cash"], -30_000)], payee="Market")
+    back = add("refund", [(accts["Cash"], 20_000)], coffee["id"], "Latte back")
+    paid = add("income", [(accts["Bank"], 1_000_000)], payee="Side job")
+    add("income", [(accts["Bank"], 9_000_000)], salary["id"], "Salary")
+    moved = add("transfer", [(accts["Bank"], -500_000), (accts["Cash"], 500_000)])
+    abroad = add("expense", [(kwd, -1_000)], payee="Kuwait shop")
+
+    def ids(**params):
+        return {i["id"] for i in client.get(base, headers=auth(u), params=params).json()["items"]}
+
+    assert ids(min=40_000, max=600_000) == {latte, dinner, moved}
+    assert ids(min=900_000, type="income") == {paid, *ids(category_id=salary["id"])}
+    assert ids(max=1_000) == {abroad}
+    assert ids(category_id="none") == {loose, paid, abroad}
+    assert client.get(base, headers=auth(u), params={"category_id": "nothing"}).status_code == 422
+    assert client.get(base, headers=auth(u), params={"min": -1}).status_code == 422
+
+    def summary(**params):
+        r = client.get(f"{base}/summary", headers=auth(u), params=params)
+        assert r.status_code == 200, r.text
+        return r.json()
+
+    assert summary(category_id="none") == {"count": 3, "spent": 30_000, "income": 1_000_000, "net": 970_000, "not_converted": 1}
+    assert summary(category_id=food["id"]) == {"count": 3, "spent": 230_000, "income": 0, "net": -230_000, "not_converted": 0}
+    assert summary(account_id=accts["Cash"], min=10_000, max=600_000) == {
+        "count": 4, "spent": 60_000, "income": 0, "net": -60_000, "not_converted": 0}
+    assert summary(q="latte") == {"count": 2, "spent": 30_000, "income": 0, "net": -30_000, "not_converted": 0}
+    assert {back} <= ids(q="back")
+
+    other = signed_up(client)
+    assert client.get(f"{base}/summary", headers=auth(other)).json() == {"detail": "not_found"}
+
+
 def test_transactions_have_a_time_of_day(client):
     """R-TXN-6: every transaction has a date and a time of day; lists sort by both; one saved without a time has
     00:00, and an edit that leaves the time out keeps it."""

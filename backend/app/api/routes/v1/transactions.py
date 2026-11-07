@@ -87,15 +87,56 @@ def _uncursor(c: str) -> tuple[date, time, datetime, UUID]:
         raise HTTPException(422, "invalid") from None
 
 
-@router.get("")
-def list_transactions(
-    book_id: UUID,
+class Filters(BaseModel):
+    account_id: UUID | None = None
+    category_id: UUID | None = None            # includes its sub-categories
+    no_category: bool = False                  # expenses, income and refunds without one
+    type: Type | None = None
+    date_from: date | None = None
+    date_to: date | None = None
+    q: str | None = None                       # in payee or note
+    min: int | None = None                     # the amount in its own currency; a transfer's is what left
+    max: int | None = None
+
+    def params(self) -> dict:
+        return {"acc": self.account_id, "cat": self.category_id, "no_cat": self.no_category, "type": self.type,
+                "from": self.date_from, "to": self.date_to, "q": self.q.strip() if self.q and self.q.strip() else None,
+                "min": self.min, "max": self.max}
+
+
+def filters(
     account_id: UUID | None = None,
-    category_id: UUID | None = None,           # includes its sub-categories
+    category_id: UUID | Literal["none"] | None = None,
     type: Type | None = None,
     date_from: date | None = Query(None, alias="from"),
     date_to: date | None = Query(None, alias="to"),
-    q: Annotated[str | None, Query(max_length=100)] = None,     # in payee or note
+    q: Annotated[str | None, Query(max_length=100)] = None,
+    min: Annotated[int | None, Query(ge=0, le=MAX_AMOUNT)] = None,
+    max: Annotated[int | None, Query(ge=0, le=MAX_AMOUNT)] = None,
+) -> Filters:
+    none = category_id == "none"
+    return Filters(account_id=account_id, category_id=None if none else category_id, no_category=none, type=type,
+                   date_from=date_from, date_to=date_to, q=q, min=min, max=max)
+
+
+FILTERS = """
+   and (cast(:acc as uuid) is null or exists (select 1 from entries e where e.transaction_id = t.id and e.account_id = cast(:acc as uuid)))
+   and (cast(:cat as uuid) is null or t.category_id in (select category_id from category_ancestors where ancestor_id = cast(:cat as uuid)))
+   and (not cast(:no_cat as boolean) or (t.category_id is null and t.type in ('expense', 'income', 'refund')))
+   and (cast(:type as text) is null or t.type = cast(:type as txn_type))
+   and (cast(:from as date) is null or t.occurred_on >= cast(:from as date))
+   and (cast(:to as date) is null or t.occurred_on <= cast(:to as date))
+   and (cast(:q as text) is null
+        or position(lower(cast(:q as text)) in lower(coalesce(t.payee, '') || ' ' || coalesce(t.note, ''))) > 0)
+   and ((cast(:min as bigint) is null and cast(:max as bigint) is null)
+        or (select abs(sum(e.amount)) from entries e where e.transaction_id = t.id and (t.type <> 'transfer' or e.amount < 0))
+           between coalesce(cast(:min as bigint), 0) and coalesce(cast(:max as bigint), 9223372036854775807))"""
+
+
+@router.get("")
+def list_transactions(
+    book_id: UUID,
+    f: Annotated[Filters, Depends(filters)],
     after: str | None = None,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     db: Session = Depends(get_db),
@@ -109,20 +150,12 @@ def list_transactions(
                     sum(e.amount) over (order by t2.occurred_on, t2.occurred_time, t2.created_at, t2.id rows unbounded preceding) as running_balance
                from entries e join transactions t2 on t2.id = e.transaction_id
               where e.account_id = cast(:acc as uuid)) r on r.transaction_id = t.id
- where t.book_id = :b
-   and (cast(:acc as uuid) is null or exists (select 1 from entries e where e.transaction_id = t.id and e.account_id = cast(:acc as uuid)))
-   and (cast(:cat as uuid) is null or t.category_id in (select category_id from category_ancestors where ancestor_id = cast(:cat as uuid)))
-   and (cast(:type as text) is null or t.type = cast(:type as txn_type))
-   and (cast(:from as date) is null or t.occurred_on >= cast(:from as date))
-   and (cast(:to as date) is null or t.occurred_on <= cast(:to as date))
-   and (cast(:q as text) is null
-        or position(lower(cast(:q as text)) in lower(coalesce(t.payee, '') || ' ' || coalesce(t.note, ''))) > 0)
+ where t.book_id = :b""" + FILTERS + """
    and (cast(:c_on as date) is null
         or (t.occurred_on, t.occurred_time, t.created_at, t.id)
            < (cast(:c_on as date), cast(:c_tm as time), cast(:c_at as timestamptz), cast(:c_id as uuid)))
  order by t.occurred_on desc, t.occurred_time desc, t.created_at desc, t.id desc
- limit :n"""), {"b": book_id, "acc": account_id, "cat": category_id, "type": type, "from": date_from, "to": date_to,
-                "q": q.strip() if q and q.strip() else None, "c_on": c_on, "c_tm": c_tm, "c_at": c_at, "c_id": c_id,
+ limit :n"""), {"b": book_id, **f.params(), "c_on": c_on, "c_tm": c_tm, "c_at": c_at, "c_id": c_id,
                 "n": limit + 1}).mappings().all()
     items = [Transaction(**r) for r in rows[:limit]]
     return Page(items=items, next=_cursor(items[-1]) if len(rows) > limit else None)
@@ -214,6 +247,31 @@ def usual(book_id: UUID, type: Literal["expense", "income"], db: Session = Depen
     """This user's own transactions of the type repeated at least 3 times in the last 60 days, the most frequent first."""
     get_book(db, book_id)
     return [Usual(**r) for r in db.execute(text(USUAL), {"b": book_id, "ty": type}).mappings()]
+
+
+class Summary(BaseModel):
+    count: int
+    spent: int                                 # in the book's currency: expenses minus refunds
+    income: int
+    net: int
+    not_converted: int                         # transactions left out of the sums for want of a rate
+
+
+@router.get("/summary")
+def summary(book_id: UUID, f: Annotated[Filters, Depends(filters)], db: Session = Depends(get_db)) -> Summary:
+    get_book(db, book_id)
+    r = db.execute(text("""
+with m as (select t.id, t.type, t.occurred_on from transactions t where t.book_id = :b""" + FILTERS + """),
+     x as (select m.id, m.type, convert_minor(:b, e.amount, a.currency, bk.base_currency, m.occurred_on) as base
+             from m join entries e on e.transaction_id = m.id join accounts a on a.id = e.account_id
+             join books bk on bk.id = :b
+            where m.type in ('expense', 'refund', 'income') and (cast(:acc as uuid) is null or e.account_id = cast(:acc as uuid)))
+select (select count(*) from m)::int as count,
+       coalesce(-sum(base) filter (where type in ('expense', 'refund')), 0)::bigint as spent,
+       coalesce(sum(base) filter (where type = 'income'), 0)::bigint as income,
+       count(distinct id) filter (where base is null)::int as not_converted
+  from x"""), {"b": book_id, **f.params()}).mappings().one()
+    return Summary(**r, net=r["income"] - r["spent"])
 
 
 @router.get("/{txn_id}")
