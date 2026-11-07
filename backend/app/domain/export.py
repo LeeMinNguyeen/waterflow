@@ -106,7 +106,7 @@ VI = {
     "books": "sổ", "book members": "thành viên sổ", "contacts": "người liên quan", "accounts": "tài khoản",
     "categories": "danh mục", "transactions": "giao dịch", "entries": "bút toán", "budgets": "ngân sách",
     "book fx rates": "tỷ giá riêng", "installment plans": "trả góp",
-    "Yes": "Có", "No": "Không",
+    "Yes": "Có", "No": "Không", "All spending": "Tất cả chi tiêu", "Left out": "Không tính",
 }
 LANGUAGE_NAMES = {"en": {"vi": "Vietnamese", "en": "English"}, "vi": {"vi": "Tiếng Việt", "en": "Tiếng Anh"}}
 
@@ -241,14 +241,16 @@ def build_export(db: Session) -> bytes:
 
     budgets = _rows(db, """
         select b.name as book, c.name as category, bu.period::text as period, bu.amount, b.base_currency,
-               cur.minor_unit, bu.starts_on, bu.ends_on
-          from budgets bu join books b on b.id = bu.book_id join categories c on c.id = bu.category_id
-          join currencies cur on cur.code = b.base_currency order by 1, 2""")
+               cur.minor_unit, bu.starts_on, bu.ends_on,
+               (select string_agg(x.name, ', ' order by x.name) from categories x
+                 where x.book_id = bu.book_id and x.id = any (bu.excluded_category_ids)) as left_out
+          from budgets bu join books b on b.id = bu.book_id left join categories c on c.id = bu.category_id
+          join currencies cur on cur.code = b.base_currency order by 1, c.name nulls first""")
     out("budgets.csv", [{
-        "Book": r["book"], "Category": r["category"], "Period": word(r["period"]),
+        "Book": r["book"], "Category": r["category"] or t("All spending"), "Left out": r["left_out"], "Period": word(r["period"]),
         "Amount": _money(r["amount"], r["minor_unit"]), "Currency": r["base_currency"],
         "Starts": r["starts_on"], "Ends": r["ends_on"]} for r in budgets],
-        ["Book", "Category", "Period", "Amount", "Currency", "Starts", "Ends"])
+        ["Book", "Category", "Left out", "Period", "Amount", "Currency", "Starts", "Ends"])
 
     plans = _rows(db, """
         select b.name as book, a.name as card, t.payee, t.occurred_on, -e.amount as amount, a.currency, cur.minor_unit,

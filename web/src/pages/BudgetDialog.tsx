@@ -21,16 +21,16 @@ import { ApiError, budgetPeriods, send, type Book, type Budget, type BudgetPerio
 import { todayIn } from '../lib/labels'
 import { amountText, parseAmount } from '../lib/money'
 import { useFormatMoney } from '../lib/hideAmounts'
-import { useBudgets, useCurrencies, useInvalidateBook } from '../lib/queries'
+import { useBudgets, useCategories, useCurrencies, useInvalidateBook } from '../lib/queries'
 import { newId } from '../lib/uuid'
 import { DateField } from '../components/DateField'
 import { DialogFooter } from '../components/DialogFooter'
 import { useToast } from '../lib/toast'
 
-type Change = { budget: Budget; amount: string; startsOn: string; endsOn: string; badStarts: boolean; badEnds: boolean }
+type Change = { budget: Budget; amount: string; startsOn: string; endsOn: string; badStarts: boolean; badEnds: boolean; leftOut: string[] }
 
-// A category's budgets: one per period, in the book's currency. Sub-categories count too.
-export function BudgetDialog({ book, category, onClose }: { book: Book; category: Category; onClose: () => void }) {
+// A category's budgets, or with no category those for all spending: one per period, in the book's currency.
+export function BudgetDialog({ book, category, onClose }: { book: Book; category: Category | null; onClose: () => void }) {
   const formatMoney = useFormatMoney()
   const { t } = useTranslation()
   const errorText = useErrorText()
@@ -41,7 +41,20 @@ export function BudgetDialog({ book, category, onClose }: { book: Book; category
   const currencies = useCurrencies()
   const minor = currencies.data?.get(book.base_currency)?.minor_unit ?? 0
   const money = (v: number) => formatMoney(v, book.base_currency, minor, lang)
-  const mine = (budgets.data ?? []).filter((b) => b.category_id === category.id)
+  const categories = useCategories(book.id, true)
+  // One left out stays on offer, archived or no longer an expense, so it can be put back.
+  const expenses = (cats: string[]) => (categories.data ?? []).filter((c) => (c.kind === 'expense' && !c.archived_at) || cats.includes(c.id))
+  const nameOf = new Map((categories.data ?? []).map((c) => [c.id, c.name]))
+  const mine = (budgets.data ?? []).filter((b) => b.category_id === (category?.id ?? null))
+  const [leftOut, setLeftOut] = useState<string[]>([])
+  const except = (b: Budget) => b.excluded_category_ids.length > 0
+    ? t('budget.except', { names: b.excluded_category_ids.map((id) => nameOf.get(id)).filter(Boolean).join(', ') }) : null
+  const leaveOut = (value: string[], onChange: (ids: string[]) => void) => (
+    <TextField select label={t('budget.leaveOut')} value={value} onChange={(e) => onChange(e.target.value as unknown as string[])}
+      slotProps={{ select: { multiple: true, renderValue: (ids) => (ids as string[]).map((id) => nameOf.get(id)).join(', ') } }}>
+      {expenses(value).map((c) => <MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>)}
+    </TextField>
+  )
   const free = budgetPeriods.filter((p) => !mine.some((b) => b.period === p))
   const [period, setPeriod] = useState<BudgetPeriod>(free.includes('monthly') ? 'monthly' : free[0] ?? 'monthly')
   const [amount, setAmount] = useState('')
@@ -81,7 +94,8 @@ export function BudgetDialog({ book, category, onClose }: { book: Book; category
     e.preventDefault()
     if (!ready) return
     const err = await run(() => send('POST', `/v1/books/${book.id}/budgets`, {
-      id, category_id: category.id, period, amount: parsed, starts_on: startsOn || null, ends_on: endsOn || null,
+      id, category_id: category?.id ?? null, ...(category ? {} : { excluded_category_ids: leftOut }), period, amount: parsed,
+      starts_on: startsOn || null, ends_on: endsOn || null,
     }))
     if (!err) {
       toast(t('toast.budgetAdded'))
@@ -95,6 +109,7 @@ export function BudgetDialog({ book, category, onClose }: { book: Book; category
     const { budget: b, startsOn: starts, endsOn: ends } = change
     const err = await run(() => send('PATCH', `/v1/books/${book.id}/budgets/${b.id}`, {
       version: b.version, amount: changed, starts_on: starts, ...(ends ? { ends_on: ends } : { ongoing: true }),
+      ...(category ? {} : { excluded_category_ids: change.leftOut }),
     }))
     if (!err) toast(t('toast.budgetSaved'))
     // A conflict shows the budget as it is now, to change again from there.
@@ -104,22 +119,24 @@ export function BudgetDialog({ book, category, onClose }: { book: Book; category
   const remove = (b: Budget) => run(() => send('DELETE', `/v1/books/${book.id}/budgets/${b.id}?version=${b.version}`))
   const startChange = (b: Budget) => {
     setError(null)
-    setChange({ budget: b, amount: amountText(b.amount, minor, lang), startsOn: b.starts_on, endsOn: b.ends_on ?? '', badStarts: false, badEnds: false })
+    setChange({ budget: b, amount: amountText(b.amount, minor, lang), startsOn: b.starts_on, endsOn: b.ends_on ?? '', badStarts: false, badEnds: false,
+      leftOut: b.excluded_category_ids })
   }
 
   return (
     <Dialog open onClose={onClose} fullWidth maxWidth="sm">
       <form onSubmit={change ? save : add}>
-        <DialogTitle>{t('budget.title')} · {category.name}</DialogTitle>
+        <DialogTitle>{t('budget.title')} · {category?.name ?? t('budget.allSpending')}</DialogTitle>
         <DialogContent>
           <Stack spacing={2}>
-            <Typography variant="body2" color="textSecondary">{t('budget.subcategoriesCount')}</Typography>
+            <Typography variant="body2" color="textSecondary">{t(category ? 'budget.subcategoriesCount' : 'budget.allCounts')}</Typography>
             {mine.length > 0 && (
               <Stack spacing={2}>
                 <Typography variant="subtitle2">{t('budget.existing')}</Typography>
                 {mine.map((b) => change?.budget.id === b.id ? (
                   <Stack key={b.id} spacing={2}>
                     <Typography>{t(`budget.periods.${b.period}`)}</Typography>
+                    {!category && leaveOut(change.leftOut, (leftOut) => edit({ leftOut }))}
                     <AmountField label={`${t('budget.amount')} (${book.base_currency})`} required autoFocus value={change.amount}
                       onChange={(amount) => edit({ amount })} minorUnit={minor} />
                     <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
@@ -133,9 +150,12 @@ export function BudgetDialog({ book, category, onClose }: { book: Book; category
                   <Stack key={b.id} direction="row" spacing={1} sx={{ alignItems: 'center' }}>
                     <Stack sx={{ flex: 1, minWidth: 0 }}>
                       {b.progress ? (
-                        <BudgetBar label={t(`budget.periods.${b.period}`)} spent={b.progress.spent} budget={b.amount} percent={b.progress.percent_used} color={category.color} format={money} />
+                        <>
+                          <BudgetBar label={t(`budget.periods.${b.period}`)} spent={b.progress.spent} budget={b.amount} percent={b.progress.percent_used} color={category?.color} format={money} />
+                          {except(b) && <Typography variant="caption" color="textSecondary" sx={{ mt: 0.5 }}>{except(b)}</Typography>}
+                        </>
                       ) : (
-                        <Typography variant="body2">{t(`budget.periods.${b.period}`)} · {money(b.amount)} · {t('budget.notActive')}</Typography>
+                        <Typography variant="body2">{[t(`budget.periods.${b.period}`), except(b), money(b.amount), t('budget.notActive')].filter(Boolean).join(' · ')}</Typography>
                       )}
                     </Stack>
                     {canEdit && (
@@ -168,6 +188,7 @@ export function BudgetDialog({ book, category, onClose }: { book: Book; category
                   <DateField label={t('budget.endsOn')} value={endsOn} onChange={setEndsOn}
                     onInvalid={(ends) => setBadDates((b) => ({ ...b, ends }))} />
                 </Stack>
+                {!category && leaveOut(leftOut, setLeftOut)}
               </Stack>
             )}
             {error ? <Alert severity="error">{errorText(error)}</Alert> : null}

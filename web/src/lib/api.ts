@@ -267,7 +267,7 @@ export type Dashboard = {
   income_this_month: number
   cashflow_6_months: { month: string; spent: number; income: number; not_converted: number }[]
   top_categories_this_month: { category_id: string | null; category: string; category_parent_id: string | null; spent: number; not_converted: number }[]
-  budgets: { budget_id: string; category_id: string; category: string; period: string; period_start: string; period_end: string; budget: number; spent: number; remaining: number; percent_used: number | null; not_converted: number }[]
+  budgets: { budget_id: string; category_id: string | null; category: string | null; excluded_category_ids: string[]; period: string; period_start: string; period_end: string; budget: number; spent: number; remaining: number; percent_used: number | null; not_converted: number }[]
   accounts: { account_id: string; name: string; kind: AccountKind; currency: string; balance: number; converted_balance: number | null; in_net_worth: boolean; pinned?: boolean }[]
   people: { contact_id: string; name: string; currency: string; owed_to_you: number; you_owe: number }[]
   recent_transactions: { id: string; type: TxnType; occurred_on: string; occurred_time: string; payee: string | null; category: string | null; amount: number | null; currency: string | null }[]
@@ -289,7 +289,8 @@ export const budgetPeriods = ['daily', 'weekly', 'monthly', 'quarterly', 'yearly
 export type BudgetPeriod = (typeof budgetPeriods)[number]
 export type Budget = {
   id: string
-  category_id: string
+  category_id: string | null
+  excluded_category_ids: string[]
   period: BudgetPeriod
   amount: number
   starts_on: string
