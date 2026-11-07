@@ -140,6 +140,13 @@ describe("amount and no-category filters, with the list's total (waterflow#103)"
     expect(api.calls.some((c) => c.path === '/v1/books/b1/transactions/summary' && c.url.includes('type=expense'))).toBe(true)
   })
 
+  it('clears both dates at once', async () => {
+    withSummary()
+    await renderApp(<Transactions book={book} />, { route: '/books/b1/transactions?from=2025-10-01&to=2025-10-31' })
+    await userEvent.click(await screen.findByRole('button', { name: 'Clear Dates' }))
+    expect(screen.getByTestId('where')).toHaveTextContent(/^\/books\/b1\/transactions$/)
+  })
+
   it('shows no total without a filter', async () => {
     const api = withSummary()
     await renderApp(<Transactions book={book} />, { route: '/books/b1/transactions' })
