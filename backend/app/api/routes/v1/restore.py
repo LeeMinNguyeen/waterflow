@@ -91,8 +91,9 @@ def admin_restore(background: BackgroundTasks, file: UploadFile, password: Annot
     if row["totp_secret"]:
         if not code:
             raise HTTPException(401, "code_required")
-        if not si.totp_matches(row["totp_secret"], code):
+        if not si.totp_accepted(db, caller.id, row["totp_secret"], code):
             raise HTTPException(401, "invalid_code")
+        db.commit()
     return _leave_request(file, purged, background)
 
 
