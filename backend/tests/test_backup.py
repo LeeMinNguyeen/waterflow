@@ -135,8 +135,9 @@ def snapshot(database):
 
 
 def test_restore_commands_documented():
-    assert len(RESTORE) == 5 and RESTORE[0].startswith("psql") and RESTORE[3].startswith("pg_restore --no-owner")
+    assert len(RESTORE) == 6 and RESTORE[0].startswith("psql") and RESTORE[3].startswith("pg_restore --no-owner")
     assert "'sessions', 'remembered_devices', 'password_resets'" in RESTORE[4]
+    assert "update public.invites set revoked_at = now() where used_at is null and revoked_at is null and expires_at > now()" in RESTORE[5]
 
 
 def test_backup_restores_everything(source, target, tmp_path):
@@ -291,13 +292,16 @@ def test_restore_requested_from_the_web(live, tmp_path):
 
 
 def test_a_restore_signs_everyone_out(live, tmp_path):
-    """Sessions, remembered devices and reset links in the backup would work again, even ones ended after it."""
+    """Sessions, remembered devices and reset links in the backup would work again, even ones ended after it; so would
+    an invite used or revoked after it: every unused one is revoked."""
     from app.jobs import backup, restore as web_restore
     name, _ = live
     who = "(select id from users where username = 'backup_user')"
     sql(name, f"insert into sessions (token_sha256, user_id) values (sha256('s'), {who})",
         f"insert into remembered_devices (token_sha256, user_id) values (sha256('d'), {who})",
-        f"insert into password_resets (token_sha256, user_id, expires_at) values (sha256('r'), {who}, now() + interval '1 day')")
+        f"insert into password_resets (token_sha256, user_id, expires_at) values (sha256('r'), {who}, now() + interval '1 day')",
+        "insert into invites (code_sha256, expires_at) values (sha256('open'), now() + interval '1 day')",
+        f"insert into invites (code_sha256, expires_at, used_by, used_at) values (sha256('used'), now() + interval '1 day', {who}, now())")
     signed_in = tmp_path / "with-sessions"
     signed_in.mkdir()
     dump, _, _ = backup.run_backup(libpq_url(name), str(signed_in))
@@ -305,6 +309,7 @@ def test_a_restore_signs_everyone_out(live, tmp_path):
     assert web_restore.restore_if_requested(libpq_url(name), str(backups)) == "done"
     assert sql(name, "select (select count(*) from sessions) + (select count(*) from remembered_devices)"
                      " + (select count(*) from password_resets)") == [(0,)]
+    assert sql(name, "select code_sha256 = sha256('open'), revoked_at is not null from invites order by 1") == [(False, False), (True, True)]
 
 
 def test_signing_out_skips_tables_an_older_backup_lacks():
@@ -334,8 +339,10 @@ def test_a_failed_restore_puts_the_database_back(live, tmp_path, monkeypatch):
         return real(url, path)
 
     monkeypatch.setattr(web_restore, "_load", broken_once)
+    sql(name, "insert into invites (code_sha256, expires_at) values (sha256('live'), now() + interval '1 day')")
     assert web_restore.restore_if_requested(libpq_url(name), str(backups)) == "failed"
     assert users(name) == ["after_backup", "backup_user"]
+    assert sql(name, "select revoked_at is null from invites where code_sha256 = sha256('live')") == [(True,)]   # still works
     status = json.loads((backups / "restore" / "status").read_text())
     assert status["status"] == "failed" and "something broke" in status["detail"]
     assert not (backups / "restore" / "request.dump").exists()

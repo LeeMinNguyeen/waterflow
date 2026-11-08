@@ -620,7 +620,7 @@
   },
   "restore": {
     "title": "Khôi phục bản sao lưu",
-    "intro": "Thay toàn bộ dữ liệu trên máy chủ này bằng một bản sao lưu: tệp .dump trong thư mục sao lưu. Máy chủ sẽ sao lưu dữ liệu hiện có trước, rồi khởi động lại, và mọi người đăng nhập lại bằng mật khẩu của ngày sao lưu.",
+    "intro": "Thay toàn bộ dữ liệu trên máy chủ này bằng một bản sao lưu: tệp .dump trong thư mục sao lưu. Máy chủ sẽ sao lưu dữ liệu hiện có trước, rồi khởi động lại, và mọi người đăng nhập lại bằng mật khẩu của ngày sao lưu. Các lời mời chưa dùng sẽ hết hiệu lực: hãy tạo lời mời mới.",
     "file": "Tệp sao lưu",
     "choose": "Chọn…",
     "purged": "Danh sách tài khoản đã xóa hẳn (không bắt buộc)",
