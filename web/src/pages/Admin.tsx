@@ -48,7 +48,10 @@ type Job = {
   name: JobName; at_minute: number | null; timezone: string | null; default_minute: number; enabled: boolean
   next_run_at: string; last_started_at: string | null; last_finished_at: string | null
   last_result: 'done' | 'failed' | null; last_detail: string | null
+  run_requested_at: string | null; runs_within: '30s' | '1h'
 }
+const asked = (job: Job) => !!job.run_requested_at && (!job.last_started_at || job.run_requested_at > job.last_started_at)
+const running = (job: Job) => !!job.last_started_at && (!job.last_finished_at || job.last_finished_at < job.last_started_at)
 
 const when = (iso: string | null) =>
   iso ? new Intl.DateTimeFormat(currentLanguage() === 'vi' ? 'vi-VN' : 'en-GB', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(iso)) : ''
@@ -143,7 +146,8 @@ function Jobs({ timezone }: { timezone: string }) {
   const { t } = useTranslation()
   const errorText = useErrorText()
   const qc = useQueryClient()
-  const jobs = useQuery({ queryKey: ['admin', 'jobs'], queryFn: () => api<Job[]>('/v1/admin/jobs') })
+  const jobs = useQuery({ queryKey: ['admin', 'jobs'], queryFn: () => api<Job[]>('/v1/admin/jobs'),
+    refetchInterval: (q) => (q.state.data?.some((j) => asked(j) || running(j)) ? 5000 : false) })
   const [edits, setEdits] = useState<Partial<Record<JobName, { minute?: number; enabled?: boolean }>>>({})
   const [state, setState] = useState<{ error?: unknown; saved?: boolean; busy?: boolean }>({})
   if (jobs.isError) return <FormSection title={t('admin.jobs')}><Alert severity="error">{errorText(jobs.error)}</Alert></FormSection>
@@ -163,20 +167,33 @@ function Jobs({ timezone }: { timezone: string }) {
     setEdits((e) => ({ ...e, [name]: { ...e[name], ...change } }))
   }
   const lastRun = (job: Job) => {
+    if (asked(job)) return <Typography variant="body2">{t(`admin.jobStarting_${job.runs_within}`)}</Typography>
     if (!job.last_started_at) return <Typography variant="body2" color="textSecondary">{t('admin.jobNever')}</Typography>
-    if (!job.last_finished_at || Date.parse(job.last_finished_at) < Date.parse(job.last_started_at)) {
+    if (running(job)) {
       return <Typography variant="body2">{t('admin.jobRunning', { when: at.format(new Date(job.last_started_at)) })}</Typography>
     }
     const failed = job.last_result === 'failed'
     return (
       <>
         <Typography variant="body2" color={failed ? 'error' : 'success'}>
-          {t(failed ? 'admin.jobFailed' : 'admin.jobDone', { when: at.format(new Date(job.last_finished_at)) })}
+          {t(failed ? 'admin.jobFailed' : 'admin.jobDone', { when: at.format(new Date(job.last_finished_at ?? job.last_started_at)) })}
         </Typography>
         {job.last_detail && <Typography variant="caption" color="textSecondary" sx={{ wordBreak: 'break-word' }}>{job.last_detail}</Typography>}
       </>
     )
   }
+
+  async function runNow(name: JobName) {
+    setState({})
+    try {
+      await send('POST', `/v1/admin/jobs/${name}/run`)
+    } catch (err) {
+      setState({ error: err })
+    } finally {
+      await qc.invalidateQueries({ queryKey: ['admin', 'jobs'] })
+    }
+  }
+  const off = (name: JobName) => !(edits[name]?.enabled ?? jobs.data?.find((j) => j.name === name)?.enabled ?? true)
 
   async function save() {
     setState({ busy: true })
@@ -217,15 +234,13 @@ function Jobs({ timezone }: { timezone: string }) {
                 <TableRow key={job.name}>
                   <TableCell>
                     {t(`admin.jobNames.${job.name}`)}
-                    {job.name === 'rates' && (
-                      <Box>
-                        <Switch size="small" checked={enabled} onChange={(e) => edit(job.name, { enabled: e.target.checked })}
-                          slotProps={{ input: { 'aria-label': t('admin.jobRatesOn') } }} />
-                        <Typography component="span" variant="body2" color="textSecondary">
-                          {t(enabled ? 'admin.jobOn' : 'admin.jobOff')}
-                        </Typography>
-                      </Box>
-                    )}
+                    <Box>
+                      <Switch size="small" checked={enabled} onChange={(e) => edit(job.name, { enabled: e.target.checked })}
+                        slotProps={{ input: { 'aria-label': t('admin.jobDaily', { job: t(`admin.jobNames.${job.name}`) }) } }} />
+                      <Typography component="span" variant="body2" color="textSecondary">
+                        {enabled ? t('admin.jobOn') : t(job.name === 'rates' ? 'admin.jobOff' : 'admin.jobOffPlain')}
+                      </Typography>
+                    </Box>
                   </TableCell>
                   <TableCell>
                     <TextField select size="small" value={minute} onChange={(e) => edit(job.name, { minute: Number(e.target.value) })}
@@ -234,13 +249,20 @@ function Jobs({ timezone }: { timezone: string }) {
                       {choices.map((m) => <MenuItem key={m} value={m}>{hhmm(m)}</MenuItem>)}
                     </TextField>
                   </TableCell>
-                  <TableCell>{lastRun(job)}</TableCell>
+                  <TableCell>
+                    {lastRun(job)}
+                    {!asked(job) && !running(job) && (
+                      <Button size="small" onClick={() => runNow(job.name)} sx={{ mt: 0.5, ml: -1 }}>{t('admin.runNow')}</Button>
+                    )}
+                  </TableCell>
                 </TableRow>
               )
             })}
           </TableBody>
         </Table>
       </Box>
+      {off('backup') && <Alert severity="warning">{t('admin.backupOff')}</Alert>}
+      {off('purge') && <Alert severity="warning">{t('admin.purgeOff')}</Alert>}
       {state.error ? <Alert severity="error">{errorText(state.error)}</Alert> : null}
       {state.saved ? <Alert severity="success">{t('profile.saved')}</Alert> : null}
       <Button variant="outlined" loading={state.busy} disabled={Object.keys(edits).length === 0} onClick={save} sx={{ alignSelf: 'start' }}>

@@ -93,7 +93,10 @@ export type Profile = {
 export type Me = { id: string; profile: Profile }
 
 // GET /v1/instance, before anyone signs in.
-export type Instance = { name: string; server_version: string; api_version: number; signup: 'invite' | 'open'; setup_needed: boolean }
+export type Instance = {
+  name: string; server_version: string; api_version: number; signup: 'invite' | 'open'; setup_needed: boolean
+  account_purge: 'on' | 'off'
+}
 export type Token = { token: string }
 export type SignedIn = Token & { device_token: string | null }
 // The browser and system that signed in, never the token.
