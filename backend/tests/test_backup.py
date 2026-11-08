@@ -341,6 +341,47 @@ def test_a_failed_restore_puts_the_database_back(live, tmp_path, monkeypatch):
     assert not (backups / "restore" / "request.dump").exists()
 
 
+def test_a_restore_stopped_midway_puts_the_database_back(live, tmp_path):
+    """Killed after its safety backup, while loading (a restart, a reboot, a start-up timeout): the next start loads
+    the safety backup instead of backing up a half-empty database."""
+    from app.jobs import backup, restore as web_restore
+    name, dump = live
+    sql(name, "insert into users (id, username) values (gen_random_uuid(), 'after_backup')")
+    backups = requested(tmp_path, dump.read_bytes())
+    safety, _, _ = backup.run_backup(libpq_url(name), str(backups))
+    (backups / "restore" / "safety").write_text(Path(safety).name)
+    web_restore._empty(libpq_url(name))                            # stopped here, before the upload was loaded
+    assert web_restore.restore_if_requested(libpq_url(name), str(backups)) == "failed"
+    assert users(name) == ["after_backup", "backup_user"]
+    status = json.loads((backups / "restore" / "status").read_text())
+    assert status["status"] == "failed" and "interrupted" in status["detail"] and Path(safety).name in status["detail"]
+    assert not any((backups / "restore" / f).exists() for f in ("request.dump", "safety"))
+
+
+def test_a_restore_names_its_safety_backup_until_it_ends(live, tmp_path, monkeypatch):
+    from app.jobs import restore as web_restore
+    name, dump = live
+    backups = requested(tmp_path, dump.read_bytes())
+    seen = []
+    real = web_restore._load
+    monkeypatch.setattr(web_restore, "_load", lambda url, path: (seen.append((backups / "restore" / "safety").read_text()),
+                                                                 real(url, path))[1])
+    assert web_restore.restore_if_requested(libpq_url(name), str(backups)) == "done"
+    assert seen and seen[0].startswith("waterflow-") and (backups / seen[0]).exists()
+    assert not (backups / "restore" / "safety").exists()
+
+
+def test_pruning_keeps_the_backup_a_restore_names(tmp_path):
+    from datetime import datetime, timezone
+    from app.jobs import backup
+    (tmp_path / "restore").mkdir()
+    for n in ("waterflow-20260101T000000Z.dump", "waterflow-20260102T000000Z.dump"):
+        (tmp_path / n).write_bytes(b"x")
+    (tmp_path / "restore" / "safety").write_text("waterflow-20260101T000000Z.dump")
+    assert backup.prune(str(tmp_path), datetime(2026, 11, 1, tzinfo=timezone.utc)) == ["waterflow-20260102T000000Z.dump"]
+    assert (tmp_path / "waterflow-20260101T000000Z.dump").exists()
+
+
 def test_a_file_that_is_no_backup_changes_nothing(live, tmp_path):
     from app.jobs import restore as web_restore
     name, _ = live

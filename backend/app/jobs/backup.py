@@ -109,9 +109,12 @@ def _run(cmd: list[str], env: dict) -> str:
 
 
 def prune(backup_dir: str, now: datetime) -> list[str]:
-    """Deletes dumps (and leftover .partial files) older than KEEP. Returns their names."""
+    """Deletes dumps (and leftover .partial files) older than KEEP, except the one a restore under way names (see
+    app/jobs/restore.py). Returns their names."""
+    safety = os.path.join(backup_dir, "restore", "safety")
+    kept = open(safety).read().strip() if os.path.isfile(safety) else None
     old = [n for n in sorted(os.listdir(backup_dir))
-           if (m := DUMP_NAME.fullmatch(n))
+           if n != kept and (m := DUMP_NAME.fullmatch(n))
            and now - datetime.strptime(m[1], "%Y%m%dT%H%M%SZ").replace(tzinfo=timezone.utc) > KEEP]
     for n in old:
         os.remove(os.path.join(backup_dir, n))

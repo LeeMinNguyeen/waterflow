@@ -8,6 +8,9 @@ again, the launcher calls restore_if_requested() before the migrations:
     3. the upload's purged accounts added to PURGE_LOG, and every account in it purged again;
     4. if 2 or 3 fails, the backup from 1 loaded back.
 
+restore/safety names the backup from 1 from the moment it's made until the restore ends: a start that finds it
+(the server was stopped midway) loads that backup back instead of backing up a half-loaded database.
+
 restore/status records the outcome for Server admin. The migrations and the logins then run as on every start.
 """
 import json
@@ -24,6 +27,7 @@ from app.jobs import account_deletion, backup, migrate
 REQUEST = "request.dump"
 PURGED = "purged_accounts.jsonl"
 STATUS = "status"
+SAFETY = "safety"
 ROLES = ("app_user", "account_purger", "fx_updater")
 
 
@@ -132,19 +136,50 @@ def _record(where: Path, status: str, detail: str | None = None) -> None:
     (where / STATUS).write_text(json.dumps({"status": status, "at": datetime.now(timezone.utc).isoformat(), "detail": detail}))
 
 
+def _name_safety(where: Path, before: str) -> None:
+    partial = where / (SAFETY + ".partial")
+    partial.write_text(os.path.basename(before))
+    partial.replace(where / SAFETY)
+
+
+def _resume(url: str, backup_dir: str, where: Path, purge_log: str) -> str:
+    """A restore stopped midway: the database may be half loaded, so the backup from before it goes back."""
+    name = (where / SAFETY).read_text().strip()
+    try:
+        before = Path(backup_dir) / name
+        if not before.is_file():
+            raise RestoreError("it's gone")
+        _apply(url, str(before), None, purge_log, sign_out=False)
+        reason = f"the restore was interrupted; the database from before it is back ({name})"
+    except Exception as e:
+        reason = (f"the restore was interrupted, and putting the database back failed"
+                  f" ({backup._scrub(str(e), url).splitlines()[0] if str(e) else type(e).__name__}): restore {name} by hand")
+    _record(where, "failed", reason)
+    print(f"restoring the uploaded backup failed: {reason}", flush=True)
+    return "failed"
+
+
 def restore_if_requested(url: str, backup_dir: str, purge_log: str | None = None) -> str | None:
     """'done' or 'failed' when a restore was waiting, None otherwise. Never raises: the server starts either way."""
     where = folder(backup_dir)
     request = where / REQUEST
-    if not request.exists():
+    if not request.exists() and not (where / SAFETY).exists():
         return None
     purge_log = purge_log or os.environ.get("PURGE_LOG") or os.path.join(backup_dir, "purged_accounts.jsonl")
+    if (where / SAFETY).exists():
+        try:
+            return _resume(url, backup_dir, where, purge_log)
+        finally:
+            for name in (REQUEST, PURGED, SAFETY):
+                (where / name).unlink(missing_ok=True)
     _record(where, "running")
     before = None
     try:
         check(request)
         before, _, _ = backup.run_backup(url, backup_dir)
+        _name_safety(where, before)
         _apply(url, str(request), where / PURGED, purge_log)
+        (where / SAFETY).unlink(missing_ok=True)
         _record(where, "done")
         print(f"restored the uploaded backup; the database before it is in {os.path.basename(before)}", flush=True)
         return "done"
@@ -153,6 +188,7 @@ def restore_if_requested(url: str, backup_dir: str, purge_log: str | None = None
         if before:
             try:
                 _apply(url, before, None, purge_log, sign_out=False)     # taken seconds ago: its sessions are the live ones
+                (where / SAFETY).unlink(missing_ok=True)
             except Exception as again:
                 reason += f"; putting the database back failed too ({backup._scrub(str(again), url).splitlines()[0]}):" \
                           f" restore {os.path.basename(before)} by hand"
@@ -160,5 +196,5 @@ def restore_if_requested(url: str, backup_dir: str, purge_log: str | None = None
         print(f"restoring the uploaded backup failed: {reason}", flush=True)
         return "failed"
     finally:
-        for name in (REQUEST, PURGED):
+        for name in (REQUEST, PURGED, SAFETY):
             (where / name).unlink(missing_ok=True)
