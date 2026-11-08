@@ -25,6 +25,7 @@ export function AmountRange({ min, max, currency, codes, reference, onChange }: 
   const [from, setFrom] = useState(shown(min))
   const [to, setTo] = useState(shown(max))
   const pending = useRef<Range | null>(null)
+  const sentCurrency = useRef(currency ?? '')
   const send = useRef(onChange)
   useEffect(() => { send.current = onChange })
 
@@ -34,11 +35,15 @@ export function AmountRange({ min, max, currency, codes, reference, onChange }: 
       const minor = parseAmount(text, minorUnit, lang)
       return minor !== null && minor >= 0 ? String(minor) : null
     }
-    // An amount that doesn't read in the currency now meant is left out, so the currencies picked still apply.
-    const range = { min: read(from) ?? '', max: read(to) ?? '', currency: picked.join(',') }
+    // An amount that doesn't read waits (a sum half typed), unless the currencies picked changed: then it's left
+    // out, as it may not read in the reference currency, and the currencies still apply.
+    const [min, max, codes] = [read(from), read(to), picked.join(',')]
+    if ((min === null || max === null) && codes === sentCurrency.current) return
+    const range = { min: min ?? '', max: max ?? '', currency: codes }
     pending.current = range
     const id = setTimeout(() => {
       pending.current = null
+      sentCurrency.current = codes
       send.current(range)
     }, 350)
     return () => clearTimeout(id)

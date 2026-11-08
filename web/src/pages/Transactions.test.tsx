@@ -234,10 +234,29 @@ describe("amount and no-category filters, with the list's total (waterflow#103)"
     await waitFor(() => expect(screen.getByTestId('where')).toHaveTextContent(/^\/books\/b1\/transactions\?currency=USD%2CVND$/))
   })
 
+  it('keeps the amount while a sum is being typed', async () => {
+    withUsd()
+    await renderApp(<Transactions book={book} />, { route: '/books/b1/transactions?min=1000' })
+    await userEvent.click(await screen.findByRole('button', { name: 'Amount: From ₫1,000' }))
+    await userEvent.type(screen.getByRole('textbox', { name: 'From' }), '+')
+    await new Promise((r) => setTimeout(r, 600))
+    expect(screen.getByTestId('where')).toHaveTextContent(/^\/books\/b1\/transactions\?min=1000$/)
+  })
+
+  it('hides the amount with several currencies too', async () => {
+    localStorage.setItem('waterflow.hideAmounts', '1')
+    withUsd()
+    await renderApp(<Transactions book={book} />, { route: '/books/b1/transactions?min=50000&currency=USD,VND' })
+    expect(await screen.findByRole('button', { name: 'Amount: From •••• · USD, VND' })).toBeInTheDocument()
+    localStorage.removeItem('waterflow.hideAmounts')
+  })
+
   it('ignores a currency in the address that is no code', async () => {
     withUsd()
-    await renderApp(<Transactions book={book} />, { route: '/books/b1/transactions?currency=US&min=1' })
-    expect(await screen.findByRole('button', { name: 'Amount: From ₫1' })).toBeInTheDocument()
+    const api = withUsd()
+    await renderApp(<Transactions book={book} />, { route: '/books/b1/transactions?currency=US,VND&min=1' })
+    expect(await screen.findByRole('button', { name: 'Amount: From ₫1 · VND' })).toBeInTheDocument()
+    expect(api.calls.filter((c) => c.path === '/v1/books/b1/transactions').every((c) => c.url.includes('currency=VND&') || c.url.endsWith('currency=VND'))).toBe(true)
   })
 
   it('starts the amount afresh when the account picked is in another currency', async () => {

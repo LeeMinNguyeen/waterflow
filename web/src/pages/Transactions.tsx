@@ -30,7 +30,7 @@ import { currentLanguage } from '../i18n'
 import { txnTypes, type Account, type Book, type Transaction } from '../lib/api'
 import { categoryTree } from '../lib/categories'
 import { shiftDay, todayIn } from '../lib/labels'
-import { useFormatMoney } from '../lib/hideAmounts'
+import { masked, useFormatMoney, useHideAmounts } from '../lib/hideAmounts'
 import { amountText } from '../lib/money'
 import { useAccounts, useCategories, useCurrencies, useTransactions, useTxnSummary, type TxnFilters } from '../lib/queries'
 
@@ -48,6 +48,10 @@ export function Transactions({ book }: { book: Book }) {
   const openTxn = useOpenTxn()
   const [params, setParams] = useSearchParams()
   const filters: TxnFilters = Object.fromEntries(FILTERS.map((k) => [k, params.get(k) ?? undefined]).filter(([, v]) => v))
+  // Only codes from the address go on: a hand-edited one would blank the chip and be refused by the server.
+  const codesAsked = (filters.currency ?? '').split(',').filter((c) => /^[A-Z]{3}$/.test(c)).join(',')
+  if (codesAsked) filters.currency = codesAsked
+  else delete filters.currency
   const [search, setSearch] = useState(filters.q ?? '')
   const [menu, setMenu] = useState<{ el: HTMLElement; which: 'account' | 'category' | 'type' | 'dates' | 'amount' } | null>(null)
   // Clear starts the date fields afresh: a half-typed date isn't in the address, so clearing it wouldn't reach them.
@@ -59,6 +63,7 @@ export function Transactions({ book }: { book: Book }) {
   const categories = useCategories(book.id, true)
   const currencies = useCurrencies()
   const formatMoney = useFormatMoney()
+  const { hidden } = useHideAmounts()
 
   // Search as the user types, a moment after they stop.
   useEffect(() => {
@@ -145,10 +150,10 @@ export function Transactions({ book }: { book: Book }) {
     const code = account?.currency ?? (picked.length === 1 ? picked[0] : book.base_currency)
     return { code, minorUnit: currencies.data?.get(code)?.minor_unit ?? 0 }
   }
-  const picked = (filters.currency ?? '').split(',').filter((c) => /^[A-Z]{3}$/.test(c))
+  const picked = filters.currency ? filters.currency.split(',') : []
   const { code: amountCurrency, minorUnit } = reference(picked)
   // Several currencies: each amount is read in its own, so no one symbol fits.
-  const amountOf = (v: string) => picked.length > 1 && !filteredAccount ? amountText(Number(v), minorUnit, lang)
+  const amountOf = (v: string) => picked.length > 1 && !filteredAccount ? (hidden ? masked : String)(amountText(Number(v), minorUnit, lang))
     : formatMoney(Number(v), amountCurrency, minorUnit, lang)
   const amountValue = [filters.min && filters.max ? `${amountOf(filters.min)} – ${amountOf(filters.max)}`
     : filters.min ? t('filters.atLeast', { amount: amountOf(filters.min) })
