@@ -83,12 +83,15 @@ def _empty(url: str) -> None:
                 conn.execute(f'create role "{role}" nologin')
 
 
+# Default privileges only shape objects a role makes later, and the migrations grant each object anyway; Supabase's
+# name supabase_admin, whose defaults only a superuser or its members may change. So they're left out of a restore.
+LEFT_OUT = [f" {kind} - {schema}public " for kind in ("SCHEMA", "COMMENT") for schema in ("", "SCHEMA ")] + [" DEFAULT ACL "]
 GRANTEE = re.compile(r'\b(?:TO|FROM|FOR ROLE)\s+("(?:[^"]|"")+"|[A-Za-z_][A-Za-z0-9_$]*)')
 
 
 def _grantees(pg_restore: str, path: str, toc: str, env: dict) -> set[str]:
     """The roles the dump's privileges name, PUBLIC aside."""
-    acl = [line for line in toc.splitlines() if " ACL " in line]
+    acl = [line for line in toc.splitlines() if " ACL " in line and " DEFAULT ACL " not in line]
     if not acl:
         return set()
     with tempfile.NamedTemporaryFile("w", suffix=".list") as listing:
@@ -99,13 +102,24 @@ def _grantees(pg_restore: str, path: str, toc: str, env: dict) -> set[str]:
     return names - {"public"}
 
 
-def _make_missing_roles(url: str, names: set[str]) -> None:
+def _make_missing_roles(url: str, names: set[str]) -> list[str]:
     """A backup from Supabase names its own roles (anon, authenticated, service_role...): made here, unable to sign
-    in, so their grants load instead of stopping the restore."""
+    in, so their grants load instead of stopping the restore. Returns the ones made."""
+    made = []
     with psycopg.connect(url, autocommit=True) as conn:
         for name in sorted(names):
             if not conn.execute("select 1 from pg_roles where rolname = %s", (name,)).fetchone():
                 conn.execute(sql.SQL("create role {} nologin").format(sql.Identifier(name)))
+                made.append(name)
+    return made
+
+
+def _drop_roles(url: str, names: list[str]) -> None:
+    """The roles made for a load, with what the dump granted them: the app never uses them."""
+    with psycopg.connect(url, autocommit=True) as conn:
+        for name in names:
+            conn.execute(sql.SQL("drop owned by {}").format(sql.Identifier(name)))
+            conn.execute(sql.SQL("drop role {}").format(sql.Identifier(name)))
 
 
 def _load(url: str, path: str) -> None:
@@ -114,14 +128,15 @@ def _load(url: str, path: str) -> None:
     env = dict(os.environ, **({"PGPASSWORD": password} if password else {}))
     try:
         toc = backup._run([pg_restore, "--list", path], env)
-        _make_missing_roles(url, _grantees(pg_restore, path, toc, env))
-        with tempfile.NamedTemporaryFile("w", suffix=".list") as listing:
-            listing.write("\n".join(line for line in toc.splitlines()
-                                    if not any(f" {kind} - {schema}public " in line
-                                               for kind in ("SCHEMA", "COMMENT") for schema in ("", "SCHEMA "))))
-            listing.flush()
-            backup._run([pg_restore, "--no-owner", "--single-transaction", "--exit-on-error", f"--use-list={listing.name}",
-                         f"--dbname={dsn}", path], env)
+        made = _make_missing_roles(url, _grantees(pg_restore, path, toc, env))
+        try:
+            with tempfile.NamedTemporaryFile("w", suffix=".list") as listing:
+                listing.write("\n".join(line for line in toc.splitlines() if not any(part in line for part in LEFT_OUT)))
+                listing.flush()
+                backup._run([pg_restore, "--no-owner", "--single-transaction", "--exit-on-error",
+                             f"--use-list={listing.name}", f"--dbname={dsn}", path], env)
+        finally:
+            _drop_roles(url, made)
     except backup.BackupError as e:
         raise RestoreError(str(e)) from None
 

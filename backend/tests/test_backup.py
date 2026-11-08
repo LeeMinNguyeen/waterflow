@@ -364,11 +364,31 @@ def test_a_backup_naming_roles_this_server_lacks_restores(live, tmp_path):
         backups = requested(tmp_path, Path(dump).read_bytes())
         assert web_restore.restore_if_requested(libpq_url(name), str(backups)) == "done", \
             json.loads((backups / "restore" / "status").read_text())
-        assert sql(name, f"select rolcanlogin from pg_roles where rolname = '{role}'") == [(False,)]
+        assert sql(name, f"select count(*) from pg_roles where rolname = '{role}'") == [(0,)]       # made for the load only
         assert users(name) == ["backup_user"]
     finally:
-        sql(name, f"drop owned by {role}")
-        sql("postgres", f"drop role if exists {role}")
+        if sql(name, f"select count(*) from pg_roles where rolname = '{role}'") == [(1,)]:
+            sql(name, f"drop owned by {role}", f"drop role {role}")
+
+
+def test_a_backup_with_default_privileges_for_a_role_the_owner_cant_act_for_restores(live, tmp_path):
+    """Supabase's dumps carry default privileges FOR ROLE supabase_admin, which its own owner can't change."""
+    from app.jobs import backup, restore as web_restore
+    name, _ = live
+    role = f"supa_admin_{uuid.uuid4().hex[:8]}"
+    sql(name, f"create role {role} nologin", f"alter default privileges for role {role} in schema public grant select on tables to public")
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    dump, _, _ = backup.run_backup(libpq_url(name), str(elsewhere))
+    sql(name, f"drop owned by {role}", f"drop role {role}")
+    try:
+        backups = requested(tmp_path, Path(dump).read_bytes())
+        assert web_restore.restore_if_requested(libpq_url(name), str(backups)) == "done", \
+            json.loads((backups / "restore" / "status").read_text())
+        assert sql(name, f"select count(*) from pg_default_acl where defaclrole::regrole::text = '{role}'") == [(0,)]
+    finally:
+        if sql(name, f"select count(*) from pg_roles where rolname = '{role}'") == [(1,)]:
+            sql(name, f"drop owned by {role}", f"drop role {role}")
 
 
 def test_a_file_that_is_no_backup_changes_nothing(live, tmp_path):
