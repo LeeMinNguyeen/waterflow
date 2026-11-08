@@ -109,12 +109,15 @@ SIGN_IN_STATE = ("sessions", "remembered_devices", "password_resets")
 
 
 def _sign_everyone_out(url: str) -> None:
-    """The backup's sessions, remembered devices and reset links would work again, even ones ended after it. A
-    backup from before a table existed lacks it: the migrations add it after the restore."""
+    """The backup's sessions, remembered devices and reset links would work again, even ones ended after it, and so
+    would an invite used or revoked after it. A backup from before a table existed lacks it: the migrations add it
+    after the restore."""
     with psycopg.connect(url, autocommit=True) as conn:
         for table in SIGN_IN_STATE:
             if conn.execute("select to_regclass(%s)", (f"public.{table}",)).fetchone()[0]:
                 conn.execute(f"delete from public.{table}")
+        if conn.execute("select to_regclass('public.invites')").fetchone()[0]:
+            conn.execute("update public.invites set revoked_at = now() where used_at is null and revoked_at is null")
 
 
 def _apply(url: str, path: str, purged: Path | None, purge_log: str, sign_out: bool = True) -> None:
