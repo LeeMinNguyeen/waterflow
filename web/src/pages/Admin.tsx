@@ -252,7 +252,7 @@ function Jobs({ timezone }: { timezone: string }) {
                   <TableCell>
                     {lastRun(job)}
                     {!asked(job) && !running(job) && (
-                      <Button size="small" onClick={() => runNow(job.name)} sx={{ mt: 0.5, ml: -1 }}>{t('admin.runNow')}</Button>
+                      <Box><Button size="small" onClick={() => runNow(job.name)} sx={{ mt: 0.5, ml: -1 }}>{t('admin.runNow')}</Button></Box>
                     )}
                   </TableCell>
                 </TableRow>
