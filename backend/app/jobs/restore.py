@@ -139,26 +139,34 @@ def _record(where: Path, status: str, detail: str | None = None) -> None:
 
 def _name_safety(where: Path, before: str) -> None:
     partial = where / (SAFETY + ".partial")
-    partial.write_text(os.path.basename(before))
+    with open(partial, "w") as f:
+        f.write(os.path.basename(before))
+        f.flush()
+        os.fsync(f.fileno())             # a power cut mustn't leave the name and not its content
     partial.replace(where / SAFETY)
 
 
 def _resume(url: str, backup_dir: str, where: Path, purge_log: str) -> str:
     """A restore stopped midway: the database may be half loaded, so the backup from before it goes back."""
-    name = (where / SAFETY).read_text().strip()
+    name = "the backup from before it"
+    print("a restore was interrupted: putting back the database from before it", flush=True)
     try:
+        name = (where / SAFETY).read_text().strip()
         m = backup.DUMP_NAME.fullmatch(name)
+        if not m or m[2] or not (Path(backup_dir) / name).is_file():
+            raise FileNotFoundError(name)
         before = Path(backup_dir) / name
-        if not m or m[2] or not before.is_file():
-            raise RestoreError("it's gone")
         _apply(url, str(before), None, purge_log, sign_out=False)
         reason = f"the restore was interrupted; the database from before it is back ({name})"
     except Exception as e:
         # The upload may be loaded: its sessions, devices, reset links and invites must not work, whatever else failed.
         with contextlib.suppress(Exception):
             _sign_everyone_out(url)
-        reason = (f"the restore was interrupted, and putting the database back failed"
-                  f" ({backup._scrub(str(e), url).splitlines()[0] if str(e) else type(e).__name__}): restore {name} by hand")
+        if isinstance(e, FileNotFoundError):
+            reason = f"the restore was interrupted, and the backup from before it ({e or "unnamed"}) is missing: restore one by hand"
+        else:
+            reason = (f"the restore was interrupted, and putting the database back failed"
+                      f" ({backup._scrub(str(e), url).splitlines()[0] if str(e) else type(e).__name__}): restore {name} by hand")
     _record(where, "failed", reason)
     print(f"restoring the uploaded backup failed: {reason}", flush=True)
     return "failed"

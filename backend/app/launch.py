@@ -182,6 +182,8 @@ def serve() -> None:
             c.terminate()
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
+    if stop_asked:                       # asked between the check above and these
+        stop()
     while all(c.poll() is None for c in children):
         time.sleep(1)
     stop()

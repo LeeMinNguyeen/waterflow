@@ -46,6 +46,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from urllib.parse import unquote
 
@@ -111,8 +112,10 @@ def _run(cmd: list[str], env: dict) -> str:
 def prune(backup_dir: str, now: datetime) -> list[str]:
     """Deletes dumps (and leftover .partial files) older than KEEP, except the one a restore under way names (see
     app/jobs/restore.py). Returns their names."""
-    safety = os.path.join(backup_dir, "restore", "safety")
-    kept = open(safety).read().strip() if os.path.isfile(safety) else None
+    try:
+        kept = Path(backup_dir, "restore", "safety").read_text().strip()
+    except FileNotFoundError:
+        kept = None
     old = [n for n in sorted(os.listdir(backup_dir))
            if n != kept and (m := DUMP_NAME.fullmatch(n))
            and now - datetime.strptime(m[1], "%Y%m%dT%H%M%SZ").replace(tzinfo=timezone.utc) > KEEP]

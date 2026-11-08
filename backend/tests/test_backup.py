@@ -369,7 +369,7 @@ def test_a_stopped_restore_whose_safety_backup_is_gone_still_signs_everyone_out(
     (backups / "restore" / "safety").write_text("waterflow-20260101T000000Z.dump")       # not there
     assert web_restore.restore_if_requested(libpq_url(name), str(backups)) == "failed"
     assert sql(name, "select count(*) from sessions") == [(0,)]
-    assert "by hand" in json.loads((backups / "restore" / "status").read_text())["detail"]
+    assert "is missing" in json.loads((backups / "restore" / "status").read_text())["detail"]
 
 
 def test_a_restore_names_its_safety_backup_until_it_ends(live, tmp_path, monkeypatch):
