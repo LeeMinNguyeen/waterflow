@@ -317,6 +317,18 @@ def test_a_two_step_code_works_once(client):
     assert sign_in(client, name, code=later).json() == {"detail": "invalid_code"}
     assert client.post("/v1/auth/two-factor/disable", headers=bearer(token), json={"code": now}).status_code == 422
     assert sign_in(client, name, code=pyotp.TOTP(secret).at(time.time() - 30)).json() == {"detail": "invalid_code"}
+    twice = client.post("/v1/auth/two-factor/enable", headers=bearer(token), json={"secret": secret, "code": now})
+    assert (twice.status_code, twice.json()) == (409, {"detail": "two_factor_on"})
+
+
+def test_a_two_step_code_in_wide_digits_works(client):
+    """An input method in full-width mode types １２３４５６: read as 123456, as before."""
+    name, token = sign_up(client)
+    secret = client.post("/v1/auth/two-factor/setup", headers=bearer(token)).json()["secret"]
+    client.post("/v1/auth/two-factor/enable", headers=bearer(token), json={"secret": secret, "code": totp(secret)})
+    wide = "".join(chr(ord(c) + 0xFEE0) for c in totp(secret))
+    assert sign_in(client, name, code=wide).status_code == 200
+    assert sign_in(client, name, code="١٢٣٤٥٦").json() == {"detail": "invalid_code"}
 
 
 def test_two_factor_with_recovery_codes(client):
@@ -977,8 +989,11 @@ def test_restoring_asks_for_the_two_factor_code(client, admin, restore_dir, a_ba
     form = {"password": PASSWORD, "confirm": "true"}
     assert upload(client, "/v1/admin/restore", token, a_backup.read_bytes(), **form).json() == {"detail": "code_required"}
     assert upload(client, "/v1/admin/restore", token, a_backup.read_bytes(), code="000000", **form).json() == {"detail": "invalid_code"}
-    r = upload(client, "/v1/admin/restore", token, a_backup.read_bytes(), code=totp(secret), **form)
+    code = totp(secret)
+    r = upload(client, "/v1/admin/restore", token, a_backup.read_bytes(), code=code, **form)
     assert r.status_code == 202, r.text
+    again = upload(client, "/v1/admin/restore", token, a_backup.read_bytes(), code=code, **form)
+    assert again.json() == {"detail": "invalid_code"}                                   # the code was used
 
 
 def test_restore_at_setup_with_the_setup_code(fresh_server, restore_dir, a_backup, monkeypatch):

@@ -6,6 +6,7 @@ import hmac
 import secrets
 import threading
 import time
+import unicodedata
 from collections import deque
 from datetime import datetime, timezone
 from io import BytesIO
@@ -96,8 +97,8 @@ def totp_uri(secret: str, username: str, server_name: str) -> str:
 
 def totp_step(secret: str, code: str) -> int | None:
     """The time step the code is for, within one of now, or None when it matches none."""
-    code = code.strip().replace(" ", "")
-    if not (code.isdigit() and len(code) == 6):
+    code = unicodedata.normalize("NFKC", code).strip().replace(" ", "")      # full-width digits from an input method
+    if not (code.isascii() and code.isdigit() and len(code) == 6):
         return None
     totp = pyotp.TOTP(secret)
     now = totp.timecode(datetime.now(timezone.utc))
