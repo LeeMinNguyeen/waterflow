@@ -313,7 +313,7 @@
     "notIncluded_other": "{{count}} giao dịch chưa tính",
     "amountFrom": "Từ",
     "amountTo": "Đến",
-    "currency": "Loại tiền"
+    "currency": "Tiền tệ"
   },
   "cat": {
     "title": "Danh mục",

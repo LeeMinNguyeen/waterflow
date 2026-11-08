@@ -34,12 +34,12 @@ export function AmountRange({ min, max, currency, codes, reference, onChange }: 
       const minor = parseAmount(text, minorUnit, lang)
       return minor !== null && minor >= 0 ? String(minor) : null
     }
-    const range = { min: read(from), max: read(to), currency: picked.join(',') }
-    if (range.min === null || range.max === null) return
-    pending.current = range as Range
+    // An amount that doesn't read in the currency now meant is left out, so the currencies picked still apply.
+    const range = { min: read(from) ?? '', max: read(to) ?? '', currency: picked.join(',') }
+    pending.current = range
     const id = setTimeout(() => {
       pending.current = null
-      send.current(range as Range)
+      send.current(range)
     }, 350)
     return () => clearTimeout(id)
   }, [from, to, picked, minorUnit, lang])

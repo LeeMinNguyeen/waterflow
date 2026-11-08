@@ -31,6 +31,7 @@ import { txnTypes, type Account, type Book, type Transaction } from '../lib/api'
 import { categoryTree } from '../lib/categories'
 import { shiftDay, todayIn } from '../lib/labels'
 import { useFormatMoney } from '../lib/hideAmounts'
+import { amountText } from '../lib/money'
 import { useAccounts, useCategories, useCurrencies, useTransactions, useTxnSummary, type TxnFilters } from '../lib/queries'
 
 const FILTERS = ['account_id', 'category_id', 'type', 'from', 'to', 'q', 'min', 'max', 'currency'] as const
@@ -80,13 +81,16 @@ export function Transactions({ book }: { book: Book }) {
     )
   }
   const setFilter = (key: Filter, value: string) => setFilters({ [key]: value })
+  // An account fixes the currency, so picking one drops the currencies picked; an amount typed in another currency
+  // than the one it will be read in starts afresh.
+  const chooseAccount = (value: string) => {
+    if (value === (filters.account_id ?? '')) return
+    const next = value ? (accountById.get(value)?.currency ?? book.base_currency) : reference(picked, null).code
+    setFilters({ account_id: value, ...(value && { currency: '' }), ...(next !== amountCurrency && { min: '', max: '' }) })
+  }
   const pick = (key: Filter, value: string) => {
     setMenu(null)
-    // An amount is in the filtered account's currency: another currency starts it afresh.
-    // An account fixes the currency: an amount typed in another one starts afresh.
-    if (key === 'account_id' && amountCurrency !== ((value && accountById.get(value)?.currency) || book.base_currency)) {
-      setFilters({ account_id: value, min: '', max: '', currency: '' })
-    } else if (key === 'account_id') setFilters({ account_id: value, currency: '' })
+    if (key === 'account_id') chooseAccount(value)
     else setFilter(key, value)
   }
 
@@ -137,13 +141,15 @@ export function Transactions({ book }: { book: Book }) {
   const accountName = filters.account_id ? accountById.get(filters.account_id)?.name : undefined
   const categoryName = filters.category_id === 'none' ? t('filters.noCategory') : filters.category_id ? categoryById.get(filters.category_id)?.name : undefined
   // What a typed amount means: the account's currency, else the one currency picked, else the book's.
-  const reference = (picked: string[]) => {
-    const code = filteredAccount?.currency ?? (picked.length === 1 ? picked[0] : book.base_currency)
+  const reference = (picked: string[], account: Account | null | undefined = filteredAccount) => {
+    const code = account?.currency ?? (picked.length === 1 ? picked[0] : book.base_currency)
     return { code, minorUnit: currencies.data?.get(code)?.minor_unit ?? 0 }
   }
-  const picked = filters.currency ? filters.currency.split(',') : []
+  const picked = (filters.currency ?? '').split(',').filter((c) => /^[A-Z]{3}$/.test(c))
   const { code: amountCurrency, minorUnit } = reference(picked)
-  const amountOf = (v: string) => formatMoney(Number(v), amountCurrency, minorUnit, lang)
+  // Several currencies: each amount is read in its own, so no one symbol fits.
+  const amountOf = (v: string) => picked.length > 1 && !filteredAccount ? amountText(Number(v), minorUnit, lang)
+    : formatMoney(Number(v), amountCurrency, minorUnit, lang)
   const amountValue = [filters.min && filters.max ? `${amountOf(filters.min)} – ${amountOf(filters.max)}`
     : filters.min ? t('filters.atLeast', { amount: amountOf(filters.min) })
       : filters.max ? t('filters.atMost', { amount: amountOf(filters.max) }) : '', picked.join(', ')].filter(Boolean).join(' · ') || undefined
@@ -175,7 +181,7 @@ export function Transactions({ book }: { book: Book }) {
         />
         <Stack direction="row" spacing={1} sx={{ overflowX: 'auto', pb: { xs: 0.5, md: 0 }, alignItems: 'center' }}>
           <FilterChip label={t('txn.account')} value={accountName} onClick={open('account')}
-            onClear={() => setFilter('account_id', '')} clearLabel={t('filters.clearOne', { name: t('txn.account') })} />
+            onClear={() => chooseAccount('')} clearLabel={t('filters.clearOne', { name: t('txn.account') })} />
           <FilterChip label={t('txn.category')} value={categoryName} onClick={open('category')}
             onClear={() => setFilter('category_id', '')} clearLabel={t('filters.clearOne', { name: t('txn.category') })} />
           <FilterChip label={t('filters.type')} value={filters.type ? t(`txn.types.${filters.type}`) : undefined} onClick={open('type')}
