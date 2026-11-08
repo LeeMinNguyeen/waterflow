@@ -1073,3 +1073,26 @@ describe('the amount on a phone (waterflow#161)', () => {
     expect(outline).toHaveStyle({ borderWidth: '0px' })
   })
 })
+
+describe('undo a delete (waterflow#119)', () => {
+  it('deletes without asking, and Undo in the message brings it back', async () => {
+    const api = fakeApi({
+      'GET /v1/currencies': currencies,
+      'GET /v1/books/b1/accounts': [cash],
+      'GET /v1/books/b1/categories': [],
+      'DELETE /v1/books/b1/transactions/t1': undefined,
+      'POST /v1/books/b1/transactions/t1/restore': { ...lunch, version: 3 },
+    })
+    const onClose = vi.fn()
+    await renderApp(<TxnDialog book={book} txn={lunch} onClose={onClose} />)
+    await userEvent.click(await screen.findByRole('button', { name: 'Delete' }))
+    await waitFor(() => expect(api.writes().map((c) => `${c.method} ${c.url}`)).toEqual(['DELETE /v1/books/b1/transactions/t1?version=2']))
+    expect(screen.queryByText('Delete this transaction?')).toBeNull()
+    expect(onClose).toHaveBeenCalled()
+    expect(await screen.findByText('Transaction deleted')).toBeInTheDocument()
+    // The test keeps the dialog open, which hides the rest of the page from the accessibility tree.
+    await userEvent.click(screen.getByRole('button', { name: 'Undo', hidden: true }))
+    await waitFor(() => expect(api.writes().at(-1)).toMatchObject({ method: 'POST', path: '/v1/books/b1/transactions/t1/restore' }))
+    expect(await screen.findByText('Transaction restored')).toBeInTheDocument()
+  })
+})

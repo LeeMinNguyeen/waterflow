@@ -656,6 +656,92 @@ def test_two_moves_at_the_same_moment_make_no_cycle(client, database):
         assert owner.execute(text("select parent_id from categories where id = :a"), {"a": a["id"]}).scalar() is None
 
 
+def test_a_deleted_transaction_comes_back(client, database):
+    """R-TXN-11: a deleted transaction is listed for 30 days and comes back as it was, with its id and its card
+    installment plan; the history reads created, edited, deleted, restored, with who."""
+    owner = signed_up(client)
+    names = {k: f"{k}_{uuid.uuid4().hex[:8]}" for k in ("editor", "viewer")}
+    users = {k: signed_up(client, n) for k, n in names.items()}
+    bid, accts = new_book_with_accounts(client, owner)
+    base = f"/v1/books/{bid}/transactions"
+    for k in ("editor", "viewer"):
+        client.post(f"/v1/books/{bid}/members", headers=auth(owner), json={"username": names[k], "role": k})
+        client.post(f"/v1/me/book-invites/{bid}/accept", headers=auth(users[k]))
+    food = add_category(client, owner, bid, "Food")
+    tid = str(uuid.uuid4())
+    client.post(base, headers=auth(owner), json={"id": tid, "type": "expense", "occurred_on": "2026-10-05",
+                                                "occurred_time": "08:30", "category_id": food["id"], "payee": "Phở",
+                                                "note": "with Lan", "entries": [{"account_id": accts["Cash"], "amount": -50_000}]})
+    saved = client.put(f"{base}/{tid}", headers=auth(owner), json={"version": 1, "type": "expense", "occurred_on": "2026-10-05",
+                                                                  "category_id": food["id"], "payee": "Phở", "note": "with Lan",
+                                                                  "entries": [{"account_id": accts["Cash"], "amount": -60_000}]}).json()
+    assert saved["version"] == 2
+    cash = lambda: next(a for a in client.get(f"/v1/books/{bid}/accounts", headers=auth(owner)).json() if a["id"] == accts["Cash"])["balance"]  # noqa: E731
+    before = cash()
+
+    assert client.delete(f"{base}/{tid}?version=2", headers=auth(owner)).status_code == 204
+    assert cash() == before + 60_000
+    gone = client.get(f"{base}/deleted", headers=auth(users["viewer"])).json()
+    assert [(g["id"], g["payee"], g["category_id"], g["occurred_on"], g["deleted_by"]) for g in gone] == \
+        [(tid, "Phở", food["id"], "2026-10-05", client.get("/v1/me", headers=auth(owner)).json()["profile"]["username"])]
+    assert gone[0]["entries"] == [{"account_id": accts["Cash"], "amount": -60_000, "currency": "VND"}]
+
+    assert client.post(f"{base}/{tid}/restore", headers=auth(users["viewer"])).status_code == 403
+    back = client.post(f"{base}/{tid}/restore", headers=auth(users["editor"]))
+    assert back.status_code == 200, back.text
+    back = back.json()
+    keep = ("id", "type", "occurred_on", "occurred_time", "category_id", "payee", "note", "entries", "created_at", "created_by")
+    assert {k: back[k] for k in keep} == {k: saved[k] for k in keep}
+    assert (back["version"], back["modified_by"]) == (3, names["editor"])
+    assert cash() == before
+    history = client.get(f"{base}/{tid}/history", headers=auth(owner)).json()
+    assert [(h["version"], h["action"]) for h in history] == [(1, "created"), (2, "edited"), (2, "deleted"), (3, "restored")]
+    assert history[-1]["changed_by"] == names["editor"]
+    again = client.post(f"{base}/{tid}/restore", headers=auth(users["editor"]))
+    assert (again.status_code, again.json()) == (409, {"detail": "already_restored"})
+    assert client.get(f"{base}/deleted", headers=auth(owner)).json() == []
+
+    assert client.delete(f"{base}/{tid}?version=3", headers=auth(owner)).status_code == 204
+    with database.connect() as c:
+        c.execute(text("update transaction_history set changed_at = now() - interval '31 days'"
+                       " where transaction_id = :t and action = 'deleted'"), {"t": tid})
+    old = client.post(f"{base}/{tid}/restore", headers=auth(owner))
+    assert (old.status_code, old.json()) == (409, {"detail": "restore_expired"})
+    assert client.get(f"{base}/deleted", headers=auth(owner)).json() == []
+    stranger = signed_up(client)
+    assert client.post(f"{base}/{tid}/restore", headers=auth(stranger)).json() == {"detail": "not_found"}
+    assert client.get(f"{base}/deleted", headers=auth(stranger)).json() == {"detail": "not_found"}
+    assert client.post(f"{base}/{uuid.uuid4()}/restore", headers=auth(owner)).json() == {"detail": "not_found"}
+
+    # The same id reused in another book, edited past this one's version and deleted there, doesn't stand in for it.
+    reused = str(uuid.uuid4())
+    client.post(base, headers=auth(owner), json={"id": reused, "type": "expense", "occurred_on": "2026-10-06", "payee": "Mine",
+                                                "entries": [{"account_id": accts["Cash"], "amount": -10_000}]})
+    client.delete(f"{base}/{reused}?version=1", headers=auth(owner))
+    other_bid, other_accts = new_book_with_accounts(client, stranger)
+    other = f"/v1/books/{other_bid}/transactions"
+    body = {"type": "expense", "occurred_on": "2026-10-06", "payee": "Theirs", "entries": [{"account_id": other_accts["Cash"], "amount": -5}]}
+    assert client.post(other, headers=auth(stranger), json={"id": reused, **body}).status_code == 201
+    for v in (1, 2):
+        client.put(f"{other}/{reused}", headers=auth(stranger), json={"version": v, **body, "note": f"v{v + 1}"})
+    client.delete(f"{other}/{reused}?version=3", headers=auth(stranger))
+    assert [g["payee"] for g in client.get(f"{base}/deleted", headers=auth(owner)).json()] == ["Mine"]
+    mine = client.post(f"{base}/{reused}/restore", headers=auth(owner))
+    assert (mine.status_code, mine.json()["payee"]) == (200, "Mine"), mine.text
+
+    card = str(uuid.uuid4())
+    client.post(f"/v1/books/{bid}/accounts", headers=auth(owner), json={"id": card, "name": "Visa", "kind": "credit_card",
+                                                                       "opened_on": "2026-08-01", "statement_day": 20})
+    buy = str(uuid.uuid4())
+    client.post(base, headers=auth(owner), json={"id": buy, "type": "expense", "occurred_on": "2026-10-01",
+                                                "entries": [{"account_id": card, "amount": -3_000_000}]})
+    plan = client.post(f"/v1/books/{bid}/installments", headers=auth(owner), json={"id": str(uuid.uuid4()), "transaction_id": buy, "months": 3})
+    assert plan.status_code == 201, plan.text
+    client.delete(f"{base}/{buy}?version=1", headers=auth(owner))
+    assert client.get(f"/v1/books/{bid}/installments", headers=auth(owner)).json() == []
+    assert client.post(f"{base}/{buy}/restore", headers=auth(owner)).status_code == 200
+    plans = client.get(f"/v1/books/{bid}/installments", headers=auth(owner)).json()
+    assert [(p["id"], p["months"]) for p in plans] == [(plan.json()["id"], 3)]
 def test_transaction_filters_by_amount_and_no_category_with_a_summary(client, database):
     """R-TXN-10: amount from and to, in each entry's own currency (a transfer by what left); no category; the
     filtered list's count, spending, income and difference in the book's currency, missing rates counted."""
@@ -720,6 +806,84 @@ def test_transaction_filters_by_amount_and_no_category_with_a_summary(client, da
 
     other = signed_up(client)
     assert client.get(f"{base}/summary", headers=auth(other)).json() == {"detail": "not_found"}
+
+
+def test_a_restore_after_things_changed(client, database):
+    """What changed since the delete: a category gone is left off; an account in another currency or gone is refused;
+    a plan that no longer fits stays off; two restores at once, one wins."""
+    u = signed_up(client)
+    bid, accts = new_book_with_accounts(client, u)
+    base = f"/v1/books/{bid}/transactions"
+
+    def add(account, amount, **fields):
+        tid = str(uuid.uuid4())
+        r = client.post(base, headers=auth(u), json={"id": tid, "type": "expense", "occurred_on": "2026-10-05",
+                                                     "entries": [{"account_id": account, "amount": amount}], **fields})
+        assert r.status_code == 201, r.text
+        client.delete(f"{base}/{tid}?version=1", headers=auth(u))
+        return tid
+
+    def account(**fields):
+        aid = str(uuid.uuid4())
+        assert client.post(f"/v1/books/{bid}/accounts", headers=auth(u),
+                           json={"id": aid, "name": f"A {aid[:6]}", "opened_on": "2026-08-01", **fields}).status_code == 201
+        return aid
+
+    snacks = add_category(client, u, bid, "Snacks")
+    snack = add(accts["Cash"], -20_000, category_id=snacks["id"])
+    client.delete(f"/v1/books/{bid}/categories/{snacks['id']}?version=1", headers=auth(u))
+    back = client.post(f"{base}/{snack}/restore", headers=auth(u))
+    assert (back.status_code, back.json()["category_id"]) == (200, None), back.text
+
+    usd = account(kind="checking", currency="USD")
+    dollars = add(usd, -500)
+    v = next(a for a in client.get(f"/v1/books/{bid}/accounts", headers=auth(u)).json() if a["id"] == usd)["version"]
+    assert client.patch(f"/v1/books/{bid}/accounts/{usd}", headers=auth(u), json={"version": v, "currency": "VND"}).status_code == 200
+    changed = client.post(f"{base}/{dollars}/restore", headers=auth(u))
+    assert (changed.status_code, changed.json()) == (409, {"detail": "restore_changed"})
+
+    card = account(kind="credit_card", statement_day=20)
+    buy = str(uuid.uuid4())
+    client.post(base, headers=auth(u), json={"id": buy, "type": "expense", "occurred_on": "2026-10-01",
+                                             "entries": [{"account_id": card, "amount": -3_000_000}]})
+    client.post(f"/v1/books/{bid}/installments", headers=auth(u), json={"id": str(uuid.uuid4()), "transaction_id": buy, "months": 3})
+    client.delete(f"{base}/{buy}?version=1", headers=auth(u))
+    v = next(a for a in client.get(f"/v1/books/{bid}/accounts", headers=auth(u)).json() if a["id"] == card)["version"]
+    assert client.patch(f"/v1/books/{bid}/accounts/{card}", headers=auth(u), json={"version": v, "kind": "checking"}).status_code == 200
+    assert client.post(f"{base}/{buy}/restore", headers=auth(u)).status_code == 200
+    assert client.get(f"/v1/books/{bid}/installments", headers=auth(u)).json() == []
+
+    card2 = account(kind="credit_card", statement_day=20)
+    moved = str(uuid.uuid4())
+    client.post(base, headers=auth(u), json={"id": moved, "type": "expense", "occurred_on": "2026-10-01",
+                                             "entries": [{"account_id": card2, "amount": -3_000_000}]})
+    plan = client.post(f"/v1/books/{bid}/installments", headers=auth(u), json={"id": str(uuid.uuid4()), "transaction_id": moved, "months": 3}).json()
+    client.put(f"{base}/{moved}", headers=auth(u), json={"version": 1, "type": "expense", "occurred_on": "2026-10-05",
+                                                         "entries": [{"account_id": card2, "amount": -3_000_000}]})
+    client.delete(f"{base}/{moved}?version=2", headers=auth(u))
+    assert client.post(f"{base}/{moved}/restore", headers=auth(u)).status_code == 200
+    plans = client.get(f"/v1/books/{bid}/installments", headers=auth(u)).json()
+    assert [(p["id"], p["converted_on"]) for p in plans] == [(plan["id"], plan["converted_on"])]   # kept though the purchase moved later
+
+    lunch = add(accts["Cash"], -50_000)
+    result = {}
+
+    def restore():
+        result["r"] = client.post(f"{base}/{lunch}/restore", headers=auth(u))
+
+    with database.connect() as other:                 # another restore of it, not committed yet
+        other.exec_driver_sql("begin")
+        other.execute(text("select set_config('app.user_id', :u, true)"), {"u": str(u)})
+        other.execute(text("select restore_transaction(:b, :t)"), {"b": bid, "t": lunch})
+        second = threading.Thread(target=restore)
+        second.start()
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline and "r" not in result and not other.execute(text(
+                "select count(*) from pg_locks where locktype = 'transactionid' and not granted")).scalar():
+            time.sleep(0.05)
+        other.exec_driver_sql("commit")
+        second.join(10)
+    assert (result["r"].status_code, result["r"].json()) == (409, {"detail": "already_restored"})
 
 
 def test_transactions_have_a_time_of_day(client):

@@ -241,7 +241,7 @@ export type TxnPage = { items: Transaction[]; next: string | null }
 
 export type HistoryEntry = {
   version: number
-  action: 'created' | 'edited' | 'deleted'
+  action: 'created' | 'edited' | 'deleted' | 'restored'
   changed_at: string
   changed_by: string | null
   type: TxnType
@@ -251,6 +251,11 @@ export type HistoryEntry = {
   payee: string | null
   note: string | null
   entries: Entry[] | null
+}
+
+export type DeletedTxn = Pick<Transaction, 'id' | 'type' | 'occurred_on' | 'occurred_time' | 'category_id' | 'payee' | 'entries'> & {
+  deleted_at: string
+  deleted_by: string | null
 }
 
 export type TxnSummary = { count: number; spent: number; income: number; net: number; not_converted: number }
