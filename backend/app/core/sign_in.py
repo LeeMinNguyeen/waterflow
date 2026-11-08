@@ -2,16 +2,19 @@
 server process: a server runs one."""
 import base64
 import hashlib
+import hmac
 import secrets
 import threading
 import time
 from collections import deque
+from datetime import datetime, timezone
 from io import BytesIO
 
 import pyotp
 import segno
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError
+from sqlalchemy import text
 
 hasher = PasswordHasher()
 # Checked against when the username doesn't exist, so a wrong username takes
@@ -91,9 +94,20 @@ def totp_uri(secret: str, username: str, server_name: str) -> str:
     return pyotp.TOTP(secret).provisioning_uri(name=username, issuer_name=server_name)
 
 
-def totp_matches(secret: str, code: str) -> bool:
+def totp_step(secret: str, code: str) -> int | None:
+    """The time step the code is for, within one of now, or None when it matches none."""
     code = code.strip().replace(" ", "")
-    return code.isdigit() and len(code) == 6 and pyotp.TOTP(secret).verify(code, valid_window=1)
+    if not (code.isdigit() and len(code) == 6):
+        return None
+    totp = pyotp.TOTP(secret)
+    now = totp.timecode(datetime.now(timezone.utc))
+    return next((step for step in (now - 1, now, now + 1) if hmac.compare_digest(totp.generate_otp(step), code)), None)
+
+
+def totp_accepted(db, user_id, secret: str, code: str) -> bool:
+    """The code matches and its step is later than any used before: each code works once (RFC 6238 §5.2)."""
+    step = totp_step(secret, code)
+    return step is not None and bool(db.execute(text("select use_totp_step(:u, :s)"), {"u": user_id, "s": step}).scalar())
 
 
 def qr_svg(data: str) -> str:

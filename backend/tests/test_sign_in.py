@@ -288,6 +288,37 @@ def test_device_label(agent, label):
     assert device_label(agent) == label
 
 
+OWNER = None
+
+
+@pytest.fixture(autouse=True)
+def _owner(database):
+    global OWNER
+    OWNER = database
+
+
+def totp(secret):
+    """The current code, as if no step had been used yet: each code works once, and these tests use several a step."""
+    with OWNER.connect() as c:
+        c.execute(text("update local_credentials set totp_last_step = null"))
+    return pyotp.TOTP(secret).now()
+
+
+def test_a_two_step_code_works_once(client):
+    """RFC 6238 §5.2: a code accepted once is refused after, in its step and any earlier one; a later step's works."""
+    import time
+    name, token = sign_up(client)
+    secret = client.post("/v1/auth/two-factor/setup", headers=bearer(token)).json()["secret"]
+    now = pyotp.TOTP(secret).now()
+    assert client.post("/v1/auth/two-factor/enable", headers=bearer(token), json={"secret": secret, "code": now}).status_code == 200
+    assert sign_in(client, name, code=now).json() == {"detail": "invalid_code"}         # the code that turned it on
+    later = pyotp.TOTP(secret).at(time.time() + 30)
+    assert sign_in(client, name, code=later).status_code == 200
+    assert sign_in(client, name, code=later).json() == {"detail": "invalid_code"}
+    assert client.post("/v1/auth/two-factor/disable", headers=bearer(token), json={"code": now}).status_code == 422
+    assert sign_in(client, name, code=pyotp.TOTP(secret).at(time.time() - 30)).json() == {"detail": "invalid_code"}
+
+
 def test_two_factor_with_recovery_codes(client):
     name, token = sign_up(client)
     assert client.get("/v1/auth/two-factor", headers=bearer(token)).json() == {"enabled": False, "recovery_codes_left": 0}
@@ -297,25 +328,25 @@ def test_two_factor_with_recovery_codes(client):
     bad = client.post("/v1/auth/two-factor/enable", headers=bearer(token), json={"secret": secret, "code": "000000"})
     assert (bad.status_code, bad.json()) == (422, {"detail": "invalid_code"})
     codes = client.post("/v1/auth/two-factor/enable", headers=bearer(token),
-                        json={"secret": secret, "code": pyotp.TOTP(secret).now()}).json()["recovery_codes"]
+                        json={"secret": secret, "code": totp(secret)}).json()["recovery_codes"]
     assert len(codes) == 10 and len(set(codes)) == 10
 
     assert sign_in(client, name).json() == {"detail": "code_required"}
     assert sign_in(client, name, code="123456").json() == {"detail": "invalid_code"}
-    assert sign_in(client, name, "wrong password!", code=pyotp.TOTP(secret).now()).json() == {"detail": "invalid_credentials"}
-    assert sign_in(client, name, code=pyotp.TOTP(secret).now()).status_code == 200
+    assert sign_in(client, name, "wrong password!", code=totp(secret)).json() == {"detail": "invalid_credentials"}
+    assert sign_in(client, name, code=totp(secret)).status_code == 200
     assert sign_in(client, name, code=codes[0]).status_code == 200                      # a recovery code works once
     assert sign_in(client, name, code=codes[0]).json() == {"detail": "invalid_code"}
     assert client.get("/v1/auth/two-factor", headers=bearer(token)).json() == {"enabled": True, "recovery_codes_left": 9}
 
     fresh = client.post("/v1/auth/two-factor/recovery-codes", headers=bearer(token),
-                        json={"code": pyotp.TOTP(secret).now()}).json()["recovery_codes"]
+                        json={"code": totp(secret)}).json()["recovery_codes"]
     assert sign_in(client, name, code=codes[1]).json() == {"detail": "invalid_code"}    # the old ones stopped working
     assert sign_in(client, name, code=fresh[0]).status_code == 200
 
     assert client.post("/v1/auth/two-factor/disable", headers=bearer(token), json={"code": "123456"}).status_code == 422
     assert client.post("/v1/auth/two-factor/disable", headers=bearer(token),
-                       json={"code": pyotp.TOTP(secret).now()}).status_code == 204
+                       json={"code": totp(secret)}).status_code == 204
     assert sign_in(client, name).status_code == 200
 
 
@@ -323,12 +354,12 @@ def test_two_step_on_again_needs_turning_off_first(client):
     """A session left open somewhere can't swap the secret and the recovery codes."""
     name, token = sign_up(client)
     first = client.post("/v1/auth/two-factor/setup", headers=bearer(token)).json()["secret"]
-    client.post("/v1/auth/two-factor/enable", headers=bearer(token), json={"secret": first, "code": pyotp.TOTP(first).now()})
+    client.post("/v1/auth/two-factor/enable", headers=bearer(token), json={"secret": first, "code": totp(first)})
     second = client.post("/v1/auth/two-factor/setup", headers=bearer(token)).json()["secret"]
     again = client.post("/v1/auth/two-factor/enable", headers=bearer(token),
-                        json={"secret": second, "code": pyotp.TOTP(second).now()})
+                        json={"secret": second, "code": totp(second)})
     assert (again.status_code, again.json()) == (409, {"detail": "two_factor_on"})
-    assert sign_in(client, name, code=pyotp.TOTP(first).now()).status_code == 200
+    assert sign_in(client, name, code=totp(first)).status_code == 200
 
 
 def test_sign_up_without_a_way_in_never_says_whether_a_username_exists(client, admin, invite_only):
@@ -376,11 +407,11 @@ def test_remembered_device_skips_the_code_until_cancelled(client, admin, databas
     name, token = sign_up(client)
     uid = me(client, token).json()["id"]
     secret = client.post("/v1/auth/two-factor/setup", headers=bearer(token)).json()["secret"]
-    client.post("/v1/auth/two-factor/enable", headers=bearer(token), json={"secret": secret, "code": pyotp.TOTP(secret).now()})
+    client.post("/v1/auth/two-factor/enable", headers=bearer(token), json={"secret": secret, "code": totp(secret)})
     password = PASSWORD
 
     def remember():
-        body = {"username": name, "password": password, "code": pyotp.TOTP(secret).now(), "remember_device": True}
+        body = {"username": name, "password": password, "code": totp(secret), "remember_device": True}
         return client.post("/v1/auth/sign-in", json=body).json()["device_token"]
 
     def with_device(device_token, password_typed=None):
@@ -391,7 +422,7 @@ def test_remembered_device_skips_the_code_until_cancelled(client, admin, databas
         with database.connect() as c:
             return c.execute(text("select count(*) from remembered_devices where user_id = :u"), {"u": uid}).scalar()
 
-    assert sign_in(client, name, code=pyotp.TOTP(secret).now()).json()["device_token"] is None
+    assert sign_in(client, name, code=totp(secret)).json()["device_token"] is None
     laptop, phone, tablet = remember(), remember(), remember()
     assert with_device(laptop).status_code == 200
     assert with_device(laptop, "wrong password!").json() == {"detail": "invalid_credentials"}
@@ -415,10 +446,10 @@ def test_remembered_device_skips_the_code_until_cancelled(client, admin, databas
     assert remembered() == 0 and with_device(laptop).json() == {"detail": "code_required"}
 
     remember()
-    assert client.post("/v1/auth/two-factor/disable", headers=bearer(here), json={"code": pyotp.TOTP(secret).now()}).status_code == 204
+    assert client.post("/v1/auth/two-factor/disable", headers=bearer(here), json={"code": totp(secret)}).status_code == 204
     assert remembered() == 0
 
-    client.post("/v1/auth/two-factor/enable", headers=bearer(here), json={"secret": secret, "code": pyotp.TOTP(secret).now()})
+    client.post("/v1/auth/two-factor/enable", headers=bearer(here), json={"secret": secret, "code": totp(secret)})
     remember()
     _, admin_token = admin
     link = client.post(f"/v1/admin/users/{uid}/reset", headers=bearer(admin_token)).json()
@@ -468,7 +499,7 @@ def test_admin_disables_and_resets(client, admin):
 
     # Forgot the password and lost the phone: the admin's reset link.
     secret = client.post("/v1/auth/two-factor/setup", headers=bearer(token)).json()["secret"]
-    client.post("/v1/auth/two-factor/enable", headers=bearer(token), json={"secret": secret, "code": pyotp.TOTP(secret).now()})
+    client.post("/v1/auth/two-factor/enable", headers=bearer(token), json={"secret": secret, "code": totp(secret)})
     link = client.post(f"/v1/admin/users/{uid}/reset", headers=bearer(admin_token)).json()
     assert datetime.fromisoformat(link["expires_at"]) > datetime.now(timezone.utc)
     weak = client.post("/v1/auth/reset", json={"token": link["token"], "new_password": "short"})
@@ -942,11 +973,11 @@ def test_an_oversized_restore_is_refused_before_it_is_read(client, monkeypatch, 
 def test_restoring_asks_for_the_two_factor_code(client, admin, restore_dir, a_backup):
     _, token = admin
     secret = client.post("/v1/auth/two-factor/setup", headers=bearer(token)).json()["secret"]
-    client.post("/v1/auth/two-factor/enable", headers=bearer(token), json={"secret": secret, "code": pyotp.TOTP(secret).now()})
+    client.post("/v1/auth/two-factor/enable", headers=bearer(token), json={"secret": secret, "code": totp(secret)})
     form = {"password": PASSWORD, "confirm": "true"}
     assert upload(client, "/v1/admin/restore", token, a_backup.read_bytes(), **form).json() == {"detail": "code_required"}
     assert upload(client, "/v1/admin/restore", token, a_backup.read_bytes(), code="000000", **form).json() == {"detail": "invalid_code"}
-    r = upload(client, "/v1/admin/restore", token, a_backup.read_bytes(), code=pyotp.TOTP(secret).now(), **form)
+    r = upload(client, "/v1/admin/restore", token, a_backup.read_bytes(), code=totp(secret), **form)
     assert r.status_code == 202, r.text
 
 
