@@ -348,6 +348,29 @@ def test_a_failed_restore_puts_the_database_back(live, tmp_path, monkeypatch):
     assert not (backups / "restore" / "request.dump").exists()
 
 
+def test_a_backup_naming_roles_this_server_lacks_restores(live, tmp_path):
+    """A backup from Supabase grants to and revokes from Supabase's own roles (anon, service_role...): on a server
+    without them they're made, unable to sign in, instead of stopping the restore."""
+    from app.jobs import backup, restore as web_restore
+    name, _ = live
+    role = f"supa_{uuid.uuid4().hex[:8]}"
+    sql(name, f"create role {role} nologin", f"grant select on public.users to {role}",
+        f"alter default privileges in schema public grant select on tables to {role}")
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    dump, _, _ = backup.run_backup(libpq_url(name), str(elsewhere))
+    sql(name, f"drop owned by {role}", f"drop role {role}")
+    try:
+        backups = requested(tmp_path, Path(dump).read_bytes())
+        assert web_restore.restore_if_requested(libpq_url(name), str(backups)) == "done", \
+            json.loads((backups / "restore" / "status").read_text())
+        assert sql(name, f"select rolcanlogin from pg_roles where rolname = '{role}'") == [(False,)]
+        assert users(name) == ["backup_user"]
+    finally:
+        sql(name, f"drop owned by {role}")
+        sql("postgres", f"drop role if exists {role}")
+
+
 def test_a_file_that_is_no_backup_changes_nothing(live, tmp_path):
     from app.jobs import restore as web_restore
     name, _ = live

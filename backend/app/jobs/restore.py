@@ -12,12 +12,14 @@ restore/status records the outcome for Server admin. The migrations and the logi
 """
 import json
 import os
+import re
 import subprocess
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
 import psycopg
+from psycopg import sql
 
 from app.jobs import account_deletion, backup, migrate
 
@@ -81,12 +83,38 @@ def _empty(url: str) -> None:
                 conn.execute(f'create role "{role}" nologin')
 
 
+GRANTEE = re.compile(r'\b(?:TO|FROM|FOR ROLE)\s+("(?:[^"]|"")+"|[A-Za-z_][A-Za-z0-9_$]*)')
+
+
+def _grantees(pg_restore: str, path: str, toc: str, env: dict) -> set[str]:
+    """The roles the dump's privileges name, PUBLIC aside."""
+    acl = [line for line in toc.splitlines() if " ACL " in line]
+    if not acl:
+        return set()
+    with tempfile.NamedTemporaryFile("w", suffix=".list") as listing:
+        listing.write("\n".join(acl))
+        listing.flush()
+        statements = backup._run([pg_restore, f"--use-list={listing.name}", "--file=-", path], env)
+    names = {m[1:-1].replace('""', '"') if m.startswith('"') else m.lower() for m in GRANTEE.findall(statements)}
+    return names - {"public"}
+
+
+def _make_missing_roles(url: str, names: set[str]) -> None:
+    """A backup from Supabase names its own roles (anon, authenticated, service_role...): made here, unable to sign
+    in, so their grants load instead of stopping the restore."""
+    with psycopg.connect(url, autocommit=True) as conn:
+        for name in sorted(names):
+            if not conn.execute("select 1 from pg_roles where rolname = %s", (name,)).fetchone():
+                conn.execute(sql.SQL("create role {} nologin").format(sql.Identifier(name)))
+
+
 def _load(url: str, path: str) -> None:
     _, pg_restore = backup._tools()
     dsn, password = backup._split(url)
     env = dict(os.environ, **({"PGPASSWORD": password} if password else {}))
     try:
         toc = backup._run([pg_restore, "--list", path], env)
+        _make_missing_roles(url, _grantees(pg_restore, path, toc, env))
         with tempfile.NamedTemporaryFile("w", suffix=".list") as listing:
             listing.write("\n".join(line for line in toc.splitlines()
                                     if not any(f" {kind} - {schema}public " in line
