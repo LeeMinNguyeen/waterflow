@@ -252,7 +252,6 @@ describe("amount and no-category filters, with the list's total (waterflow#103)"
   })
 
   it('ignores a currency in the address that is no code', async () => {
-    withUsd()
     const api = withUsd()
     await renderApp(<Transactions book={book} />, { route: '/books/b1/transactions?currency=US,VND&min=1' })
     expect(await screen.findByRole('button', { name: 'Amount: From ₫1 · VND' })).toBeInTheDocument()

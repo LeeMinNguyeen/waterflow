@@ -38,7 +38,10 @@ export function AmountRange({ min, max, currency, codes, reference, onChange }: 
     // An amount that doesn't read waits (a sum half typed), unless the currencies picked changed: then it's left
     // out, as it may not read in the reference currency, and the currencies still apply.
     const [min, max, codes] = [read(from), read(to), picked.join(',')]
-    if ((min === null || max === null) && codes === sentCurrency.current) return
+    if ((min === null || max === null) && codes === sentCurrency.current) {
+      pending.current = null
+      return
+    }
     const range = { min: min ?? '', max: max ?? '', currency: codes }
     pending.current = range
     const id = setTimeout(() => {

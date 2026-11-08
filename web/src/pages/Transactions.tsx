@@ -48,7 +48,7 @@ export function Transactions({ book }: { book: Book }) {
   const openTxn = useOpenTxn()
   const [params, setParams] = useSearchParams()
   const filters: TxnFilters = Object.fromEntries(FILTERS.map((k) => [k, params.get(k) ?? undefined]).filter(([, v]) => v))
-  // Only codes from the address go on: a hand-edited one would blank the chip and be refused by the server.
+  // Only codes go on: a hand-edited address could blank the chip.
   const codesAsked = (filters.currency ?? '').split(',').filter((c) => /^[A-Z]{3}$/.test(c)).join(',')
   if (codesAsked) filters.currency = codesAsked
   else delete filters.currency
