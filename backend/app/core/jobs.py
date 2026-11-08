@@ -44,7 +44,10 @@ def next_time(now: datetime, at_minute: int | None, timezone: str | None) -> dat
 
 
 def is_due(now: datetime, job: Mapping) -> bool:
-    """`job` is a row of job_schedule()."""
+    """`job` is a row of job_schedule(). Asked to run now (Server admin), it's due once, even while it's off."""
+    asked = job.get("run_requested_at")
+    if asked is not None and (job["last_started_at"] is None or asked > job["last_started_at"]):
+        return True
     if not job["enabled"]:
         return False
     # The next hourly run can start earlier in its hour than the failed job did, which waited for the jobs before it

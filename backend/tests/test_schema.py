@@ -918,6 +918,29 @@ def test_scheduler_runs_what_is_due_as_the_purge_login(database):
         api.dispose()
 
 
+def test_a_job_asked_to_run_now_runs_once_even_if_off(database):
+    from app.jobs.scheduler import run_due
+    purger = create_engine(_url("t_purge"))
+    ran = []
+
+    def fake_job(name):
+        ran.append(name)
+        return True, "ok"
+    try:
+        with database.connect() as c:
+            c.execute(text("update jobs set enabled = false, at_minute = null, timezone = null, changed_at = now(),"
+                           " last_started_at = now() - interval '1 minute', last_finished_at = now() - interval '1 minute',"
+                           " last_result = 'done', run_requested_at = null"))
+            c.execute(text("update jobs set run_requested_at = now() where name = 'backup'"))
+        assert run_due(purger, datetime.now(UTC), fake_job) == ["backup"]
+        assert run_due(purger, datetime.now(UTC), fake_job) == []           # once
+    finally:
+        with database.connect() as c:
+            c.execute(text("update jobs set enabled = true, changed_at = null, last_started_at = null, last_finished_at = null,"
+                           " last_result = null, last_detail = null, run_requested_at = null"))
+        purger.dispose()
+
+
 def test_categories_never_loop(database):
     """A category can't be its own parent, and a cycle that slipped in ends the ancestors' walk instead of running
     forever (it serves budgets and the transaction filter)."""
