@@ -137,7 +137,7 @@ def snapshot(database):
 def test_restore_commands_documented():
     assert len(RESTORE) == 6 and RESTORE[0].startswith("psql") and RESTORE[3].startswith("pg_restore --no-owner")
     assert "'sessions', 'remembered_devices', 'password_resets'" in RESTORE[4]
-    assert "update public.invites set revoked_at = now() where used_at is null and revoked_at is null" in RESTORE[5]
+    assert "update public.invites set revoked_at = now() where used_at is null and revoked_at is null and expires_at > now()" in RESTORE[5]
 
 
 def test_backup_restores_everything(source, target, tmp_path):
@@ -339,8 +339,10 @@ def test_a_failed_restore_puts_the_database_back(live, tmp_path, monkeypatch):
         return real(url, path)
 
     monkeypatch.setattr(web_restore, "_load", broken_once)
+    sql(name, "insert into invites (code_sha256, expires_at) values (sha256('live'), now() + interval '1 day')")
     assert web_restore.restore_if_requested(libpq_url(name), str(backups)) == "failed"
     assert users(name) == ["after_backup", "backup_user"]
+    assert sql(name, "select revoked_at is null from invites where code_sha256 = sha256('live')") == [(True,)]   # still works
     status = json.loads((backups / "restore" / "status").read_text())
     assert status["status"] == "failed" and "something broke" in status["detail"]
     assert not (backups / "restore" / "request.dump").exists()

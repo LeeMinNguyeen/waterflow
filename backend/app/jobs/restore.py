@@ -117,7 +117,7 @@ def _sign_everyone_out(url: str) -> None:
             if conn.execute("select to_regclass(%s)", (f"public.{table}",)).fetchone()[0]:
                 conn.execute(f"delete from public.{table}")
         if conn.execute("select to_regclass('public.invites')").fetchone()[0]:
-            conn.execute("update public.invites set revoked_at = now() where used_at is null and revoked_at is null")
+            conn.execute("update public.invites set revoked_at = now() where used_at is null and revoked_at is null and expires_at > now()")
 
 
 def _apply(url: str, path: str, purged: Path | None, purge_log: str, sign_out: bool = True) -> None:

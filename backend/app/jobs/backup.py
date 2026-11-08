@@ -31,7 +31,7 @@ or a new server, as its owner. tests/test_backup.py runs the `$` lines.
        invite used or revoked after it: every unused one is revoked, and the
        admin makes new ones.
        $ psql -v ON_ERROR_STOP=1 "$NEW_DB_URL" <<< "select format('delete from public.%I', t) from unnest(array['sessions', 'remembered_devices', 'password_resets']) t where to_regclass('public.' || t) is not null \gexec"
-       $ psql -v ON_ERROR_STOP=1 "$NEW_DB_URL" <<< "update public.invites set revoked_at = now() where used_at is null and revoked_at is null"
+       $ psql -v ON_ERROR_STOP=1 "$NEW_DB_URL" <<< "update public.invites set revoked_at = now() where used_at is null and revoked_at is null and expires_at > now()"
     4. Start the server. Before anyone uses it, redo the purges made since the
        dump, which brought those accounts back:
            docker compose exec waterflow python -m app.admin repurge
