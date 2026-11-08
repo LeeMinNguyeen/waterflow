@@ -358,6 +358,20 @@ def test_a_restore_stopped_midway_puts_the_database_back(live, tmp_path):
     assert not any((backups / "restore" / f).exists() for f in ("request.dump", "safety"))
 
 
+def test_a_stopped_restore_whose_safety_backup_is_gone_still_signs_everyone_out(live, tmp_path):
+    """Stopped after loading the upload, before signing out, and the backup from before it can't be found: the
+    upload's sessions must not work."""
+    from app.jobs import restore as web_restore
+    name, dump = live
+    who = "(select id from users where username = 'backup_user')"
+    sql(name, f"insert into sessions (token_sha256, user_id) values (sha256('s'), {who})")
+    backups = requested(tmp_path, dump.read_bytes())
+    (backups / "restore" / "safety").write_text("waterflow-20260101T000000Z.dump")       # not there
+    assert web_restore.restore_if_requested(libpq_url(name), str(backups)) == "failed"
+    assert sql(name, "select count(*) from sessions") == [(0,)]
+    assert "by hand" in json.loads((backups / "restore" / "status").read_text())["detail"]
+
+
 def test_a_restore_names_its_safety_backup_until_it_ends(live, tmp_path, monkeypatch):
     from app.jobs import restore as web_restore
     name, dump = live
