@@ -310,7 +310,10 @@
     "spent": "Spent",
     "income": "Income",
     "notIncluded_one": "{{count}} not included",
-    "notIncluded_other": "{{count}} not included"
+    "notIncluded_other": "{{count}} not included",
+    "amountFrom": "From",
+    "amountTo": "To",
+    "currency": "Currency"
   },
   "cat": {
     "title": "Categories",

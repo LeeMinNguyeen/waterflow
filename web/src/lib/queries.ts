@@ -91,6 +91,7 @@ export type TxnFilters = {
   q?: string
   min?: string
   max?: string
+  currency?: string
 }
 
 export function useTxnSummary(bookId: string, filters: TxnFilters, enabled: boolean) {
