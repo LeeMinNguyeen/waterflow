@@ -169,7 +169,7 @@ def sign_in(body: SignIn, request: Request, db: Session = Depends(get_public_db)
     if row["totp_secret"] and not _remembered(row["user_id"], body.device_token):
         if not body.code:
             raise HTTPException(401, "code_required")
-        ok = si.totp_matches(row["totp_secret"], body.code) or db.execute(
+        ok = si.totp_accepted(db, row["user_id"], row["totp_secret"], body.code) or db.execute(
             text("select use_recovery_code(:u, :c)"), {"u": row["user_id"], "c": si.code_hash(body.code)}).scalar()
         db.commit()
         if not ok:
@@ -318,14 +318,16 @@ class Enable(BaseModel):
 def two_factor_enable(body: Enable, caller: Caller = Depends(current_caller),
                       db: Session = Depends(get_db)) -> RecoveryCodes:
     _limit((si.per_user_action, str(caller.id)))
-    # Replacing an active secret would also replace the recovery codes, with no current code: turning it off first
-    # asks for one.
-    if db.execute(text("select totp_secret is not null from local_credentials where user_id = :u"), {"u": caller.id}).scalar():
-        raise HTTPException(409, "two_factor_on")
-    if not si.totp_matches(body.secret, body.code):
+    step = si.totp_step(body.secret, body.code)
+    if step is None:
         raise HTTPException(422, "invalid_code")
-    db.execute(text("update local_credentials set totp_secret = :s, updated_at = now() where user_id = :u"),
-               {"s": body.secret, "u": caller.id})
+    # Replacing an active secret would also replace the recovery codes, with no current code: turning it off first
+    # asks for one. Only while it's off, in the same statement, so two requests at once can't both turn it on.
+    if not db.execute(text("update local_credentials set totp_secret = :s, updated_at = now()"
+                           " where user_id = :u and totp_secret is null"), {"s": body.secret, "u": caller.id}).rowcount:
+        raise HTTPException(409, "two_factor_on")
+    if not db.execute(text("select use_totp_step(:u, :s)"), {"u": caller.id, "s": step}).scalar():
+        raise HTTPException(422, "invalid_code")
     codes = _new_recovery_codes(db, caller.id)
     db.commit()
     return codes
@@ -341,7 +343,7 @@ def _check_current_code(db: Session, caller: Caller, code: str) -> bool:
     secret = db.execute(text("select totp_secret from local_credentials where user_id = :u"), {"u": caller.id}).scalar()
     if not secret:
         return False
-    if not si.totp_matches(secret, code):
+    if not si.totp_accepted(db, caller.id, secret, code):
         raise HTTPException(422, "invalid_code")
     return True
 
