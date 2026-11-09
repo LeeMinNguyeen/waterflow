@@ -118,7 +118,7 @@ def prune(backup_dir: str, now: datetime) -> list[str]:
     kept = set()
     for marker in ("safety", "keep"):
         try:
-            kept.add(Path(backup_dir, "restore", marker).read_text().strip())
+            kept.update(Path(backup_dir, "restore", marker).read_text().split())
         except FileNotFoundError:
             pass
     old = [n for n in sorted(os.listdir(backup_dir))

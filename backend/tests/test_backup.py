@@ -391,7 +391,7 @@ def test_a_failed_put_back_keeps_its_backup_until_a_restore_works(live, tmp_path
     monkeypatch.setattr(web_restore, "_load", lambda url, path: (_ for _ in ()).throw(web_restore.RestoreError("")))
     assert web_restore.restore_if_requested(libpq_url(name), str(backups)) == "failed"
     assert "RestoreError" in json.loads((backups / "restore" / "status").read_text())["detail"]
-    assert (backups / "restore" / "keep").read_text() == Path(safety).name
+    assert (backups / "restore" / "keep").read_text().split() == [Path(safety).name]
     assert not (backups / "restore" / "safety").exists()
     from datetime import datetime, timedelta, timezone
     assert Path(safety).name not in backup.prune(str(backups), datetime.now(timezone.utc) + timedelta(days=30))
@@ -401,6 +401,26 @@ def test_a_failed_put_back_keeps_its_backup_until_a_restore_works(live, tmp_path
     (backups / "restore" / "request.dump").write_bytes(dump.read_bytes())
     assert web_restore.restore_if_requested(libpq_url(name), str(backups)) == "done"
     assert not (backups / "restore" / "keep").exists()
+
+
+def test_every_failed_put_back_keeps_its_backup(live, tmp_path, monkeypatch):
+    """Two failed put-backs, with one restored by hand in between: both backups stay out of pruning."""
+    from datetime import datetime, timedelta, timezone
+    from app.jobs import backup, restore as web_restore
+    name, dump = live
+    backups = requested(tmp_path, dump.read_bytes())
+    real = web_restore._load
+    monkeypatch.setattr(web_restore, "_load", lambda url, path: (_ for _ in ()).throw(web_restore.RestoreError("")))
+    assert web_restore.restore_if_requested(libpq_url(name), str(backups)) == "failed"
+    first = (backups / "restore" / "keep").read_text().split()
+    assert len(first) == 1 and (backups / first[0]).exists()
+    web_restore._empty(libpq_url(name))
+    real(libpq_url(name), str(backups / first[0]))
+    (backups / "restore" / "request.dump").write_bytes(dump.read_bytes())
+    assert web_restore.restore_if_requested(libpq_url(name), str(backups)) == "failed"
+    kept = (backups / "restore" / "keep").read_text().split()
+    assert len(kept) == 2 and kept[0] == first[0]
+    assert not set(kept) & set(backup.prune(str(backups), datetime.now(timezone.utc) + timedelta(days=30)))
 
 
 def test_a_restore_names_its_safety_backup_until_it_ends(live, tmp_path, monkeypatch):
@@ -425,6 +445,17 @@ def test_pruning_keeps_the_backup_a_restore_names(tmp_path):
     (tmp_path / "restore" / "safety").write_text("waterflow-20260101T000000Z.dump")
     assert backup.prune(str(tmp_path), datetime(2026, 11, 1, tzinfo=timezone.utc)) == ["waterflow-20260102T000000Z.dump"]
     assert (tmp_path / "waterflow-20260101T000000Z.dump").exists()
+
+
+def test_pruning_keeps_every_backup_left_to_restore_by_hand(tmp_path):
+    from datetime import datetime, timezone
+    from app.jobs import backup
+    (tmp_path / "restore").mkdir()
+    names = [f"waterflow-2026010{d}T000000Z.dump" for d in (1, 2, 3)]
+    for n in names:
+        (tmp_path / n).write_bytes(b"x")
+    (tmp_path / "restore" / "keep").write_text(names[0] + "\n" + names[1] + "\n")
+    assert backup.prune(str(tmp_path), datetime(2026, 11, 1, tzinfo=timezone.utc)) == [names[2]]
 
 def test_a_backup_naming_roles_this_server_lacks_restores(live, tmp_path):
     """A backup from Supabase grants to and revokes from Supabase's own roles (anon, service_role...): on a server

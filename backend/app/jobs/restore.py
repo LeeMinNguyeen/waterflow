@@ -205,8 +205,10 @@ def _first_line(e: Exception, url: str) -> str:
 
 def _keep(where: Path) -> None:
     """The put-back failed: the backup to restore by hand stays out of pruning until a restore works."""
-    with contextlib.suppress(OSError):
-        (where / SAFETY).replace(where / KEEP)
+    with contextlib.suppress(OSError), open(where / KEEP, "a") as f:
+        f.write((where / SAFETY).read_text().strip() + "\n")
+        f.flush()
+        os.fsync(f.fileno())
 
 
 def _resume(url: str, backup_dir: str, where: Path, purge_log: str) -> str:
