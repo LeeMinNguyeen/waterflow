@@ -348,6 +348,76 @@ def test_a_failed_restore_puts_the_database_back(live, tmp_path, monkeypatch):
     assert not (backups / "restore" / "request.dump").exists()
 
 
+def test_a_backup_naming_roles_this_server_lacks_restores(live, tmp_path):
+    """A backup from Supabase grants to and revokes from Supabase's own roles (anon, service_role...): on a server
+    without them they're made, unable to sign in, instead of stopping the restore."""
+    from app.jobs import backup, restore as web_restore
+    name, _ = live
+    role = f"supa_{uuid.uuid4().hex[:8]}"
+    sql(name, f"create role {role} nologin", f"grant select on public.users to {role}",
+        f"alter default privileges in schema public grant select on tables to {role}")
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    dump, _, _ = backup.run_backup(libpq_url(name), str(elsewhere))
+    sql(name, f"drop owned by {role}", f"drop role {role}")
+    try:
+        backups = requested(tmp_path, Path(dump).read_bytes())
+        assert web_restore.restore_if_requested(libpq_url(name), str(backups)) == "done", \
+            json.loads((backups / "restore" / "status").read_text())
+        assert sql(name, f"select count(*) from pg_roles where rolname = '{role}'") == [(0,)]       # made for the load only
+        assert users(name) == ["backup_user"]
+    finally:
+        if sql(name, f"select count(*) from pg_roles where rolname = '{role}'") == [(1,)]:
+            sql(name, f"drop owned by {role}", f"drop role {role}")
+
+
+def test_a_backup_naming_roles_restores_as_an_owner_that_is_no_superuser(live, tmp_path):
+    """Supabase's owner, or your own PostgreSQL's, isn't a superuser: the roles made for the load are its own to
+    drop after."""
+    from app.jobs import backup, restore as web_restore
+    name, _ = live
+    role, owner, target = (f"{p}_{uuid.uuid4().hex[:8]}" for p in ("supa", "owner", "restored"))
+    sql(name, f"create role {role} nologin", f"grant select on public.users to {role}", f"grant usage on schema public to {role}")
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    dump, _, _ = backup.run_backup(libpq_url(name), str(elsewhere))
+    sql(name, f"drop owned by {role}", f"drop role {role}")
+    sql(ADMIN_URL.database, f"create role {owner} login createrole password 'pw'", f'create database "{target}" owner {owner}')
+    try:
+        as_owner = libpq_url(target, username=owner, password="pw")
+        backups = requested(tmp_path, Path(dump).read_bytes())
+        (backups / "restore" / "request.dump").rename(backups / "upload.dump")
+        web_restore._empty(as_owner)
+        web_restore._load(as_owner, str(backups / "upload.dump"))
+        assert sql(target, f"select count(*) from pg_roles where rolname = '{role}'") == [(0,)]
+        assert users(target) == ["backup_user"]
+    finally:
+        sql(ADMIN_URL.database, f'drop database "{target}" with (force)')
+        for r in (role, owner):
+            if sql(ADMIN_URL.database, f"select count(*) from pg_roles where rolname = '{r}'") == [(1,)]:
+                sql(ADMIN_URL.database, f"drop owned by {r}", f"drop role {r}")
+
+
+def test_a_backup_with_default_privileges_for_a_role_the_owner_cant_act_for_restores(live, tmp_path):
+    """Supabase's dumps carry default privileges FOR ROLE supabase_admin, which its own owner can't change."""
+    from app.jobs import backup, restore as web_restore
+    name, _ = live
+    role = f"supa_admin_{uuid.uuid4().hex[:8]}"
+    sql(name, f"create role {role} nologin", f"alter default privileges for role {role} in schema public grant select on tables to public")
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    dump, _, _ = backup.run_backup(libpq_url(name), str(elsewhere))
+    sql(name, f"drop owned by {role}", f"drop role {role}")
+    try:
+        backups = requested(tmp_path, Path(dump).read_bytes())
+        assert web_restore.restore_if_requested(libpq_url(name), str(backups)) == "done", \
+            json.loads((backups / "restore" / "status").read_text())
+        assert sql(name, f"select count(*) from pg_default_acl where defaclrole::regrole::text = '{role}'") == [(0,)]
+    finally:
+        if sql(name, f"select count(*) from pg_roles where rolname = '{role}'") == [(1,)]:
+            sql(name, f"drop owned by {role}", f"drop role {role}")
+
+
 def test_a_file_that_is_no_backup_changes_nothing(live, tmp_path):
     from app.jobs import restore as web_restore
     name, _ = live
