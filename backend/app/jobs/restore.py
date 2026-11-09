@@ -29,6 +29,7 @@ REQUEST = "request.dump"
 PURGED = "purged_accounts.jsonl"
 STATUS = "status"
 SAFETY = "safety"
+KEEP = "keep"                            # names a backup a failed put-back left to restore by hand; kept from pruning
 ROLES = ("app_user", "account_purger", "fx_updater")
 
 
@@ -146,27 +147,41 @@ def _name_safety(where: Path, before: str) -> None:
     partial.replace(where / SAFETY)
 
 
+def _first_line(e: Exception, url: str) -> str:
+    text = backup._scrub(str(e), url).strip()
+    return text.splitlines()[0] if text else type(e).__name__
+
+
+def _keep(where: Path) -> None:
+    """The put-back failed: the backup to restore by hand stays out of pruning until a restore works."""
+    with contextlib.suppress(OSError):
+        (where / SAFETY).replace(where / KEEP)
+
+
 def _resume(url: str, backup_dir: str, where: Path, purge_log: str) -> str:
     """A restore stopped midway: the database may be half loaded, so the backup from before it goes back."""
-    name = "the backup from before it"
+    name, loaded = "", False
     print("a restore was interrupted: putting back the database from before it", flush=True)
     try:
         name = (where / SAFETY).read_text().strip()
         m = backup.DUMP_NAME.fullmatch(name)
         if not m or m[2] or not (Path(backup_dir) / name).is_file():
             raise FileNotFoundError(name)
-        before = Path(backup_dir) / name
-        _apply(url, str(before), None, purge_log, sign_out=False)
+        _empty(url)
+        _load(url, str(Path(backup_dir) / name))
+        loaded = True
+        _repurge(url, purge_log)
         reason = f"the restore was interrupted; the database from before it is back ({name})"
     except Exception as e:
-        # The upload may be loaded: its sessions, devices, reset links and invites must not work, whatever else failed.
-        with contextlib.suppress(Exception):
-            _sign_everyone_out(url)
+        if not loaded:
+            # The upload may be loaded: its sessions, devices, reset links and invites must not work.
+            with contextlib.suppress(Exception):
+                _sign_everyone_out(url)
+            _keep(where)
         if isinstance(e, FileNotFoundError):
-            reason = f"the restore was interrupted, and the backup from before it ({e or "unnamed"}) is missing: restore one by hand"
+            reason = f"the restore was interrupted, and the backup from before it ({name or 'unnamed'}) is missing: restore one by hand"
         else:
-            reason = (f"the restore was interrupted, and putting the database back failed"
-                      f" ({backup._scrub(str(e), url).splitlines()[0] if str(e) else type(e).__name__}): restore {name} by hand")
+            reason = f"the restore was interrupted, and putting the database back failed ({_first_line(e, url)}): restore {name} by hand"
     _record(where, "failed", reason)
     print(f"restoring the uploaded backup failed: {reason}", flush=True)
     return "failed"
@@ -189,22 +204,24 @@ def restore_if_requested(url: str, backup_dir: str, purge_log: str | None = None
     before = None
     try:
         check(request)
-        before, _, _ = backup.run_backup(url, backup_dir)
-        _name_safety(where, before)
+        taken, _, _ = backup.run_backup(url, backup_dir)
+        _name_safety(where, taken)
+        before = taken
         _apply(url, str(request), where / PURGED, purge_log)
         (where / SAFETY).unlink(missing_ok=True)
+        (where / KEEP).unlink(missing_ok=True)
         _record(where, "done")
         print(f"restored the uploaded backup; the database before it is in {os.path.basename(before)}", flush=True)
         return "done"
     except Exception as e:
-        reason = backup._scrub(str(e), url).splitlines()[0] if str(e) else type(e).__name__
+        reason = _first_line(e, url)
         if before:
             try:
                 _apply(url, before, None, purge_log, sign_out=False)     # taken seconds ago: its sessions are the live ones
                 (where / SAFETY).unlink(missing_ok=True)
             except Exception as again:
-                reason += f"; putting the database back failed too ({backup._scrub(str(again), url).splitlines()[0]}):" \
-                          f" restore {os.path.basename(before)} by hand"
+                _keep(where)
+                reason += f"; putting the database back failed too ({_first_line(again, url)}): restore {os.path.basename(before)} by hand"
         _record(where, "failed", reason)
         print(f"restoring the uploaded backup failed: {reason}", flush=True)
         return "failed"

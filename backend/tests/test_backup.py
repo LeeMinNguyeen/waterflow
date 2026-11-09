@@ -372,6 +372,30 @@ def test_a_stopped_restore_whose_safety_backup_is_gone_still_signs_everyone_out(
     assert "is missing" in json.loads((backups / "restore" / "status").read_text())["detail"]
 
 
+def test_a_failed_put_back_keeps_its_backup_until_a_restore_works(live, tmp_path, monkeypatch):
+    """Putting the database back failed: the backup to restore by hand stays out of pruning, and the next restore that
+    works lets it go."""
+    from app.jobs import backup, restore as web_restore
+    name, dump = live
+    backups = requested(tmp_path, dump.read_bytes())
+    safety, _, _ = backup.run_backup(libpq_url(name), str(backups))
+    (backups / "restore" / "safety").write_text(Path(safety).name)
+    real = web_restore._load
+    monkeypatch.setattr(web_restore, "_load", lambda url, path: (_ for _ in ()).throw(web_restore.RestoreError("")))
+    assert web_restore.restore_if_requested(libpq_url(name), str(backups)) == "failed"
+    assert "RestoreError" in json.loads((backups / "restore" / "status").read_text())["detail"]
+    assert (backups / "restore" / "keep").read_text() == Path(safety).name
+    assert not (backups / "restore" / "safety").exists()
+    from datetime import datetime, timedelta, timezone
+    assert Path(safety).name not in backup.prune(str(backups), datetime.now(timezone.utc) + timedelta(days=30))
+    monkeypatch.setattr(web_restore, "_load", real)
+    web_restore._empty(libpq_url(name))                        # the admin restores it by hand, then restores again
+    real(libpq_url(name), safety)
+    (backups / "restore" / "request.dump").write_bytes(dump.read_bytes())
+    assert web_restore.restore_if_requested(libpq_url(name), str(backups)) == "done"
+    assert not (backups / "restore" / "keep").exists()
+
+
 def test_a_restore_names_its_safety_backup_until_it_ends(live, tmp_path, monkeypatch):
     from app.jobs import restore as web_restore
     name, dump = live

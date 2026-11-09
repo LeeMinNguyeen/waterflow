@@ -110,14 +110,16 @@ def _run(cmd: list[str], env: dict) -> str:
 
 
 def prune(backup_dir: str, now: datetime) -> list[str]:
-    """Deletes dumps (and leftover .partial files) older than KEEP, except the one a restore under way names (see
-    app/jobs/restore.py). Returns their names."""
-    try:
-        kept = Path(backup_dir, "restore", "safety").read_text().strip()
-    except FileNotFoundError:
-        kept = None
+    """Deletes dumps (and leftover .partial files) older than KEEP, except one a restore names: under way, or left to
+    restore by hand (see app/jobs/restore.py). Returns their names."""
+    kept = set()
+    for marker in ("safety", "keep"):
+        try:
+            kept.add(Path(backup_dir, "restore", marker).read_text().strip())
+        except FileNotFoundError:
+            pass
     old = [n for n in sorted(os.listdir(backup_dir))
-           if n != kept and (m := DUMP_NAME.fullmatch(n))
+           if n not in kept and (m := DUMP_NAME.fullmatch(n))
            and now - datetime.strptime(m[1], "%Y%m%dT%H%M%SZ").replace(tzinfo=timezone.utc) > KEEP]
     for n in old:
         os.remove(os.path.join(backup_dir, n))
