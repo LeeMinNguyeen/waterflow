@@ -179,3 +179,13 @@ describe('deleting an account while the daily deletion is off (waterflow#140)', 
     expect(screen.queryByText(/turned off the daily deletion/)).toBeNull()
   })
 })
+
+describe('the closed account\'s screen while the daily deletion is off (waterflow#140)', () => {
+  it('says the account is deleted for good only once it is back on', async () => {
+    const { AccountClosing } = await import('./AccountClosing')
+    const api = server([laptop])
+    api.routes['GET /v1/instance'] = { name: 'Nhà', server_version: '0.6.0', api_version: 1, signup: 'invite', setup_needed: false, account_purge: 'off' }
+    await renderApp(<AccountClosing requestedAt="2026-11-01T00:00:00Z" />)
+    expect(await screen.findByText(/turned off the daily deletion/)).toBeInTheDocument()
+  })
+})

@@ -818,6 +818,10 @@ def test_daily_jobs_on_server_admin(client, admin, database, monkeypatch):
         with database.connect() as c:
             c.execute(text("update jobs set last_started_at = now(), last_finished_at = null where name = 'backup'"))
         assert (run("backup").status_code, run("backup").json()) == (409, {"detail": "job_running"})
+        assert listed()["backup"]["running"] is True
+        with database.connect() as c:                       # killed two hours ago, by a restart or a restore
+            c.execute(text("update jobs set last_started_at = now() - interval '2 hours' where name = 'backup'"))
+        assert listed()["backup"]["running"] is False and run("backup").status_code == 204
         monkeypatch.setenv("RUN_JOBS", "off")
         assert listed()["rates"]["runs_within"] == "1h"                                       # the hourly look elsewhere
     finally:

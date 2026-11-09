@@ -141,6 +141,7 @@ class Job(BaseModel):
     last_result: Literal["done", "failed"] | None
     last_detail: str | None             # its last line of output
     run_requested_at: datetime | None   # Run now, waiting for the scheduler while after last_started_at
+    running: bool                       # started, not finished, and not so long ago that it was surely killed
     runs_within: Literal["30s", "1h"]   # how soon the scheduler looks: here, or an hourly job elsewhere (RUN_JOBS=off)
 
 
@@ -153,9 +154,13 @@ def jobs(db: Session = Depends(get_db)) -> list[Job]:
     """In the order they run."""
     now = datetime.now(timezone.utc)
     within = "1h" if os.environ.get("RUN_JOBS", "on").lower() in ("off", "false", "0") else "30s"
+
+    def running(j: dict) -> bool:
+        started, finished = j["last_started_at"], j["last_finished_at"]
+        return bool(started) and (finished is None or finished < started) and now - started < timedelta(minutes=45)
     return [Job(**{k: v for k, v in j.items() if k != "changed_at"}, default_minute=schedule.default_minute(),
-                next_run_at=schedule.next_time(now, j["at_minute"], j["timezone"]), runs_within=within)
-            for j in _jobs(db).values()]
+                next_run_at=schedule.next_time(now, j["at_minute"], j["timezone"]), runs_within=within,
+                running=running(j)) for j in _jobs(db).values()]
 
 
 @router.post("/jobs/{name}/run", status_code=204)

@@ -19,11 +19,11 @@ const instance: Instance = { name: 'Nhà', server_version: '0.1.3', api_version:
 
 const jobs = [
   { name: 'purge', at_minute: null, timezone: null, default_minute: 1140, enabled: true, next_run_at: '2026-10-21T19:00:00Z',
-    last_started_at: '2026-10-20T19:00:01Z', last_finished_at: '2026-10-20T19:00:02Z', last_result: 'done', last_detail: 'purged 0 accounts', run_requested_at: null, runs_within: '30s' },
+    last_started_at: '2026-10-20T19:00:01Z', last_finished_at: '2026-10-20T19:00:02Z', last_result: 'done', last_detail: 'purged 0 accounts', run_requested_at: null, runs_within: '30s', running: false },
   { name: 'backup', at_minute: 150, timezone: 'Asia/Ho_Chi_Minh', default_minute: 1140, enabled: true, next_run_at: '2026-10-21T19:30:00Z',
-    last_started_at: '2026-10-20T19:30:00Z', last_finished_at: '2026-10-20T19:30:09Z', last_result: 'failed', last_detail: 'backup failed: disk full', run_requested_at: null, runs_within: '30s' },
+    last_started_at: '2026-10-20T19:30:00Z', last_finished_at: '2026-10-20T19:30:09Z', last_result: 'failed', last_detail: 'backup failed: disk full', run_requested_at: null, runs_within: '30s', running: false },
   { name: 'rates', at_minute: null, timezone: null, default_minute: 1140, enabled: false, next_run_at: '2026-10-21T19:00:00Z',
-    last_started_at: null, last_finished_at: null, last_result: null, last_detail: null, run_requested_at: null, runs_within: '30s' },
+    last_started_at: null, last_finished_at: null, last_result: null, last_detail: null, run_requested_at: null, runs_within: '30s', running: false },
 ]
 
 function server() {

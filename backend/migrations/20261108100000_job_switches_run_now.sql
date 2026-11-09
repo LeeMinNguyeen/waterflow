@@ -35,8 +35,11 @@ begin
   if not exists (select 1 from jobs where name = p_name) then
     raise exception 'not_found: no such job';
   end if;
+  -- A run that started and never finished (killed, or a restore of a backup it was making) stops counting as
+  -- running after 45 minutes, as the scheduler retries it then.
   update jobs set run_requested_at = now()
-   where name = p_name and (last_started_at is null or last_started_at <= coalesce(last_finished_at, '-infinity'));
+   where name = p_name and (last_started_at is null or last_started_at <= coalesce(last_finished_at, '-infinity')
+                            or last_started_at < now() - interval '45 minutes');
   if not found then
     raise exception 'job_running: this job is running now';
   end if;

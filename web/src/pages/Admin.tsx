@@ -48,10 +48,9 @@ type Job = {
   name: JobName; at_minute: number | null; timezone: string | null; default_minute: number; enabled: boolean
   next_run_at: string; last_started_at: string | null; last_finished_at: string | null
   last_result: 'done' | 'failed' | null; last_detail: string | null
-  run_requested_at: string | null; runs_within: '30s' | '1h'
+  run_requested_at: string | null; runs_within: '30s' | '1h'; running: boolean
 }
-const asked = (job: Job) => !!job.run_requested_at && (!job.last_started_at || job.run_requested_at > job.last_started_at)
-const running = (job: Job) => !!job.last_started_at && (!job.last_finished_at || job.last_finished_at < job.last_started_at)
+const asked = (job: Job) => !!job.run_requested_at && (!job.last_started_at || Date.parse(job.run_requested_at) > Date.parse(job.last_started_at))
 
 const when = (iso: string | null) =>
   iso ? new Intl.DateTimeFormat(currentLanguage() === 'vi' ? 'vi-VN' : 'en-GB', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(iso)) : ''
@@ -147,7 +146,7 @@ function Jobs({ timezone }: { timezone: string }) {
   const errorText = useErrorText()
   const qc = useQueryClient()
   const jobs = useQuery({ queryKey: ['admin', 'jobs'], queryFn: () => api<Job[]>('/v1/admin/jobs'),
-    refetchInterval: (q) => (q.state.data?.some((j) => asked(j) || running(j)) ? 5000 : false) })
+    refetchInterval: (q) => (q.state.data?.some((j) => asked(j) || j.running) ? 5000 : 60_000) })
   const [edits, setEdits] = useState<Partial<Record<JobName, { minute?: number; enabled?: boolean }>>>({})
   const [state, setState] = useState<{ error?: unknown; saved?: boolean; busy?: boolean }>({})
   if (jobs.isError) return <FormSection title={t('admin.jobs')}><Alert severity="error">{errorText(jobs.error)}</Alert></FormSection>
@@ -169,7 +168,7 @@ function Jobs({ timezone }: { timezone: string }) {
   const lastRun = (job: Job) => {
     if (asked(job)) return <Typography variant="body2">{t(`admin.jobStarting_${job.runs_within}`)}</Typography>
     if (!job.last_started_at) return <Typography variant="body2" color="textSecondary">{t('admin.jobNever')}</Typography>
-    if (running(job)) {
+    if (job.running) {
       return <Typography variant="body2">{t('admin.jobRunning', { when: at.format(new Date(job.last_started_at)) })}</Typography>
     }
     const failed = job.last_result === 'failed'
@@ -251,7 +250,7 @@ function Jobs({ timezone }: { timezone: string }) {
                   </TableCell>
                   <TableCell>
                     {lastRun(job)}
-                    {!asked(job) && !running(job) && (
+                    {!asked(job) && !job.running && (
                       <Box><Button size="small" onClick={() => runNow(job.name)} sx={{ mt: 0.5, ml: -1 }}>{t('admin.runNow')}</Button></Box>
                     )}
                   </TableCell>
