@@ -584,6 +584,7 @@
     "jobNever": "Not run yet",
     "jobRunning": "Running since {{when}}",
     "jobDone": "Done {{when}}",
+    "jobUnfinished": "Didn't finish (started {{when}})",
     "jobFailed": "Failed {{when}}",
     "jobDaily": "{{job}} daily",
     "jobOffPlain": "Off",

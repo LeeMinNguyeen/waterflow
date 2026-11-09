@@ -137,7 +137,7 @@ class Job(BaseModel):
     enabled: bool
     next_run_at: datetime               # also while it's off
     last_started_at: datetime | None
-    last_finished_at: datetime | None   # still running while this is before last_started_at, or missing
+    last_finished_at: datetime | None
     last_result: Literal["done", "failed"] | None
     last_detail: str | None             # its last line of output
     run_requested_at: datetime | None   # Run now, waiting for the scheduler while after last_started_at

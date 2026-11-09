@@ -171,11 +171,14 @@ function Jobs({ timezone }: { timezone: string }) {
     if (job.running) {
       return <Typography variant="body2">{t('admin.jobRunning', { when: at.format(new Date(job.last_started_at)) })}</Typography>
     }
+    if (!job.last_finished_at || job.last_finished_at < job.last_started_at) {
+      return <Typography variant="body2" color="error">{t('admin.jobUnfinished', { when: at.format(new Date(job.last_started_at)) })}</Typography>
+    }
     const failed = job.last_result === 'failed'
     return (
       <>
         <Typography variant="body2" color={failed ? 'error' : 'success'}>
-          {t(failed ? 'admin.jobFailed' : 'admin.jobDone', { when: at.format(new Date(job.last_finished_at ?? job.last_started_at)) })}
+          {t(failed ? 'admin.jobFailed' : 'admin.jobDone', { when: at.format(new Date(job.last_finished_at)) })}
         </Typography>
         {job.last_detail && <Typography variant="caption" color="textSecondary" sx={{ wordBreak: 'break-word' }}>{job.last_detail}</Typography>}
       </>

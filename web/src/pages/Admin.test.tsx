@@ -69,6 +69,20 @@ describe('the daily jobs on Server admin (waterflow#6)', () => {
     expect(screen.getAllByRole('switch')).toHaveLength(3)
   })
 
+  it("says a run that stopped without finishing didn't finish, not the run before it", async () => {
+    server()
+    Object.assign(jobs[1], { last_started_at: '2026-10-21T19:30:00Z', last_result: 'done', last_detail: 'backed up to x.dump' })
+    try {
+      await renderApp(<Admin />)
+      const backup = await row('Back up the database')
+      expect(backup).toHaveTextContent("Didn't finish (started 22 Oct 2026, 02:30)")
+      expect(backup).not.toHaveTextContent('backed up to x.dump')
+      expect(backup).not.toHaveTextContent('Done')
+    } finally {
+      Object.assign(jobs[1], { last_started_at: '2026-10-20T19:30:00Z', last_result: 'failed', last_detail: 'backup failed: disk full' })
+    }
+  })
+
   it('saves a new time, in the admin\'s timezone, and the rates back on', async () => {
     const api = server()
     await renderApp(<Admin />)
