@@ -115,7 +115,6 @@ function SetupRestore({ onBack }: { onBack: () => void }) {
   const { t } = useTranslation()
   const [code, setCode] = useState('')
   const [file, setFile] = useState<File | null>(null)
-  const [purged, setPurged] = useState<File | null>(null)
   const [state, setState] = useState<{ busy?: boolean; error?: unknown; restarting?: boolean }>({})
 
   async function start(e: FormEvent) {
@@ -124,7 +123,6 @@ function SetupRestore({ onBack }: { onBack: () => void }) {
     const form = new FormData()
     form.append('setup_code', code.trim().toUpperCase())
     form.append('file', file)
-    if (purged) form.append('purged', purged)
     setState({ busy: true })
     try {
       await upload('/v1/setup/restore', form)
@@ -146,8 +144,7 @@ function SetupRestore({ onBack }: { onBack: () => void }) {
             <Typography color="textSecondary">{t('restore.setupIntro')}</Typography>
             <TextField label={t('setup.code')} required value={code} onChange={(e) => setCode(e.target.value)} helperText={t('setup.codeHint')}
               slotProps={{ htmlInput: { autoCapitalize: 'characters', autoComplete: 'off' } }} />
-            <FileField label={t('restore.file')} button={t('restore.choose')} file={file} onChange={setFile} accept=".dump" />
-            <FileField label={t('restore.purged')} button={t('restore.choose')} file={purged} onChange={setPurged} accept=".jsonl" />
+            <FileField label={t('restore.file')} button={t('restore.choose')} file={file} onChange={setFile} accept=".tar,.dump" />
             <Typography variant="body2" color="textSecondary">{t('restore.purgedHint')}</Typography>
             <FormError error={state.error} />
             <Button type="submit" variant="contained" size="large" loading={state.busy} disabled={!file || !code.trim()}>{t('restore.submit')}</Button>

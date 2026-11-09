@@ -24,7 +24,7 @@ import { useTranslation } from 'react-i18next'
 import { FormSection, PageHeader } from '../components/Page'
 import { useErrorText } from '../components/errors'
 import { currentLanguage } from '../i18n'
-import { api, send, upload, type RestoreStatus } from '../lib/api'
+import { api, download, send, upload, type RestoreStatus } from '../lib/api'
 import { waitForServer } from '../lib/restart'
 import { session } from '../auth/session'
 import { FileField } from '../components/FileField'
@@ -90,6 +90,7 @@ export function Admin() {
       <Jobs timezone={me.data.profile.timezone} />
       <Invites />
       <Users selfId={me.data.id} />
+      <Backups timezone={me.data.profile.timezone} />
       <Restore />
     </Stack>
   )
@@ -473,6 +474,91 @@ function Users({ selfId }: { selfId: string }) {
 
 // Replaces everything on this server with a backup: the API checks the file and stops the server, which restores it
 // as it starts again. The restored database has the sessions of the backup's day, so this browser signs in again.
+type BackupFile = { name: string; size: number; taken_at: string }
+
+// The backups folder: each one downloads as one file that restores on its own, after the password (and code) again.
+function Backups({ timezone }: { timezone: string }) {
+  const { t } = useTranslation()
+  const errorText = useErrorText()
+  const lang = currentLanguage() === 'vi' ? 'vi-VN' : 'en-GB'
+  const backups = useQuery({ queryKey: ['admin', 'backups'], queryFn: () => api<BackupFile[]>('/v1/admin/backups') })
+  const twoFactor = useQuery({ queryKey: keys.twoFactor, queryFn: () => api<{ enabled: boolean }>('/v1/auth/two-factor') })
+  const [asking, setAsking] = useState<BackupFile | null>(null)
+  const [password, setPassword] = useState('')
+  const [code, setCode] = useState('')
+  const [state, setState] = useState<{ busy?: boolean; error?: unknown }>({})
+  const needsCode = !!twoFactor.data?.enabled
+  const at = new Intl.DateTimeFormat(lang, { dateStyle: 'medium', timeStyle: 'short', timeZone: timezone })
+  const size = new Intl.NumberFormat(lang, { style: 'unit', unit: 'megabyte', maximumFractionDigits: 1 })
+  const close = () => { setAsking(null); setPassword(''); setCode(''); setState({}) }
+
+  async function get(e: FormEvent) {
+    e.preventDefault()
+    if (!asking) return
+    setState({ busy: true })
+    try {
+      await download(`/v1/admin/backups/${encodeURIComponent(asking.name)}/download`,
+        { password, ...(needsCode && { code: code.trim() }) })
+      close()
+    } catch (err) {
+      setState({ error: err })
+    }
+  }
+
+  return (
+    <FormSection title={t('backups.title')}>
+      <Typography color="textSecondary">{t('backups.intro')}</Typography>
+      {backups.isError && <Alert severity="error">{errorText(backups.error)}</Alert>}
+      {backups.data?.length === 0 && <Typography color="textSecondary">{t('backups.none')}</Typography>}
+      {!!backups.data?.length && (
+        <Box sx={{ overflowX: 'auto' }}>
+          <Table size="small">
+            <TableHead>
+              <TableRow>
+                <TableCell>{t('backups.taken')}</TableCell>
+                <TableCell>{t('backups.size')}</TableCell>
+                <TableCell />
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {backups.data.map((b) => (
+                <TableRow key={b.name}>
+                  <TableCell>{at.format(new Date(b.taken_at))}</TableCell>
+                  <TableCell>{size.format(b.size / 2 ** 20)}</TableCell>
+                  <TableCell align="right"><Button size="small" onClick={() => setAsking(b)}>{t('backups.download')}</Button></TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </Box>
+      )}
+      <Dialog open={!!asking} onClose={close} fullWidth maxWidth="xs">
+        <form onSubmit={get}>
+          <DialogTitle>{t('backups.askTitle')}</DialogTitle>
+          <DialogContent>
+            <Stack spacing={2} sx={{ pt: 1 }}>
+              <Typography variant="body2" color="textSecondary">{t('backups.askHint')}</Typography>
+              <TextField type="password" label={t('restore.password')} required autoFocus value={password}
+                onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" />
+              {needsCode && (
+                <TextField label={t('restore.code')} required value={code} onChange={(e) => setCode(e.target.value)}
+                  slotProps={{ htmlInput: { inputMode: 'numeric', autoComplete: 'one-time-code' } }} />
+              )}
+              {state.error ? <Alert severity="error">{errorText(state.error)}</Alert> : null}
+            </Stack>
+          </DialogContent>
+          <DialogFooter>
+            <Button onClick={close}>{t('common.cancel')}</Button>
+            <Button type="submit" variant="contained" loading={state.busy} disabled={!password || (needsCode && code.trim().length < 6)}>
+              {t('backups.download')}
+            </Button>
+          </DialogFooter>
+        </form>
+      </Dialog>
+    </FormSection>
+  )
+}
+
 function Restore() {
   const { t } = useTranslation()
   const errorText = useErrorText()
@@ -480,7 +566,6 @@ function Restore() {
   const last = useQuery({ queryKey: ['admin', 'restore'], queryFn: () => api<RestoreStatus | null>('/v1/admin/restore') })
   const twoFactor = useQuery({ queryKey: keys.twoFactor, queryFn: () => api<{ enabled: boolean }>('/v1/auth/two-factor') })
   const [file, setFile] = useState<File | null>(null)
-  const [purged, setPurged] = useState<File | null>(null)
   const [password, setPassword] = useState('')
   const [code, setCode] = useState('')
   const [sure, setSure] = useState(false)
@@ -495,7 +580,6 @@ function Restore() {
     if (!ready || !file) return
     const form = new FormData()
     form.append('file', file)
-    if (purged) form.append('purged', purged)
     form.append('password', password)
     form.append('confirm', 'true')
     if (needsCode) form.append('code', code.trim())
@@ -524,9 +608,7 @@ function Restore() {
         <Alert severity="info">{t('restore.restarting')}</Alert>
       ) : (
         <Stack component="form" spacing={2} onSubmit={start}>
-          <FileField label={t('restore.file')} button={t('restore.choose')} file={file} onChange={setFile} accept=".dump" />
-          <FileField label={t('restore.purged')} button={t('restore.choose')} file={purged} onChange={setPurged} accept=".jsonl" />
-          <Typography variant="body2" color="textSecondary">{t('restore.purgedHint')}</Typography>
+          <FileField label={t('restore.file')} button={t('restore.choose')} file={file} onChange={setFile} accept=".tar,.dump" />
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
             <TextField type="password" label={t('restore.password')} required value={password} onChange={(e) => setPassword(e.target.value)}
               autoComplete="current-password" sx={{ flex: 1 }} />

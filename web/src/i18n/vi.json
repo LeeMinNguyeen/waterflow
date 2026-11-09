@@ -623,8 +623,6 @@
     "intro": "Thay toàn bộ dữ liệu trên máy chủ này bằng một bản sao lưu: tệp .dump trong thư mục sao lưu. Máy chủ sẽ sao lưu dữ liệu hiện có trước, rồi khởi động lại, và mọi người đăng nhập lại bằng mật khẩu của ngày sao lưu. Các lời mời chưa dùng sẽ hết hiệu lực: hãy tạo lời mời mới.",
     "file": "Tệp sao lưu",
     "choose": "Chọn…",
-    "purged": "Danh sách tài khoản đã xóa hẳn (không bắt buộc)",
-    "purgedHint": "Tệp purged_accounts.jsonl trong cùng thư mục sao lưu, khi bản sao lưu đến từ máy chủ khác.",
     "password": "Mật khẩu của bạn",
     "code": "Mã xác minh hai bước",
     "confirm": "Tôi hiểu rằng toàn bộ dữ liệu trên máy chủ này sẽ được thay bằng bản sao lưu này",
@@ -674,5 +672,15 @@
     "personSaved": "Đã lưu",
     "paymentSaved": "Đã lưu khoản thanh toán",
     "txnRestored": "Đã khôi phục giao dịch"
+  },
+  "backups": {
+    "title": "Bản sao lưu",
+    "intro": "Được tạo mỗi đêm và trước mỗi lần cập nhật, giữ khoảng 6 ngày. Tệp tải về là một tệp duy nhất, tự khôi phục được trên máy chủ này hoặc máy chủ khác. Tệp chứa dữ liệu của mọi người trên máy chủ, kể cả mã băm mật khẩu: hãy cất giữ cẩn thận.",
+    "none": "Chưa có bản sao lưu nào.",
+    "taken": "Thời điểm",
+    "size": "Kích thước",
+    "download": "Tải về",
+    "askTitle": "Tải bản sao lưu",
+    "askHint": "Nhập lại mật khẩu: tệp chứa dữ liệu của mọi người trên máy chủ này."
   }
 }

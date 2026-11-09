@@ -623,8 +623,6 @@
     "intro": "Replace everything on this server with a backup: a .dump file from the backups folder. The server first backs up what's here, then restarts, and everyone signs in again with the passwords from the backup's day. Unused invites stop working: make new ones.",
     "file": "Backup file",
     "choose": "Choose…",
-    "purged": "Purged accounts list (optional)",
-    "purgedHint": "purged_accounts.jsonl from the same backups folder, when the backup comes from another server.",
     "password": "Your password",
     "code": "Two-step code",
     "confirm": "I understand that everything on this server will be replaced by this backup",
@@ -674,5 +672,15 @@
     "personSaved": "Saved",
     "paymentSaved": "Payment saved",
     "txnRestored": "Transaction restored"
+  },
+  "backups": {
+    "title": "Backups",
+    "intro": "Taken every night and before every update, kept about 6 days. A download is one file that restores on its own, on this server or another. It holds everyone's data on this server, password hashes included: keep it somewhere safe.",
+    "none": "No backups yet.",
+    "taken": "Taken",
+    "size": "Size",
+    "download": "Download",
+    "askTitle": "Download a backup",
+    "askHint": "Enter your password again: the file holds everyone's data on this server."
   }
 }
