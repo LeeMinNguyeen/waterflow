@@ -4,6 +4,8 @@ Run for development: uvicorn app.api.main:app --reload
 import logging
 from urllib.parse import urlsplit
 
+from typing import Literal
+
 from fastapi import APIRouter, Depends, FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
@@ -107,12 +109,14 @@ class Instance(BaseModel):
     api_version: int
     signup: str             # invite | open
     setup_needed: bool      # no admin yet
+    account_purge: Literal["on", "off"]    # off: closed accounts aren't deleted after their 30 days
 
 
 @v1.get("/instance")
 def instance(db: Session = Depends(get_public_db)) -> Instance:
     row = db.execute(text("select * from instance_info()")).mappings().one()
-    return Instance(server_version=SERVER_VERSION, api_version=API_VERSION, **row)
+    purge = "on" if db.execute(text("select account_purge_on()")).scalar() else "off"
+    return Instance(server_version=SERVER_VERSION, api_version=API_VERSION, account_purge=purge, **row)
 
 
 for module in (sign_in, admin, restore, me, reference, books, members, accounts, contacts, categories, budgets,

@@ -24,7 +24,7 @@ import { LanguagePicker } from '../components/LanguagePicker'
 import { TimezonePicker } from '../components/TimezonePicker'
 import { applyAccountLanguage, currentLanguage, type Language } from '../i18n'
 import { api, download, send, type DeviceSession, type Me, type Profile as ProfileT } from '../lib/api'
-import { keys, useMe } from '../lib/queries'
+import { keys, useInstance, useMe } from '../lib/queries'
 
 const IDLE_CHOICES = [0, 5, 10, 15, 30, 60] // minutes; 0: never (30 days unused)
 import { newAccountBody } from '../auth/forms'
@@ -336,6 +336,7 @@ function YourData({ profile }: { profile: ProfileT }) {
   const errorText = useErrorText()
   const qc = useQueryClient()
   const [confirm, setConfirm] = useState(false)
+  const instance = useInstance()
   const [typed, setTyped] = useState('')
   const [error, setError] = useState<unknown>(null)
   const [busy, setBusy] = useState(false)
@@ -366,6 +367,7 @@ function YourData({ profile }: { profile: ProfileT }) {
       <Divider />
       <Typography variant="subtitle1">{t('profile.deleteTitle')}</Typography>
       <Typography color="textSecondary">{t('profile.deleteHint')}</Typography>
+      {instance.data?.account_purge === 'off' && <Alert severity="warning">{t('profile.purgeOff')}</Alert>}
       <Button color="error" variant="outlined" onClick={() => { setTyped(''); setConfirm(true) }} sx={{ alignSelf: 'start' }}>{t('profile.delete')}</Button>
       {error ? <Alert severity="error">{errorText(error)}</Alert> : null}
       <Dialog open={confirm} onClose={() => setConfirm(false)} fullWidth maxWidth="xs">

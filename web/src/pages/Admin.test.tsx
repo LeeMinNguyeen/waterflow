@@ -15,15 +15,15 @@ const admin: Me = {
   profile: { username: 'admin', display_name: null, timezone: 'Asia/Ho_Chi_Minh', language: 'en', created_at: '2026-10-01T00:00:00Z',
     deletion_requested_at: null, is_admin: true, idle_sign_out_minutes: null },
 }
-const instance: Instance = { name: 'Nhà', server_version: '0.1.3', api_version: 1, signup: 'invite', setup_needed: false }
+const instance: Instance = { name: 'Nhà', server_version: '0.1.3', api_version: 1, signup: 'invite', setup_needed: false, account_purge: 'on' }
 
 const jobs = [
   { name: 'purge', at_minute: null, timezone: null, default_minute: 1140, enabled: true, next_run_at: '2026-10-21T19:00:00Z',
-    last_started_at: '2026-10-20T19:00:01Z', last_finished_at: '2026-10-20T19:00:02Z', last_result: 'done', last_detail: 'purged 0 accounts' },
+    last_started_at: '2026-10-20T19:00:01Z', last_finished_at: '2026-10-20T19:00:02Z', last_result: 'done', last_detail: 'purged 0 accounts', run_requested_at: null, runs_within: '30s', running: false },
   { name: 'backup', at_minute: 150, timezone: 'Asia/Ho_Chi_Minh', default_minute: 1140, enabled: true, next_run_at: '2026-10-21T19:30:00Z',
-    last_started_at: '2026-10-20T19:30:00Z', last_finished_at: '2026-10-20T19:30:09Z', last_result: 'failed', last_detail: 'backup failed: disk full' },
+    last_started_at: '2026-10-20T19:30:00Z', last_finished_at: '2026-10-20T19:30:09Z', last_result: 'failed', last_detail: 'backup failed: disk full', run_requested_at: null, runs_within: '30s', running: false },
   { name: 'rates', at_minute: null, timezone: null, default_minute: 1140, enabled: false, next_run_at: '2026-10-21T19:00:00Z',
-    last_started_at: null, last_finished_at: null, last_result: null, last_detail: null },
+    last_started_at: null, last_finished_at: null, last_result: null, last_detail: null, run_requested_at: null, runs_within: '30s', running: false },
 ]
 
 function server() {
@@ -38,6 +38,8 @@ function server() {
     'GET /v1/admin/jobs': jobs,
     'PATCH /v1/admin/jobs/backup': undefined,
     'PATCH /v1/admin/jobs/rates': undefined,
+    'PATCH /v1/admin/jobs/purge': undefined,
+    'POST /v1/admin/jobs/backup/run': undefined,
     'GET /v1/admin/restore': null,
     'GET /v1/auth/two-factor': { enabled: false, recovery_codes_left: 0 },
   })
@@ -64,14 +66,28 @@ describe('the daily jobs on Server admin (waterflow#6)', () => {
     const rates = await row('Update exchange rates')
     expect(rates).toHaveTextContent('Off: rates stay as they are')
     expect(rates).toHaveTextContent('Not run yet')
-    expect(screen.getAllByRole('switch')).toHaveLength(1)          // only the rates can be turned off
+    expect(screen.getAllByRole('switch')).toHaveLength(3)
+  })
+
+  it("says a run that stopped without finishing didn't finish, not the run before it", async () => {
+    server()
+    Object.assign(jobs[1], { last_started_at: '2026-10-21T19:30:00Z', last_result: 'done', last_detail: 'backed up to x.dump' })
+    try {
+      await renderApp(<Admin />)
+      const backup = await row('Back up the database')
+      expect(backup).toHaveTextContent("Didn't finish (started 22 Oct 2026, 02:30)")
+      expect(backup).not.toHaveTextContent('backed up to x.dump')
+      expect(backup).not.toHaveTextContent('Done')
+    } finally {
+      Object.assign(jobs[1], { last_started_at: '2026-10-20T19:30:00Z', last_result: 'failed', last_detail: 'backup failed: disk full' })
+    }
   })
 
   it('saves a new time, in the admin\'s timezone, and the rates back on', async () => {
     const api = server()
     await renderApp(<Admin />)
     await pick('Time of Back up the database', '03:00')
-    await userEvent.click(screen.getByRole('switch', { name: 'Update exchange rates every day' }))
+    await userEvent.click(screen.getByRole('switch', { name: 'Update exchange rates daily' }))
     const save = screen.getAllByRole('button', { name: 'Save' })[1]
     await userEvent.click(save)
     await waitFor(() => expect(api.writes()).toHaveLength(2))
@@ -79,6 +95,35 @@ describe('the daily jobs on Server admin (waterflow#6)', () => {
       ['/v1/admin/jobs/backup', { at_minute: 180, timezone: 'Asia/Ho_Chi_Minh' }],
       ['/v1/admin/jobs/rates', { enabled: true }],
     ])
+  })
+})
+
+describe('daily jobs on and off, and Run now (waterflow#140)', () => {
+  const row = async (name: string) => (await screen.findByText(name)).closest('tr')!
+
+  it('turns any job off, with a warning for the backup and the purge', async () => {
+    const api = server()
+    await renderApp(<Admin />)
+    await userEvent.click(await screen.findByRole('switch', { name: 'Delete closed accounts and old sign-ins daily' }))
+    expect(screen.getByText(/Closed accounts won't be deleted after their 30 days/)).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('switch', { name: 'Back up the database daily' }))
+    expect(screen.getByText(/No backups: if this machine's disk fails, everything is lost/)).toBeInTheDocument()
+    await userEvent.click(screen.getAllByRole('button', { name: 'Save' })[1])
+    await waitFor(() => expect(api.writes()).toHaveLength(2))
+    expect(api.writes().map((c) => [c.path, c.body])).toEqual([
+      ['/v1/admin/jobs/purge', { enabled: false }], ['/v1/admin/jobs/backup', { enabled: false }]])
+  })
+
+  it('asks for a run now, then says it starts within the scheduler\'s look', async () => {
+    const api = server()
+    let asked = false
+    api.routes['POST /v1/admin/jobs/backup/run'] = () => { asked = true; return undefined }
+    api.routes['GET /v1/admin/jobs'] = () => jobs.map((j) => j.name === 'backup' && asked ? { ...j, run_requested_at: '2026-10-21T00:00:00Z' } : j)
+    await renderApp(<Admin />)
+    const backup = await row('Back up the database')
+    await userEvent.click(within(backup).getByRole('button', { name: 'Run now' }))
+    await waitFor(() => expect(api.writes().map((c) => c.path)).toContain('/v1/admin/jobs/backup/run'))
+    expect(await within(backup).findByText('Starting within 30 seconds…')).toBeInTheDocument()
   })
 })
 

@@ -32,7 +32,9 @@ def run_job(name: str) -> tuple[bool, str]:
 def run_due(engine: Engine, now: datetime, run: Callable[[str], tuple[bool, str]] = run_job) -> list[str]:
     """Runs every job that's due now, in order, recording each start and result. Returns their names."""
     with engine.begin() as c:
-        schedule = c.execute(text("select * from job_schedule()")).mappings().all()
+        asked = dict(c.execute(text("select name, run_requested_at from job_run_requests()")).all())
+        schedule = [{**job, "run_requested_at": asked.get(job["name"])}
+                    for job in c.execute(text("select * from job_schedule()")).mappings()]
     ran = []
     for job in schedule:
         if not is_due(now, job):
