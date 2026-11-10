@@ -584,7 +584,7 @@
     "jobNever": "Chưa chạy",
     "jobRunning": "Đang chạy từ {{when}}",
     "jobDone": "Xong lúc {{when}}",
-    "jobUnfinished": "Chưa xong (bắt đầu lúc {{when}})",
+    "jobUnfinished": "Không chạy xong (bắt đầu lúc {{when}})",
     "jobFailed": "Lỗi lúc {{when}}",
     "jobDaily": "{{job}} hằng ngày",
     "jobOffPlain": "Tắt",
