@@ -291,6 +291,22 @@ def test_restore_requested_from_the_web(live, tmp_path):
     assert web_restore.restore_if_requested(libpq_url(name), str(backups)) is None
 
 
+def test_a_restore_adds_only_the_purged_accounts_the_server_lacks(live, tmp_path):
+    """A download carries this server's own list: restoring it here mustn't double the list each time."""
+    from app.jobs import restore as web_restore
+    name, dump = live
+    known = json.dumps({"user_id": str(uuid.uuid4()), "purged_at": "2026-10-20T00:00:00Z"})
+    new = json.dumps({"user_id": str(uuid.uuid4()), "purged_at": "2026-10-21T00:00:00Z"})
+    backups = requested(tmp_path, dump.read_bytes(), known + "\n" + new + "\n")
+    (backups / "purged_accounts.jsonl").write_text(known + "\n")
+    assert web_restore.restore_if_requested(libpq_url(name), str(backups)) == "done"
+    assert (backups / "purged_accounts.jsonl").read_text() == known + "\n" + new + "\n"
+    (backups / "restore" / "request.dump").write_bytes(dump.read_bytes())
+    (backups / "restore" / "purged_accounts.jsonl").write_text("")
+    assert web_restore.restore_if_requested(libpq_url(name), str(backups)) == "done"
+    assert (backups / "purged_accounts.jsonl").read_text() == known + "\n" + new + "\n"
+
+
 def test_a_restore_signs_everyone_out(live, tmp_path):
     """Sessions, remembered devices and reset links in the backup would work again, even ones ended after it; so would
     an invite used or revoked after it: every unused one is revoked."""

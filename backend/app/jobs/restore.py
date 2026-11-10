@@ -174,8 +174,11 @@ def _apply(url: str, path: str, purged: Path | None, purge_log: str, sign_out: b
     if sign_out:
         _sign_everyone_out(url)
     if purged and purged.exists():
-        with open(purge_log, "a") as log:
-            log.write(purged.read_text().rstrip("\n") + "\n")
+        have = set(Path(purge_log).read_text().splitlines()) if os.path.exists(purge_log) else set()
+        lines = [x for x in dict.fromkeys(purged.read_text().splitlines()) if x.strip() and x not in have]
+        if lines:
+            with open(purge_log, "a") as log:
+                log.write("\n".join(lines) + "\n")
     _repurge(url, purge_log)
 
 

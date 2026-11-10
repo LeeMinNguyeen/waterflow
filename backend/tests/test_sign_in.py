@@ -983,7 +983,7 @@ def test_an_oversized_restore_is_refused_before_it_is_read(client, monkeypatch, 
 
 
 def test_the_admin_lists_and_downloads_backups_as_one_file(client, admin, restore_dir, a_backup):
-    """R-INST-11: the backups folder, newest first; a download asks for the password and gives one .tar holding the
+    """R-INST-9: the backups folder, newest first; a download asks for the password and gives one .tar holding the
     backup and the list of accounts deleted for good, which restores on its own."""
     import io
     import tarfile
