@@ -620,7 +620,7 @@
   },
   "restore": {
     "title": "Restore a backup",
-    "intro": "Replace everything on this server with a backup: a .dump file from the backups folder. The server first backs up what's here, then restarts, and everyone signs in again with the passwords from the backup's day. Unused invites stop working: make new ones.",
+    "intro": "Replace everything on this server with a backup: the file downloaded from Backups, on this server or another, or a .dump file from the backups folder. The server first backs up what's here, then restarts, and everyone signs in again with the passwords from the backup's day. Unused invites stop working: make new ones.",
     "file": "Backup file",
     "choose": "Choose…",
     "password": "Your password",

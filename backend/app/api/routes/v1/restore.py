@@ -120,27 +120,39 @@ def _leave_request(dump: UploadFile, purged: UploadFile | None, background: Back
     return Response(status_code=202)
 
 
+class Proof(BaseModel):
+    password: Annotated[str, Field(max_length=256)]
+    code: Annotated[str | None, Field(max_length=20)] = None
+
+
+def _proves_it(db: Session, caller: Caller, proof: Proof) -> None:
+    """The password again, and the two-step code when it's on: a stolen session isn't enough to take every user's
+    data or replace the server."""
+    if not db.execute(text("select am_admin()")).scalar():
+        raise HTTPException(403, "admin_only")
+    _limit((si.per_user_action, str(caller.id)))
+    row = db.execute(text("select password_hash, totp_secret from local_credentials where user_id = :u"),
+                     {"u": caller.id}).mappings().one()
+    if not si.password_matches(row["password_hash"], proof.password):
+        raise HTTPException(401, "invalid_credentials")
+    if row["totp_secret"]:
+        if not proof.code:
+            raise HTTPException(401, "code_required")
+        if not si.totp_accepted(db, caller.id, row["totp_secret"], proof.code):
+            raise HTTPException(401, "invalid_code")
+        db.commit()
+
+
 @router.post("/admin/restore", status_code=202)
 def admin_restore(background: BackgroundTasks, file: UploadFile, password: Annotated[str, Form(max_length=256)],
                   confirm: Annotated[bool, Form()], code: Annotated[str | None, Form(max_length=20)] = None,
                   purged: UploadFile | None = None, caller: Caller = Depends(current_caller),
                   db: Session = Depends(get_db)) -> Response:
-    """Asks for the password again, and the two-factor code when it's on: a stolen session can't replace the server."""
     if not db.execute(text("select am_admin()")).scalar():
         raise HTTPException(403, "admin_only")
-    _limit((si.per_user_action, str(caller.id)))
     if not confirm:
         raise HTTPException(422, "invalid")
-    row = db.execute(text("select password_hash, totp_secret from local_credentials where user_id = :u"),
-                     {"u": caller.id}).mappings().one()
-    if not si.password_matches(row["password_hash"], password):
-        raise HTTPException(401, "invalid_credentials")
-    if row["totp_secret"]:
-        if not code:
-            raise HTTPException(401, "code_required")
-        if not si.totp_accepted(db, caller.id, row["totp_secret"], code):
-            raise HTTPException(401, "invalid_code")
-        db.commit()
+    _proves_it(db, caller, Proof(password=password, code=code))
     return _leave_request(file, purged, background)
 
 
@@ -177,29 +189,6 @@ def list_backups(db: Session = Depends(get_db)) -> list[Backup]:
             for p in _backups()]
 
 
-class Proof(BaseModel):
-    password: Annotated[str, Field(max_length=256)]
-    code: Annotated[str | None, Field(max_length=20)] = None
-
-
-def _proves_it(db: Session, caller: Caller, proof: Proof) -> None:
-    """The password again, and the two-step code when it's on: a stolen session isn't enough to take every user's
-    data or replace the server."""
-    if not db.execute(text("select am_admin()")).scalar():
-        raise HTTPException(403, "admin_only")
-    _limit((si.per_user_action, str(caller.id)))
-    row = db.execute(text("select password_hash, totp_secret from local_credentials where user_id = :u"),
-                     {"u": caller.id}).mappings().one()
-    if not si.password_matches(row["password_hash"], proof.password):
-        raise HTTPException(401, "invalid_credentials")
-    if row["totp_secret"]:
-        if not proof.code:
-            raise HTTPException(401, "code_required")
-        if not si.totp_accepted(db, caller.id, row["totp_secret"], proof.code):
-            raise HTTPException(401, "invalid_code")
-        db.commit()
-
-
 @router.post("/admin/backups/{name}/download")
 def download_backup(name: str, proof: Proof, background: BackgroundTasks, caller: Caller = Depends(current_caller),
                     db: Session = Depends(get_db)) -> FileResponse:
@@ -212,12 +201,16 @@ def download_backup(name: str, proof: Proof, background: BackgroundTasks, caller
     purged = Path(os.environ.get("PURGE_LOG") or Path(_backup_dir()) / restore.PURGED)
     fd, out = tempfile.mkstemp(suffix=".tar")
     os.close(fd)
-    with tarfile.open(out, mode="w:") as tar:
-        tar.add(path, arcname=path.name)
-        info = tarfile.TarInfo(restore.PURGED)
-        data = purged.read_bytes() if purged.is_file() else b""
-        info.size, info.mtime = len(data), int(datetime.now(timezone.utc).timestamp())
-        tar.addfile(info, io.BytesIO(data))
+    try:
+        with tarfile.open(out, mode="w:") as tar:
+            tar.add(path, arcname=path.name)
+            info = tarfile.TarInfo(restore.PURGED)
+            data = purged.read_bytes() if purged.is_file() else b""
+            info.size, info.mtime = len(data), int(datetime.now(timezone.utc).timestamp())
+            tar.addfile(info, io.BytesIO(data))
+    except BaseException:
+        os.unlink(out)
+        raise
     background.add_task(os.unlink, out)
     print(f"backup downloaded: {name} by {caller.id}", flush=True)
     return FileResponse(out, media_type="application/x-tar", filename=name.removesuffix(".dump") + ".tar")

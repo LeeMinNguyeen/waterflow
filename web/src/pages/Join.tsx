@@ -145,7 +145,6 @@ function SetupRestore({ onBack }: { onBack: () => void }) {
             <TextField label={t('setup.code')} required value={code} onChange={(e) => setCode(e.target.value)} helperText={t('setup.codeHint')}
               slotProps={{ htmlInput: { autoCapitalize: 'characters', autoComplete: 'off' } }} />
             <FileField label={t('restore.file')} button={t('restore.choose')} file={file} onChange={setFile} accept=".tar,.dump" />
-            <Typography variant="body2" color="textSecondary">{t('restore.purgedHint')}</Typography>
             <FormError error={state.error} />
             <Button type="submit" variant="contained" size="large" loading={state.busy} disabled={!file || !code.trim()}>{t('restore.submit')}</Button>
             <Button onClick={onBack}>{t('restore.back')}</Button>
