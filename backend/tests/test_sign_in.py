@@ -699,7 +699,9 @@ def test_the_launcher_uses_the_owner_on_the_built_in_database_only(handed_over, 
     monkeypatch.setattr(launch, "OWNER_PASSWORD", tmp_path / "owner_password")
     monkeypatch.setenv("ADMIN_DATABASE_URL", url)
     assert launch.as_owner(url, role) == url and not (tmp_path / "owner_password").exists()     # the operator's own database
+    assert launch.superuser_options() == {}
     monkeypatch.delenv("ADMIN_DATABASE_URL")
+    assert launch.superuser_options() == {"options": "-c search_path=pg_catalog,pg_temp"}
     as_owner = launch.as_owner(url, role)
     assert (tmp_path / "owner_password").stat().st_mode & 0o777 == 0o600
     with psycopg.connect(as_owner) as conn:

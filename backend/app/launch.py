@@ -88,6 +88,11 @@ def as_owner(admin: str, role: str = owner.OWNER) -> str:
     return login_url(admin, role, password, "postgresql")
 
 
+def superuser_options() -> dict[str, str]:
+    """Only for the built-in database's superuser: an operator's own URL keeps its options, and a pooler may refuse ours."""
+    return {} if os.environ.get("ADMIN_DATABASE_URL", "").strip() else {"options": owner.PINNED}
+
+
 def owner_url(admin: str) -> str:
     """For the operator's commands: the owner's URL once the built-in database has been handed over, without doing it
     again. What they change belongs to the owner, and its triggers mustn't run as the superuser."""
@@ -150,7 +155,7 @@ def run_jobs_once() -> None:
     admin = admin_url()
     passwords = login_passwords()
     wait_for(admin)
-    with psycopg.connect(admin, autocommit=True, options=owner.PINNED) as conn:
+    with psycopg.connect(admin, autocommit=True, **superuser_options()) as conn:
         migrate.rename_old_schema(conn)
     admin = as_owner(admin)
     env = {**_without_owner(), **jobs_env(admin, passwords, os.environ.get("BACKUP_DIR", "/backups"))}
@@ -174,7 +179,7 @@ def serve() -> None:
     passwords = login_passwords()
     wait_for(admin)
     backup_dir = os.environ.get("BACKUP_DIR", "/backups")
-    with psycopg.connect(admin, autocommit=True, options=owner.PINNED) as conn:
+    with psycopg.connect(admin, autocommit=True, **superuser_options()) as conn:
         migrate.rename_old_schema(conn)          # before any backup, which dumps schema waterflow
     admin = as_owner(admin)
 
