@@ -705,8 +705,38 @@ def test_the_launcher_uses_the_owner_on_the_built_in_database_only(handed_over, 
     with psycopg.connect(as_owner) as conn:
         assert conn.execute("select current_user, (select rolsuper from pg_roles where rolname = current_user)").fetchone() == (role, False)
     assert launch.as_owner(url, role) == as_owner
+    # What the owner makes through a role of its own can't put a statement into the superuser's hand-over, even one
+    # PostgreSQL can't name (a procedure and its twin with an OUT argument).
+    helper = role + "_h"
+    with psycopg.connect(as_owner, autocommit=True) as conn:
+        conn.execute(f"create role {helper}")
+        conn.execute(f"grant {helper} to {role} with set true")
+        conn.execute(f"grant create, usage on schema public to {helper}")
+        conn.execute(f"set role {helper}")
+        conn.execute("create procedure zz(a int) language sql as 'select 1'")
+        conn.execute("create procedure zz(out a int) language sql as 'select 1'")
+    try:
+        assert launch.as_owner(url, role) == as_owner and "WARNING" not in capsys.readouterr().out
+        # Once the owner exists, a hand-over that fails never puts the server back on the superuser.
+        real = owner.hand_over
+        monkeypatch.setattr(owner, "hand_over", lambda *a: (_ for _ in ()).throw(psycopg.errors.InsufficientPrivilege("no")))
+        assert launch.as_owner(url, role) == as_owner
+        assert "the hand-over to" in capsys.readouterr().out
+        monkeypatch.setattr(owner, "hand_over", real)
+    finally:
+        with psycopg.connect(url, autocommit=True) as conn:
+            conn.execute(f"drop owned by {helper}")
+            conn.execute(f"drop role {helper}")
+
+
+def test_a_first_hand_over_that_fails_leaves_the_server_as_it_was(handed_over, tmp_path, monkeypatch, capsys):
+    from app import launch
+    from app.jobs import owner
+    url, _, role, _ = handed_over
+    monkeypatch.setattr(launch, "OWNER_PASSWORD", tmp_path / "owner_password")
+    monkeypatch.delenv("ADMIN_DATABASE_URL", raising=False)
     monkeypatch.setattr(owner, "hand_over", lambda *a: (_ for _ in ()).throw(psycopg.errors.InsufficientPrivilege("no")))
-    assert launch.as_owner(url, role) == url                                    # the server still starts
+    assert launch.as_owner(url, role) == url
     assert "still run as its superuser" in capsys.readouterr().out
 
 

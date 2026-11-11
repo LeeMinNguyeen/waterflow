@@ -67,19 +67,23 @@ def admin_url() -> str:
 
 def as_owner(admin: str, role: str = owner.OWNER) -> str:
     """On the built-in database, the URL of the owner that is no superuser, after handing it everything (app/jobs/owner.py).
-    A server with its own database keeps the owner it was given. If the hand-over fails the server still starts, as
-    before it."""
+    A server with its own database keeps the owner it was given. Once that owner exists the server never goes back to
+    the superuser, whatever fails: what the owner holds may come from a restored backup. Only a first hand-over that
+    fails leaves the server as it was before."""
     if os.environ.get("ADMIN_DATABASE_URL", "").strip():
         return admin
+    handed_over_before = owner.exists(admin, role)
     if not OWNER_PASSWORD.exists():
         _write_secret(OWNER_PASSWORD, secrets.token_hex(24))
     password = OWNER_PASSWORD.read_text().strip()
     try:
         owner.hand_over(admin, password, role)
     except psycopg.Error as e:
-        print(f"WARNING: the database is still run as its superuser: handing it to {role} failed"
-              f" ({backup._scrub(str(e).splitlines()[0], admin)})", flush=True)
-        return admin
+        why = backup._scrub(str(e).splitlines()[0], admin)
+        if not handed_over_before:
+            print(f"WARNING: the database is still run as its superuser: handing it to {role} failed ({why})", flush=True)
+            return admin
+        print(f"WARNING: the hand-over to {role} failed this time ({why}); carrying on as {role}", flush=True)
     return login_url(admin, role, password, "postgresql")
 
 
