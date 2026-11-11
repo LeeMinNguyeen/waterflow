@@ -49,8 +49,10 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
 }
 
 // A file from the API (the data export): saved by the browser under the name it sends.
-export async function download(path: string): Promise<void> {
-  const res = await reach(path, { headers: authHeaders() })
+// With a body, a POST: the server asks for the password again before some downloads.
+export async function download(path: string, body?: unknown): Promise<void> {
+  const res = await reach(path, body === undefined ? { headers: authHeaders() }
+    : { method: 'POST', headers: authHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify(body) })
   if (!res.ok) await fail(res)
   const name = /filename="([^"]+)"/.exec(res.headers.get('Content-Disposition') ?? '')?.[1] ?? 'export.zip'
   const url = URL.createObjectURL(await res.blob())
@@ -93,7 +95,10 @@ export type Profile = {
 export type Me = { id: string; profile: Profile }
 
 // GET /v1/instance, before anyone signs in.
-export type Instance = { name: string; server_version: string; api_version: number; signup: 'invite' | 'open'; setup_needed: boolean }
+export type Instance = {
+  name: string; server_version: string; api_version: number; signup: 'invite' | 'open'; setup_needed: boolean
+  account_purge: 'on' | 'off'
+}
 export type Token = { token: string }
 export type SignedIn = Token & { device_token: string | null }
 // The browser and system that signed in, never the token.
@@ -226,6 +231,7 @@ export type Transaction = {
   type: TxnType
   occurred_on: string
   occurred_time: string // HH:MM:SS
+  posted_on?: string | null // a card purchase billed on the next statement: that statement's first day
   category_id: string | null
   payee: string | null
   note: string | null
@@ -247,6 +253,7 @@ export type HistoryEntry = {
   type: TxnType
   occurred_on: string
   occurred_time: string | null
+  posted_on?: string | null
   category_id: string | null
   payee: string | null
   note: string | null

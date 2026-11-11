@@ -2,15 +2,20 @@
 the setup code). The API never has the database owner's login, so it only checks the file, leaves it in
 BACKUP_DIR/restore/ and stops the server; the launcher restores it as the server starts again
 (app/jobs/restore.py). Everyone is signed out: the restored database has the sessions of the backup's day."""
+import contextlib
+import io
 import json
 import os
 import signal
+import tarfile
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException, Request, Response, UploadFile
-from pydantic import BaseModel
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -18,7 +23,7 @@ from app.api.deps import get_db, get_public_db
 from app.api.routes.v1.sign_in import _client_ip, _limit
 from app.core import sign_in as si
 from app.core.auth import Caller, current_caller
-from app.jobs import restore
+from app.jobs import backup, restore
 
 router = APIRouter()
 
@@ -50,22 +55,68 @@ def _copy(upload: UploadFile, to: Path, limit: int) -> None:
         raise HTTPException(413, "restore_too_large")
 
 
+def _unpack(partial: Path, where: Path) -> bool | None:
+    """A downloaded backup (.tar) becomes its two parts, upload.dump.partial and, if there, upload.purged.partial: True
+    with the list, False without. None when the upload isn't a tar. Read by hand, plain file headers only: a tar
+    library also parses extended headers (pax records, long names, sparse maps), which a crafted upload can make slow,
+    huge or crash. Names are only compared, never used as paths."""
+    parts = {"dump": where / "upload.dump.partial", "purged": where / "upload.purged.partial"}
+    seen = set()
+    with open(partial, "rb") as f:
+        for member in range(3):
+            header = f.read(512)
+            if member == 0 and header[257:262] != b"ustar":
+                return None
+            if not header.strip(b"\0"):
+                break
+            name, size = header[:100].rstrip(b"\0").decode("ascii", "replace"), header[124:136].rstrip(b" \0")
+            kind = "dump" if (m := backup.DUMP_NAME.fullmatch(name)) and not m[2] else "purged" if name == restore.PURGED else None
+            if member == 2 or len(header) < 512 or header[156:157] not in (b"0", b"\0") or header[345:500].strip(b"\0") \
+                    or not size or size.strip(b"01234567") or kind is None or kind in seen \
+                    or int(size, 8) > (MAX_DUMP if kind == "dump" else MAX_PURGED):
+                raise HTTPException(422, "restore_invalid")
+            seen.add(kind)
+            left = int(size, 8)
+            fd = os.open(parts[kind], os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "wb") as out:
+                while left and (chunk := f.read(min(left, 2**20))):
+                    out.write(chunk)
+                    left -= len(chunk)
+            if left:
+                raise HTTPException(422, "restore_invalid")
+            f.seek(-int(size, 8) % 512, os.SEEK_CUR)
+    if "dump" not in seen:
+        raise HTTPException(422, "restore_invalid")
+    return "purged" in seen
+
+
 def _leave_request(dump: UploadFile, purged: UploadFile | None, background: BackgroundTasks) -> Response:
     where = restore.folder(_backup_dir())
     where.mkdir(parents=True, exist_ok=True)
-    partial = where / "upload.partial"
-    _copy(dump, partial, MAX_DUMP)
+    partial, unpacked, listed = where / "upload.partial", where / "upload.dump.partial", where / "upload.purged.partial"
+    for f in (unpacked, listed):                                   # from an upload the server stopped in the middle of
+        f.unlink(missing_ok=True)
     try:
+        _copy(dump, partial, MAX_DUMP + MAX_PURGED + 2**20)        # a download is a little bigger than its backup
+        with_list = _unpack(partial, where)
+        if with_list is not None:
+            os.replace(unpacked, partial)
+        elif partial.stat().st_size > MAX_DUMP:
+            raise HTTPException(413, "restore_too_large")
         restore.check(partial)
-    except restore.TooNew:
-        partial.unlink()
-        raise HTTPException(409, "restore_too_new") from None
-    except restore.RestoreError:
-        partial.unlink()
-        raise HTTPException(422, "restore_invalid") from None
+        if purged is not None and not with_list:
+            _copy(purged, listed, MAX_PURGED)
+    except (HTTPException, restore.RestoreError) as e:
+        for f in (partial, unpacked, listed):
+            f.unlink(missing_ok=True)
+        if isinstance(e, HTTPException):
+            raise
+        raise HTTPException(409, "restore_too_new") if isinstance(e, restore.TooNew) else HTTPException(422, "restore_invalid") from None
+    # No request while its two files change: a stop in between mustn't pair one upload's backup with another's list.
+    (where / restore.REQUEST).unlink(missing_ok=True)
     (where / restore.PURGED).unlink(missing_ok=True)
-    if purged is not None:
-        _copy(purged, where / restore.PURGED, MAX_PURGED)
+    if listed.exists():
+        os.replace(listed, where / restore.PURGED)
     os.replace(partial, where / restore.REQUEST)
     (where / restore.STATUS).write_text(json.dumps({"status": "requested", "at": datetime.now(timezone.utc).isoformat(),
                                                     "detail": None}))
@@ -73,26 +124,39 @@ def _leave_request(dump: UploadFile, purged: UploadFile | None, background: Back
     return Response(status_code=202)
 
 
+class Proof(BaseModel):
+    password: Annotated[str, Field(max_length=256)]
+    code: Annotated[str | None, Field(max_length=20)] = None
+
+
+def _proves_it(db: Session, caller: Caller, proof: Proof) -> None:
+    """The password again, and the two-step code when it's on: a stolen session isn't enough to take every user's
+    data or replace the server."""
+    if not db.execute(text("select am_admin()")).scalar():
+        raise HTTPException(403, "admin_only")
+    _limit((si.per_user_action, str(caller.id)))
+    row = db.execute(text("select password_hash, totp_secret from local_credentials where user_id = :u"),
+                     {"u": caller.id}).mappings().one()
+    if not si.password_matches(row["password_hash"], proof.password):
+        raise HTTPException(401, "invalid_credentials")
+    if row["totp_secret"]:
+        if not proof.code:
+            raise HTTPException(401, "code_required")
+        if not si.totp_accepted(db, caller.id, row["totp_secret"], proof.code):
+            raise HTTPException(401, "invalid_code")
+        db.commit()
+
+
 @router.post("/admin/restore", status_code=202)
 def admin_restore(background: BackgroundTasks, file: UploadFile, password: Annotated[str, Form(max_length=256)],
                   confirm: Annotated[bool, Form()], code: Annotated[str | None, Form(max_length=20)] = None,
                   purged: UploadFile | None = None, caller: Caller = Depends(current_caller),
                   db: Session = Depends(get_db)) -> Response:
-    """Asks for the password again, and the two-factor code when it's on: a stolen session can't replace the server."""
     if not db.execute(text("select am_admin()")).scalar():
         raise HTTPException(403, "admin_only")
-    _limit((si.per_user_action, str(caller.id)))
     if not confirm:
         raise HTTPException(422, "invalid")
-    row = db.execute(text("select password_hash, totp_secret from local_credentials where user_id = :u"),
-                     {"u": caller.id}).mappings().one()
-    if not si.password_matches(row["password_hash"], password):
-        raise HTTPException(401, "invalid_credentials")
-    if row["totp_secret"]:
-        if not code:
-            raise HTTPException(401, "code_required")
-        if not si.totp_matches(row["totp_secret"], code):
-            raise HTTPException(401, "invalid_code")
+    _proves_it(db, caller, Proof(password=password, code=code))
     return _leave_request(file, purged, background)
 
 
@@ -105,6 +169,66 @@ def setup_restore(request: Request, background: BackgroundTasks, file: UploadFil
     if not db.execute(text("select setup_code_matches(:c)"), {"c": si.code_hash(setup_code)}).scalar():
         raise HTTPException(403, "setup_invalid")
     return _leave_request(file, purged, background)
+
+
+class Backup(BaseModel):
+    name: str
+    size: int
+    taken_at: datetime
+
+
+def _backups() -> list[Path]:
+    """The finished backups in the folder, newest first."""
+    folder = Path(_backup_dir())
+    names = [n for n in os.listdir(folder) if (m := backup.DUMP_NAME.fullmatch(n)) and not m[2]] if folder.is_dir() else []
+    return [folder / n for n in sorted(names, key=lambda n: backup.DUMP_NAME.fullmatch(n)[1], reverse=True)]
+
+
+@router.get("/admin/backups")
+def list_backups(db: Session = Depends(get_db)) -> list[Backup]:
+    if not db.execute(text("select am_admin()")).scalar():
+        raise HTTPException(403, "admin_only")
+    out = []
+    for p in _backups():
+        with contextlib.suppress(FileNotFoundError):       # pruned since it was listed
+            out.append(Backup(name=p.name, size=p.stat().st_size, taken_at=datetime.strptime(
+                backup.DUMP_NAME.fullmatch(p.name)[1], "%Y%m%dT%H%M%SZ").replace(tzinfo=timezone.utc)))
+    return out
+
+
+@router.post("/admin/backups/{name}/download")
+def download_backup(name: str, proof: Proof, caller: Caller = Depends(current_caller),
+                    db: Session = Depends(get_db)) -> StreamingResponse:
+    """One file that restores on its own: the backup and this server's list of accounts deleted for good, as it is
+    now (it must cover every account deleted after the backup was taken)."""
+    _proves_it(db, caller, proof)
+    path = next((p for p in _backups() if p.name == name), None)
+    if path is None:
+        raise HTTPException(404, "not_found")
+    purged = Path(os.environ.get("PURGE_LOG") or Path(_backup_dir()) / restore.PURGED)
+    # Unnamed: gone with its last reader, however the request ends. Plain ustar headers with nothing of this machine's
+    # users in them: what _unpack reads.
+    out = tempfile.TemporaryFile()
+    try:
+        with tarfile.open(fileobj=out, mode="w:", format=tarfile.USTAR_FORMAT) as tar, open(path, "rb") as dump:
+            data = purged.read_bytes() if purged.is_file() else b""
+            for member, size, source in ((path.name, os.fstat(dump.fileno()).st_size, dump), (restore.PURGED, len(data), io.BytesIO(data))):
+                info = tarfile.TarInfo(member)
+                info.size, info.mtime = size, int(datetime.now(timezone.utc).timestamp())
+                tar.addfile(info, source)
+        size = out.tell()
+        out.seek(0)
+    except BaseException:
+        out.close()
+        raise
+
+    def parts():
+        with out:
+            while chunk := out.read(2**20):
+                yield chunk
+    print(f"backup downloaded: {name} by {caller.id}", flush=True)
+    return StreamingResponse(parts(), media_type="application/x-tar", headers={
+        "Content-Length": str(size), "Content-Disposition": f'attachment; filename="{name.removesuffix(".dump")}.tar"'})
 
 
 class RestoreStatus(BaseModel):

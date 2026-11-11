@@ -15,9 +15,10 @@ export function BudgetBar({ spent, budget, percent, label, color, format, onClic
   const over = spent > budget
   const bar = (
     <Stack spacing={1}>
-      <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'baseline', gap: 1 }}>
-        <Typography noWrap>{label}</Typography>
-        <Typography variant="body2" color={over ? 'error' : 'textSecondary'} sx={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
+      <Stack direction="row" sx={{ flexWrap: 'wrap', alignItems: 'baseline', columnGap: 1 }}>
+        <Typography noWrap sx={{ flex: '1 1 48px', minWidth: 48 }}>{label}</Typography>
+        <Typography variant="body2" color={over ? 'error' : 'textSecondary'}
+          sx={{ ml: 'auto', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
           {over ? t('budget.over', { amount: format(spent - budget) }) : t('budget.progress', { spent: format(spent), budget: format(budget) })}
         </Typography>
       </Stack>

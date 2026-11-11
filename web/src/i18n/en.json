@@ -208,7 +208,8 @@
     "person_account": "This is a person's own account: change it on People.",
     "already_restored": "This transaction is back already.",
     "restore_expired": "A deleted transaction can only be restored for 30 days.",
-    "restore_changed": "An account of this transaction is gone or has another currency now, so it can't come back as it was."
+    "restore_changed": "An account of this transaction is gone or has another currency now, so it can't come back as it was.",
+    "job_running": "That job is running now."
   },
   "nav": {
     "transactions": "Transactions",
@@ -220,6 +221,9 @@
     "people": "People"
   },
   "txn": {
+    "nextStatement": "Bill on the next statement",
+    "nextStatementCloses": "On the statement closing {{date}}",
+    "billedFrom": "billed from {{date}}",
     "add": "Add transaction",
     "edit": "Edit transaction",
     "title": "Transactions",
@@ -486,7 +490,8 @@
     "idleSignOut": "Sign me out after inactivity",
     "idleSignOutHint": "On every device: after this long with no click, key or touch, you're signed out, with a warning a minute before.",
     "idleOff": "Never (only after 30 days unused)",
-    "idleMinutes": "After {{minutes}} minutes"
+    "idleMinutes": "After {{minutes}} minutes",
+    "purgeOff": "This server's admin has turned off the daily deletion: your account will be deleted for good only once it's back on."
   },
   "closing": {
     "title": "Your account is closing",
@@ -580,13 +585,20 @@
       "backup": "Back up the database",
       "rates": "Update exchange rates"
     },
-    "jobRatesOn": "Update exchange rates every day",
     "jobOn": "On",
     "jobOff": "Off: rates stay as they are",
     "jobNever": "Not run yet",
     "jobRunning": "Running since {{when}}",
     "jobDone": "Done {{when}}",
-    "jobFailed": "Failed {{when}}"
+    "jobUnfinished": "Didn't finish (started {{when}})",
+    "jobFailed": "Failed {{when}}",
+    "jobDaily": "{{job}} daily",
+    "jobOffPlain": "Off",
+    "runNow": "Run now",
+    "jobStarting_30s": "Starting within 30 seconds…",
+    "jobStarting_1h": "Starting within the hour…",
+    "backupOff": "No backups: if this machine's disk fails, everything is lost. Updates still take their own backup.",
+    "purgeOff": "Closed accounts won't be deleted after their 30 days, although users are told they will be. Turned back on, it deletes everything that's due. Expired sign-ins still stop working."
   },
   "members": {
     "title": "Members",
@@ -623,11 +635,9 @@
   },
   "restore": {
     "title": "Restore a backup",
-    "intro": "Replace everything on this server with a backup: a .dump file from the backups folder. The server first backs up what's here, then restarts, and everyone signs in again with the passwords from the backup's day.",
+    "intro": "Replace everything on this server with a backup: the file downloaded from Backups, on this server or another, or a .dump file from the backups folder. The server first backs up what's here, then restarts, and everyone signs in again with the passwords from the backup's day. Unused invites stop working, and sign-up goes back to invite-only: make new invites, and open sign-up again if you want it open.",
     "file": "Backup file",
     "choose": "Choose…",
-    "purged": "Purged accounts list (optional)",
-    "purgedHint": "purged_accounts.jsonl from the same backups folder, when the backup comes from another server.",
     "password": "Your password",
     "code": "Two-step code",
     "confirm": "I understand that everything on this server will be replaced by this backup",
@@ -677,5 +687,15 @@
     "personSaved": "Saved",
     "paymentSaved": "Payment saved",
     "txnRestored": "Transaction restored"
+  },
+  "backups": {
+    "title": "Backups",
+    "intro": "Taken every night and before every update, kept about 6 days. A download is one file that restores on its own, on this server or another. It holds everyone's data on this server, password hashes included: keep it somewhere safe.",
+    "none": "No backups yet.",
+    "taken": "Taken",
+    "size": "Size",
+    "download": "Download",
+    "askTitle": "Download a backup",
+    "askHint": "Enter your password again: the file holds everyone's data on this server."
   }
 }

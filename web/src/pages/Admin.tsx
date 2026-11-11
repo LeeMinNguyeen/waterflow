@@ -24,7 +24,7 @@ import { useTranslation } from 'react-i18next'
 import { FormSection, PageHeader } from '../components/Page'
 import { useErrorText } from '../components/errors'
 import { currentLanguage } from '../i18n'
-import { api, send, upload, type RestoreStatus } from '../lib/api'
+import { api, download, send, upload, type RestoreStatus } from '../lib/api'
 import { waitForServer } from '../lib/restart'
 import { session } from '../auth/session'
 import { FileField } from '../components/FileField'
@@ -48,7 +48,9 @@ type Job = {
   name: JobName; at_minute: number | null; timezone: string | null; default_minute: number; enabled: boolean
   next_run_at: string; last_started_at: string | null; last_finished_at: string | null
   last_result: 'done' | 'failed' | null; last_detail: string | null
+  run_requested_at: string | null; runs_within: '30s' | '1h'; running: boolean
 }
+const asked = (job: Job) => !!job.run_requested_at && (!job.last_started_at || Date.parse(job.run_requested_at) > Date.parse(job.last_started_at))
 
 const when = (iso: string | null) =>
   iso ? new Intl.DateTimeFormat(currentLanguage() === 'vi' ? 'vi-VN' : 'en-GB', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(iso)) : ''
@@ -90,6 +92,7 @@ export function Admin() {
       <Jobs timezone={me.data.profile.timezone} />
       <Invites />
       <Users selfId={me.data.id} />
+      <Backups timezone={me.data.profile.timezone} />
       <Restore />
     </Stack>
   )
@@ -143,7 +146,8 @@ function Jobs({ timezone }: { timezone: string }) {
   const { t } = useTranslation()
   const errorText = useErrorText()
   const qc = useQueryClient()
-  const jobs = useQuery({ queryKey: ['admin', 'jobs'], queryFn: () => api<Job[]>('/v1/admin/jobs') })
+  const jobs = useQuery({ queryKey: ['admin', 'jobs'], queryFn: () => api<Job[]>('/v1/admin/jobs'),
+    refetchInterval: (q) => (q.state.data?.some((j) => asked(j) || j.running) ? 5000 : 60_000) })
   const [edits, setEdits] = useState<Partial<Record<JobName, { minute?: number; enabled?: boolean }>>>({})
   const [state, setState] = useState<{ error?: unknown; saved?: boolean; busy?: boolean }>({})
   if (jobs.isError) return <FormSection title={t('admin.jobs')}><Alert severity="error">{errorText(jobs.error)}</Alert></FormSection>
@@ -163,9 +167,13 @@ function Jobs({ timezone }: { timezone: string }) {
     setEdits((e) => ({ ...e, [name]: { ...e[name], ...change } }))
   }
   const lastRun = (job: Job) => {
+    if (asked(job)) return <Typography variant="body2">{t(`admin.jobStarting_${job.runs_within}`)}</Typography>
     if (!job.last_started_at) return <Typography variant="body2" color="textSecondary">{t('admin.jobNever')}</Typography>
-    if (!job.last_finished_at || Date.parse(job.last_finished_at) < Date.parse(job.last_started_at)) {
+    if (job.running) {
       return <Typography variant="body2">{t('admin.jobRunning', { when: at.format(new Date(job.last_started_at)) })}</Typography>
+    }
+    if (!job.last_finished_at || Date.parse(job.last_finished_at) < Date.parse(job.last_started_at)) {
+      return <Typography variant="body2" color="error">{t('admin.jobUnfinished', { when: at.format(new Date(job.last_started_at)) })}</Typography>
     }
     const failed = job.last_result === 'failed'
     return (
@@ -177,6 +185,18 @@ function Jobs({ timezone }: { timezone: string }) {
       </>
     )
   }
+
+  async function runNow(name: JobName) {
+    setState({})
+    try {
+      await send('POST', `/v1/admin/jobs/${name}/run`)
+    } catch (err) {
+      setState({ error: err })
+    } finally {
+      await qc.invalidateQueries({ queryKey: ['admin', 'jobs'] })
+    }
+  }
+  const off = (name: JobName) => !(edits[name]?.enabled ?? jobs.data?.find((j) => j.name === name)?.enabled ?? true)
 
   async function save() {
     setState({ busy: true })
@@ -217,15 +237,13 @@ function Jobs({ timezone }: { timezone: string }) {
                 <TableRow key={job.name}>
                   <TableCell>
                     {t(`admin.jobNames.${job.name}`)}
-                    {job.name === 'rates' && (
-                      <Box>
-                        <Switch size="small" checked={enabled} onChange={(e) => edit(job.name, { enabled: e.target.checked })}
-                          slotProps={{ input: { 'aria-label': t('admin.jobRatesOn') } }} />
-                        <Typography component="span" variant="body2" color="textSecondary">
-                          {t(enabled ? 'admin.jobOn' : 'admin.jobOff')}
-                        </Typography>
-                      </Box>
-                    )}
+                    <Box>
+                      <Switch size="small" checked={enabled} onChange={(e) => edit(job.name, { enabled: e.target.checked })}
+                        slotProps={{ input: { 'aria-label': t('admin.jobDaily', { job: t(`admin.jobNames.${job.name}`) }) } }} />
+                      <Typography component="span" variant="body2" color="textSecondary">
+                        {enabled ? t('admin.jobOn') : t(job.name === 'rates' ? 'admin.jobOff' : 'admin.jobOffPlain')}
+                      </Typography>
+                    </Box>
                   </TableCell>
                   <TableCell>
                     <TextField select size="small" value={minute} onChange={(e) => edit(job.name, { minute: Number(e.target.value) })}
@@ -234,13 +252,20 @@ function Jobs({ timezone }: { timezone: string }) {
                       {choices.map((m) => <MenuItem key={m} value={m}>{hhmm(m)}</MenuItem>)}
                     </TextField>
                   </TableCell>
-                  <TableCell>{lastRun(job)}</TableCell>
+                  <TableCell>
+                    {lastRun(job)}
+                    {!asked(job) && !job.running && (
+                      <Box><Button size="small" onClick={() => runNow(job.name)} sx={{ mt: 0.5, ml: -1 }}>{t('admin.runNow')}</Button></Box>
+                    )}
+                  </TableCell>
                 </TableRow>
               )
             })}
           </TableBody>
         </Table>
       </Box>
+      {off('backup') && <Alert severity="warning">{t('admin.backupOff')}</Alert>}
+      {off('purge') && <Alert severity="warning">{t('admin.purgeOff')}</Alert>}
       {state.error ? <Alert severity="error">{errorText(state.error)}</Alert> : null}
       {state.saved ? <Alert severity="success">{t('profile.saved')}</Alert> : null}
       <Button variant="outlined" loading={state.busy} disabled={Object.keys(edits).length === 0} onClick={save} sx={{ alignSelf: 'start' }}>
@@ -471,6 +496,91 @@ function Users({ selfId }: { selfId: string }) {
   )
 }
 
+type BackupFile = { name: string; size: number; taken_at: string }
+
+// The backups folder: each one downloads as one file that restores on its own, after the password (and code) again.
+function Backups({ timezone }: { timezone: string }) {
+  const { t } = useTranslation()
+  const errorText = useErrorText()
+  const lang = currentLanguage() === 'vi' ? 'vi-VN' : 'en-GB'
+  const backups = useQuery({ queryKey: ['admin', 'backups'], queryFn: () => api<BackupFile[]>('/v1/admin/backups') })
+  const twoFactor = useQuery({ queryKey: keys.twoFactor, queryFn: () => api<{ enabled: boolean }>('/v1/auth/two-factor') })
+  const [asking, setAsking] = useState<BackupFile | null>(null)
+  const [password, setPassword] = useState('')
+  const [code, setCode] = useState('')
+  const [state, setState] = useState<{ busy?: boolean; error?: unknown }>({})
+  const needsCode = !!twoFactor.data?.enabled
+  const at = new Intl.DateTimeFormat(lang, { dateStyle: 'medium', timeStyle: 'short', timeZone: timezone })
+  const size = new Intl.NumberFormat(lang, { style: 'unit', unit: 'megabyte', maximumFractionDigits: 1 })
+  const close = () => { setAsking(null); setPassword(''); setCode(''); setState({}) }
+
+  async function get(e: FormEvent) {
+    e.preventDefault()
+    if (!asking) return
+    setState({ busy: true })
+    try {
+      await download(`/v1/admin/backups/${encodeURIComponent(asking.name)}/download`,
+        { password, ...(needsCode && { code: code.trim() }) })
+      close()
+    } catch (err) {
+      setState({ error: err })
+    }
+  }
+
+  return (
+    <FormSection title={t('backups.title')}>
+      <Typography color="textSecondary">{t('backups.intro')}</Typography>
+      {backups.isError && <Alert severity="error">{errorText(backups.error)}</Alert>}
+      {backups.data?.length === 0 && <Typography color="textSecondary">{t('backups.none')}</Typography>}
+      {!!backups.data?.length && (
+        <Box sx={{ overflowX: 'auto' }}>
+          <Table size="small">
+            <TableHead>
+              <TableRow>
+                <TableCell>{t('backups.taken')}</TableCell>
+                <TableCell>{t('backups.size')}</TableCell>
+                <TableCell />
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {backups.data.map((b) => (
+                <TableRow key={b.name}>
+                  <TableCell>{at.format(new Date(b.taken_at))}</TableCell>
+                  <TableCell>{size.format(b.size / 2 ** 20)}</TableCell>
+                  <TableCell align="right"><Button size="small" onClick={() => setAsking(b)}>{t('backups.download')}</Button></TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </Box>
+      )}
+      <Dialog open={!!asking} onClose={close} fullWidth maxWidth="xs">
+        <form onSubmit={get}>
+          <DialogTitle>{t('backups.askTitle')}</DialogTitle>
+          <DialogContent>
+            <Stack spacing={2} sx={{ pt: 1 }}>
+              <Typography variant="body2" color="textSecondary">{t('backups.askHint')}</Typography>
+              <TextField type="password" label={t('restore.password')} required autoFocus value={password}
+                onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" />
+              {needsCode && (
+                <TextField label={t('restore.code')} required value={code} onChange={(e) => setCode(e.target.value)}
+                  slotProps={{ htmlInput: { inputMode: 'numeric', autoComplete: 'one-time-code' } }} />
+              )}
+              {state.error ? <Alert severity="error">{errorText(state.error)}</Alert> : null}
+            </Stack>
+          </DialogContent>
+          <DialogFooter>
+            <Button onClick={close}>{t('common.cancel')}</Button>
+            <Button type="submit" variant="contained" loading={state.busy} disabled={!password || (needsCode && code.trim().length < 6)}>
+              {t('backups.download')}
+            </Button>
+          </DialogFooter>
+        </form>
+      </Dialog>
+    </FormSection>
+  )
+}
+
 // Replaces everything on this server with a backup: the API checks the file and stops the server, which restores it
 // as it starts again. The restored database has the sessions of the backup's day, so this browser signs in again.
 function Restore() {
@@ -480,7 +590,6 @@ function Restore() {
   const last = useQuery({ queryKey: ['admin', 'restore'], queryFn: () => api<RestoreStatus | null>('/v1/admin/restore') })
   const twoFactor = useQuery({ queryKey: keys.twoFactor, queryFn: () => api<{ enabled: boolean }>('/v1/auth/two-factor') })
   const [file, setFile] = useState<File | null>(null)
-  const [purged, setPurged] = useState<File | null>(null)
   const [password, setPassword] = useState('')
   const [code, setCode] = useState('')
   const [sure, setSure] = useState(false)
@@ -495,7 +604,6 @@ function Restore() {
     if (!ready || !file) return
     const form = new FormData()
     form.append('file', file)
-    if (purged) form.append('purged', purged)
     form.append('password', password)
     form.append('confirm', 'true')
     if (needsCode) form.append('code', code.trim())
@@ -524,9 +632,7 @@ function Restore() {
         <Alert severity="info">{t('restore.restarting')}</Alert>
       ) : (
         <Stack component="form" spacing={2} onSubmit={start}>
-          <FileField label={t('restore.file')} button={t('restore.choose')} file={file} onChange={setFile} accept=".dump" />
-          <FileField label={t('restore.purged')} button={t('restore.choose')} file={purged} onChange={setPurged} accept=".jsonl" />
-          <Typography variant="body2" color="textSecondary">{t('restore.purgedHint')}</Typography>
+          <FileField label={t('restore.file')} button={t('restore.choose')} file={file} onChange={setFile} accept=".tar,.dump" />
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
             <TextField type="password" label={t('restore.password')} required value={password} onChange={(e) => setPassword(e.target.value)}
               autoComplete="current-password" sx={{ flex: 1 }} />

@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from '@testing-library/react'
+import { cleanup, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Account, Book, Transaction } from '../lib/api'
@@ -445,6 +445,46 @@ describe('paying a card purchase in installments (waterflow#71)', () => {
     expect(created.path).toBe('/v1/books/b1/installments')
     expect(created.body).toMatchObject({ transaction_id: (purchase.body as { id: string }).id, months: 6, fee: 120_000,
       fee_split: false, counts_toward_limit: true, converted_on: (purchase.body as { occurred_on: string }).occurred_on })
+  })
+
+  it('bills a purchase on the next statement with a tick, naming the statement (waterflow#142)', async () => {
+    const api = cards()
+    const late: Transaction = { ...laptop, occurred_on: '2026-10-24' }
+    await renderApp(<TxnDialog book={book} txn={late} onClose={() => {}} />)
+    const tick = await screen.findByRole('checkbox', { name: 'Bill on the next statement' })
+    expect(tick).not.toBeChecked()
+    expect(screen.queryByText(/On the statement closing/)).toBeNull()
+    await userEvent.click(tick)
+    expect(screen.getByText('On the statement closing 25 Nov 2026')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(api.writes()).toHaveLength(1))
+    expect(api.writes()[0].body).toMatchObject({ occurred_on: '2026-10-24', posted_on: '2026-10-26' })
+  })
+
+  it('shows a saved tick, clears it when unticked, and leaves it to the plan when paid in installments', async () => {
+    const api = cards()
+    const late: Transaction = { ...laptop, occurred_on: '2026-10-24', posted_on: '2026-10-26' }
+    await renderApp(<TxnDialog book={book} txn={late} onClose={() => {}} />)
+    expect(await screen.findByRole('checkbox', { name: 'Bill on the next statement' })).toBeChecked()
+    await userEvent.click(screen.getByRole('switch', { name: 'Pay in installments' }))
+    expect(screen.queryByRole('checkbox', { name: 'Bill on the next statement' })).toBeNull()
+    await userEvent.click(screen.getByRole('switch', { name: 'Pay in installments' }))
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Bill on the next statement' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(api.writes()).toHaveLength(1))
+    expect(api.writes()[0].body).toMatchObject({ posted_on: null })
+  })
+
+  it("offers the tick only for an expense on a card with a statement day", async () => {
+    const api = cards()
+    api.routes['GET /v1/books/b1/accounts'] = [cash, visa, { ...visa, id: 'plain', name: 'Plain card', statement_day: null }]
+    await renderApp(<TxnDialog book={book} txn={null} defaults={{ account: 'cash' }} onClose={() => {}} />)
+    await screen.findByLabelText(/^Amount/)
+    expect(screen.queryByRole('checkbox', { name: 'Bill on the next statement' })).toBeNull()
+    cleanup()
+    await renderApp(<TxnDialog book={book} txn={null} defaults={{ account: 'plain' }} onClose={() => {}} />)
+    await screen.findByRole('switch', { name: 'Pay in installments' })
+    expect(screen.queryByRole('checkbox', { name: 'Bill on the next statement' })).toBeNull()
   })
 
   it('is only offered on a credit card', async () => {

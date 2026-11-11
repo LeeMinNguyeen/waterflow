@@ -1,10 +1,13 @@
 """Run:  TEST_ADMIN_URL=postgresql+psycopg://postgres@localhost/postgres pytest -q tests/"""
+import os
+import sys
 import threading
 import time
 import uuid
 from datetime import UTC, date, datetime, timedelta
 
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
 from sqlalchemy import create_engine, text
@@ -916,6 +919,88 @@ def test_scheduler_runs_what_is_due_as_the_purge_login(database):
                 last_finished_at="null", last_result="null", last_detail="null")
         purger.dispose()
         api.dispose()
+
+
+def test_each_job_gets_only_its_own_login(monkeypatch):
+    """R-SEC-2: the rates job, which reads a third party's answer, and the purge never see the owner's login, which
+    only the backup needs; no job sees another's."""
+    from types import SimpleNamespace
+
+    from app.jobs import scheduler
+    env = {"PATH": "/bin", "BACKUP_DIR": "/backups", "PURGE_LOG": "/backups/purged_accounts.jsonl", "OXR_APP_ID": "key",
+           "PURGE_DATABASE_URL": "purge", "FX_DATABASE_URL": "fx", "BACKUP_DATABASE_URL": "owner"}
+    secret = {"PURGE_DATABASE_URL", "FX_DATABASE_URL", "BACKUP_DATABASE_URL", "OXR_APP_ID"}
+    assert {job: sorted(secret & scheduler.job_env(job, env).keys()) for job in ("purge", "backup", "rates")} == {
+        "purge": ["PURGE_DATABASE_URL"], "backup": ["BACKUP_DATABASE_URL"], "rates": ["FX_DATABASE_URL", "OXR_APP_ID"]}
+    assert all(scheduler.job_env(job, env).keys() >= {"PATH", "BACKUP_DIR", "PURGE_LOG"} for job in ("purge", "backup", "rates"))
+
+    for k, v in env.items():
+        monkeypatch.setenv(k, v)
+    given = {}
+    monkeypatch.setattr(scheduler.subprocess, "run",
+                        lambda cmd, **kw: (given.update(kw["env"]), SimpleNamespace(stdout="1 rate\n", returncode=0))[1])
+    assert scheduler.run_job("rates") == (True, "1 rate")
+    assert given["FX_DATABASE_URL"] == "fx" and not {"BACKUP_DATABASE_URL", "PURGE_DATABASE_URL"} & given.keys()
+
+
+@pytest.mark.skipif(not sys.platform.startswith("linux") or os.geteuid() == 0, reason="Linux's /proc, read as another process of the same user")
+def test_a_process_holding_the_owners_login_hides_its_environment():
+    """The launcher, the scheduler and the backup hold the owner's login in their environment: once they've started,
+    another process of the same user (the API) can't read it from /proc."""
+    import subprocess
+    backend = Path(__file__).parent.parent
+    code = ("import sys, time\n"
+            "from app.core.hardening import hide_environment\n"
+            "print('before', flush=True); sys.stdin.readline()\n"
+            "hide_environment(); print('after', flush=True); time.sleep(30)\n")
+    p = subprocess.Popen([sys.executable, "-c", code], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, cwd=backend,
+                         env={**os.environ, "BACKUP_DATABASE_URL": "postgresql://owner:secret@db/postgres"})
+    try:
+        assert p.stdout.readline().strip() == "before"
+        assert b"owner:secret" in Path(f"/proc/{p.pid}/environ").read_bytes()
+        p.stdin.write("\n")
+        p.stdin.flush()
+        assert p.stdout.readline().strip() == "after"
+        with pytest.raises(PermissionError):
+            Path(f"/proc/{p.pid}/environ").read_bytes()
+    finally:
+        p.kill()
+        p.wait()
+
+    # The scheduler itself: by its first look at a database that isn't there, it's hidden.
+    env = {**os.environ, "BACKUP_DATABASE_URL": "postgresql://owner:secret@db/postgres",
+           "PURGE_DATABASE_URL": "postgresql+psycopg://purge@127.0.0.1:1/none?connect_timeout=2"}
+    p = subprocess.Popen([sys.executable, "-m", "app.jobs.scheduler"], stdout=subprocess.PIPE, text=True, cwd=backend, env=env)
+    try:
+        assert p.stdout.readline().startswith("scheduler: ")
+        with pytest.raises(PermissionError):
+            Path(f"/proc/{p.pid}/environ").read_bytes()
+    finally:
+        p.kill()
+        p.wait()
+
+
+def test_a_job_asked_to_run_now_runs_once_even_if_off(database):
+    from app.jobs.scheduler import run_due
+    purger = create_engine(_url("t_purge"))
+    ran = []
+
+    def fake_job(name):
+        ran.append(name)
+        return True, "ok"
+    try:
+        with database.connect() as c:
+            c.execute(text("update jobs set enabled = false, at_minute = null, timezone = null, changed_at = now(),"
+                           " last_started_at = now() - interval '1 minute', last_finished_at = now() - interval '1 minute',"
+                           " last_result = 'done', run_requested_at = null"))
+            c.execute(text("update jobs set run_requested_at = now() where name = 'backup'"))
+        assert run_due(purger, datetime.now(UTC), fake_job) == ["backup"]
+        assert run_due(purger, datetime.now(UTC), fake_job) == []           # once
+    finally:
+        with database.connect() as c:
+            c.execute(text("update jobs set enabled = true, changed_at = null, last_started_at = null, last_finished_at = null,"
+                           " last_result = null, last_detail = null, run_requested_at = null"))
+        purger.dispose()
 
 
 def test_categories_never_loop(database):
