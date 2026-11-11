@@ -162,6 +162,102 @@ describe("amount and no-category filters, with the list's total (waterflow#103)"
     await waitFor(() => expect(screen.getByTestId('where')).toHaveTextContent('/books/b1/transactions?min=40000'))
   })
 
+  it('labels the amount boxes as amounts, not dates, in Vietnamese', async () => {
+    withSummary()
+    await renderApp(<Transactions book={book} />, { route: '/books/b1/transactions', lang: 'vi' })
+    await userEvent.click(await screen.findByRole('button', { name: 'Số tiền' }))
+    expect(screen.getByRole('textbox', { name: 'Từ' })).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: 'Đến' })).toBeInTheDocument()
+    expect(screen.queryByRole('textbox', { name: 'Từ ngày' })).toBeNull()
+  })
+
+  it('filters by currency, several at once, and reads the amount in the one picked', async () => {
+    const api = fakeApi({
+      'GET /v1/currencies': currencies,
+      'GET /v1/books/b1/transactions': { items, next: null },
+      'GET /v1/books/b1/transactions/summary': { count: 0, spent: 0, income: 0, net: 0, not_converted: 0 },
+      'GET /v1/books/b1/accounts': [...accounts, { ...blank, id: 'usd', name: 'US bank', kind: 'checking', currency: 'USD', balance: 0 }],
+      'GET /v1/books/b1/categories': [],
+    })
+    await renderApp(<Transactions book={book} />, { route: '/books/b1/transactions' })
+    await userEvent.click(await screen.findByRole('button', { name: 'Amount' }))
+    await userEvent.click(screen.getByRole('combobox', { name: 'Currency' }))
+    expect((await screen.findAllByRole('option')).map((o) => o.textContent)).toEqual(['USD', 'VND'])
+    await userEvent.click(screen.getByRole('option', { name: 'USD' }))
+    await userEvent.keyboard('{Escape}')
+    await userEvent.type(screen.getByRole('textbox', { name: 'From' }), '2')
+    await waitFor(() => expect(screen.getByTestId('where')).toHaveTextContent('/books/b1/transactions?min=200&currency=USD'))
+    await userEvent.click(screen.getByRole('combobox', { name: 'Currency' }))
+    await userEvent.click(await screen.findByRole('option', { name: 'VND' }))
+    await userEvent.keyboard('{Escape}')
+    await waitFor(() => expect(screen.getByTestId('where')).toHaveTextContent('/books/b1/transactions?min=2&currency=USD%2CVND'))
+    await waitFor(() => expect(api.calls.some((c) => c.path === '/v1/books/b1/transactions' && c.url.includes('currency=USD%2CVND'))).toBe(true))
+    await userEvent.keyboard('{Escape}')
+    expect(screen.getByRole('button', { name: 'Amount: From 2 · USD, VND' })).toBeInTheDocument()
+  })
+
+  const withUsd = () => fakeApi({
+    'GET /v1/currencies': currencies,
+    'GET /v1/books/b1/transactions': { items, next: null },
+    'GET /v1/books/b1/transactions/summary': { count: 0, spent: 0, income: 0, net: 0, not_converted: 0 },
+    'GET /v1/books/b1/accounts': [...accounts, { ...blank, id: 'usd', name: 'US bank', kind: 'checking', currency: 'USD', balance: 0 }],
+    'GET /v1/books/b1/categories': [],
+  })
+
+  it('leaves the filters alone when All accounts is picked again', async () => {
+    withUsd()
+    await renderApp(<Transactions book={book} />, { route: '/books/b1/transactions?min=200&currency=USD' })
+    await userEvent.click(await screen.findByRole('button', { name: 'Account' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'All accounts' }))
+    expect(screen.getByTestId('where')).toHaveTextContent(/^\/books\/b1\/transactions\?min=200&currency=USD$/)
+  })
+
+  it('starts the amount afresh when the account filter is cleared and the currency changes', async () => {
+    withUsd()
+    await renderApp(<Transactions book={book} />, { route: '/books/b1/transactions?account_id=usd&min=200' })
+    await userEvent.click(await screen.findByRole('button', { name: 'Clear Account' }))
+    expect(screen.getByTestId('where')).toHaveTextContent(/^\/books\/b1\/transactions$/)
+  })
+
+  it('still takes a currency picked when the amount typed no longer reads in the new one', async () => {
+    withUsd()
+    await renderApp(<Transactions book={book} />, { route: '/books/b1/transactions' })
+    await userEvent.click(await screen.findByRole('button', { name: 'Amount' }))
+    await userEvent.click(screen.getByRole('combobox', { name: 'Currency' }))
+    await userEvent.click(await screen.findByRole('option', { name: 'USD' }))
+    await userEvent.keyboard('{Escape}')
+    await userEvent.type(screen.getByRole('textbox', { name: 'From' }), '2.5')
+    await waitFor(() => expect(screen.getByTestId('where')).toHaveTextContent('/books/b1/transactions?min=250&currency=USD'))
+    await userEvent.click(screen.getByRole('combobox', { name: 'Currency' }))
+    await userEvent.click(await screen.findByRole('option', { name: 'VND' }))
+    await userEvent.keyboard('{Escape}')
+    await waitFor(() => expect(screen.getByTestId('where')).toHaveTextContent(/^\/books\/b1\/transactions\?currency=USD%2CVND$/))
+  })
+
+  it('keeps the amount while a sum is being typed', async () => {
+    withUsd()
+    await renderApp(<Transactions book={book} />, { route: '/books/b1/transactions?min=1000' })
+    await userEvent.click(await screen.findByRole('button', { name: 'Amount: From ₫1,000' }))
+    await userEvent.type(screen.getByRole('textbox', { name: 'From' }), '+')
+    await new Promise((r) => setTimeout(r, 600))
+    expect(screen.getByTestId('where')).toHaveTextContent(/^\/books\/b1\/transactions\?min=1000$/)
+  })
+
+  it('hides the amount with several currencies too', async () => {
+    localStorage.setItem('waterflow.hideAmounts', '1')
+    withUsd()
+    await renderApp(<Transactions book={book} />, { route: '/books/b1/transactions?min=50000&currency=USD,VND' })
+    expect(await screen.findByRole('button', { name: 'Amount: From •••• · USD, VND' })).toBeInTheDocument()
+    localStorage.removeItem('waterflow.hideAmounts')
+  })
+
+  it('ignores a currency in the address that is no code', async () => {
+    const api = withUsd()
+    await renderApp(<Transactions book={book} />, { route: '/books/b1/transactions?currency=US,VND&min=1' })
+    expect(await screen.findByRole('button', { name: 'Amount: From ₫1 · VND' })).toBeInTheDocument()
+    expect(api.calls.filter((c) => c.path === '/v1/books/b1/transactions').every((c) => c.url.includes('currency=VND&') || c.url.endsWith('currency=VND'))).toBe(true)
+  })
+
   it('starts the amount afresh when the account picked is in another currency', async () => {
     fakeApi({
       'GET /v1/currencies': currencies,

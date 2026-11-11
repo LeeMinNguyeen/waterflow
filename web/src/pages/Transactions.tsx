@@ -30,10 +30,11 @@ import { currentLanguage } from '../i18n'
 import { txnTypes, type Account, type Book, type Transaction } from '../lib/api'
 import { categoryTree } from '../lib/categories'
 import { shiftDay, todayIn } from '../lib/labels'
-import { useFormatMoney } from '../lib/hideAmounts'
+import { masked, useFormatMoney, useHideAmounts } from '../lib/hideAmounts'
+import { amountText } from '../lib/money'
 import { useAccounts, useCategories, useCurrencies, useTransactions, useTxnSummary, type TxnFilters } from '../lib/queries'
 
-const FILTERS = ['account_id', 'category_id', 'type', 'from', 'to', 'q', 'min', 'max'] as const
+const FILTERS = ['account_id', 'category_id', 'type', 'from', 'to', 'q', 'min', 'max', 'currency'] as const
 type Filter = (typeof FILTERS)[number]
 // What a day's total adds up: money that came in or went out, not money moved between your own accounts.
 const COUNTED = new Set(['expense', 'income', 'refund'])
@@ -47,6 +48,10 @@ export function Transactions({ book }: { book: Book }) {
   const openTxn = useOpenTxn()
   const [params, setParams] = useSearchParams()
   const filters: TxnFilters = Object.fromEntries(FILTERS.map((k) => [k, params.get(k) ?? undefined]).filter(([, v]) => v))
+  // Only codes go on: a hand-edited address could blank the chip.
+  const codesAsked = (filters.currency ?? '').split(',').filter((c) => /^[A-Z]{3}$/.test(c)).join(',')
+  if (codesAsked) filters.currency = codesAsked
+  else delete filters.currency
   const [search, setSearch] = useState(filters.q ?? '')
   const [menu, setMenu] = useState<{ el: HTMLElement; which: 'account' | 'category' | 'type' | 'dates' | 'amount' } | null>(null)
   // Clear starts the date fields afresh: a half-typed date isn't in the address, so clearing it wouldn't reach them.
@@ -58,6 +63,7 @@ export function Transactions({ book }: { book: Book }) {
   const categories = useCategories(book.id, true)
   const currencies = useCurrencies()
   const formatMoney = useFormatMoney()
+  const { hidden } = useHideAmounts()
 
   // Search as the user types, a moment after they stop.
   useEffect(() => {
@@ -80,11 +86,16 @@ export function Transactions({ book }: { book: Book }) {
     )
   }
   const setFilter = (key: Filter, value: string) => setFilters({ [key]: value })
+  // An account fixes the currency, so picking one drops the currencies picked; an amount typed in another currency
+  // than the one it will be read in starts afresh.
+  const chooseAccount = (value: string) => {
+    if (value === (filters.account_id ?? '')) return
+    const next = value ? (accountById.get(value)?.currency ?? book.base_currency) : reference(picked, null).code
+    setFilters({ account_id: value, ...(value && { currency: '' }), ...(next !== amountCurrency && { min: '', max: '' }) })
+  }
   const pick = (key: Filter, value: string) => {
     setMenu(null)
-    // An amount is in the filtered account's currency: another currency starts it afresh.
-    const currencyOf = (id?: string) => (id && accountById.get(id)?.currency) || book.base_currency
-    if (key === 'account_id' && currencyOf(value) !== currencyOf(filters.account_id)) setFilters({ account_id: value, min: '', max: '' })
+    if (key === 'account_id') chooseAccount(value)
     else setFilter(key, value)
   }
 
@@ -134,12 +145,20 @@ export function Transactions({ book }: { book: Book }) {
   const columns = `48px minmax(0, 1.6fr) minmax(0, 1fr) minmax(0, 1.2fr) 150px${filteredAccount ? ' 140px' : ''}`
   const accountName = filters.account_id ? accountById.get(filters.account_id)?.name : undefined
   const categoryName = filters.category_id === 'none' ? t('filters.noCategory') : filters.category_id ? categoryById.get(filters.category_id)?.name : undefined
-  const amountCurrency = filteredAccount?.currency ?? book.base_currency
-  const minorUnit = currencies.data?.get(amountCurrency)?.minor_unit ?? 0
-  const amountOf = (v: string) => formatMoney(Number(v), amountCurrency, minorUnit, lang)
-  const amountValue = filters.min && filters.max ? `${amountOf(filters.min)} – ${amountOf(filters.max)}`
+  // What a typed amount means: the account's currency, else the one currency picked, else the book's.
+  const reference = (picked: string[], account: Account | null | undefined = filteredAccount) => {
+    const code = account?.currency ?? (picked.length === 1 ? picked[0] : book.base_currency)
+    return { code, minorUnit: currencies.data?.get(code)?.minor_unit ?? 0 }
+  }
+  const picked = filters.currency ? filters.currency.split(',') : []
+  const { code: amountCurrency, minorUnit } = reference(picked)
+  // Several currencies: each amount is read in its own, so no one symbol fits.
+  const amountOf = (v: string) => picked.length > 1 && !filteredAccount ? (hidden ? masked : String)(amountText(Number(v), minorUnit, lang))
+    : formatMoney(Number(v), amountCurrency, minorUnit, lang)
+  const amountValue = [filters.min && filters.max ? `${amountOf(filters.min)} – ${amountOf(filters.max)}`
     : filters.min ? t('filters.atLeast', { amount: amountOf(filters.min) })
-      : filters.max ? t('filters.atMost', { amount: amountOf(filters.max) }) : undefined
+      : filters.max ? t('filters.atMost', { amount: amountOf(filters.max) }) : '', picked.join(', ')].filter(Boolean).join(' · ') || undefined
+  const codes = filteredAccount ? [] : [...new Set((accounts.data ?? []).map((a) => a.currency))].sort()
   const datesValue =
     filters.from && filters.to ? `${shortDate.format(date(filters.from))} – ${shortDate.format(date(filters.to))}`
       : filters.from ? t('filters.since', { date: shortDate.format(date(filters.from)) })
@@ -167,7 +186,7 @@ export function Transactions({ book }: { book: Book }) {
         />
         <Stack direction="row" spacing={1} sx={{ overflowX: 'auto', pb: { xs: 0.5, md: 0 }, alignItems: 'center' }}>
           <FilterChip label={t('txn.account')} value={accountName} onClick={open('account')}
-            onClear={() => setFilter('account_id', '')} clearLabel={t('filters.clearOne', { name: t('txn.account') })} />
+            onClear={() => chooseAccount('')} clearLabel={t('filters.clearOne', { name: t('txn.account') })} />
           <FilterChip label={t('txn.category')} value={categoryName} onClick={open('category')}
             onClear={() => setFilter('category_id', '')} clearLabel={t('filters.clearOne', { name: t('txn.category') })} />
           <FilterChip label={t('filters.type')} value={filters.type ? t(`txn.types.${filters.type}`) : undefined} onClick={open('type')}
@@ -176,7 +195,7 @@ export function Transactions({ book }: { book: Book }) {
             onClear={() => { setCleared((n) => n + 1); setFilters({ from: '', to: '' }) }}
             clearLabel={t('filters.clearOne', { name: t('filters.dates') })} />
           <FilterChip label={t('filters.amount')} value={amountValue} onClick={open('amount')}
-            onClear={() => { setCleared((n) => n + 1); setFilters({ min: '', max: '' }) }}
+            onClear={() => { setCleared((n) => n + 1); setFilters({ min: '', max: '', currency: '' }) }}
             clearLabel={t('filters.clearOne', { name: t('filters.amount') })} />
           {filtered && (
             <Button sx={{ flexShrink: 0 }} onClick={() => { setSearch(''); setCleared((n) => n + 1); setParams({}, { replace: true }) }}>
@@ -227,8 +246,9 @@ export function Transactions({ book }: { book: Book }) {
 
       <Popover anchorEl={menu?.el} open={menu?.which === 'amount'} onClose={() => setMenu(null)}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }} slotProps={{ paper: { sx: { p: 2, mt: 1, width: 300 } } }}>
-        <AmountRange key={`amount-${cleared}-${amountCurrency}-${minorUnit}`} min={filters.min} max={filters.max} minorUnit={minorUnit}
-          onChange={({ min, max }) => setFilters({ min: min ?? '', max: max ?? '' })} />
+        <AmountRange key={`amount-${cleared}-${filteredAccount?.id ?? ''}-${currencies.isSuccess}`} min={filters.min} max={filters.max}
+          currency={filters.currency} codes={codes} reference={reference}
+          onChange={({ min, max, currency }) => setFilters({ min: min ?? '', max: max ?? '', currency: currency ?? '' })} />
       </Popover>
 
       {filtered && summary && (

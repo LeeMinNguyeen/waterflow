@@ -49,8 +49,10 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
 }
 
 // A file from the API (the data export): saved by the browser under the name it sends.
-export async function download(path: string): Promise<void> {
-  const res = await reach(path, { headers: authHeaders() })
+// With a body, a POST: the server asks for the password again before some downloads.
+export async function download(path: string, body?: unknown): Promise<void> {
+  const res = await reach(path, body === undefined ? { headers: authHeaders() }
+    : { method: 'POST', headers: authHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify(body) })
   if (!res.ok) await fail(res)
   const name = /filename="([^"]+)"/.exec(res.headers.get('Content-Disposition') ?? '')?.[1] ?? 'export.zip'
   const url = URL.createObjectURL(await res.blob())
