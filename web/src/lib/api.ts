@@ -95,7 +95,10 @@ export type Profile = {
 export type Me = { id: string; profile: Profile }
 
 // GET /v1/instance, before anyone signs in.
-export type Instance = { name: string; server_version: string; api_version: number; signup: 'invite' | 'open'; setup_needed: boolean }
+export type Instance = {
+  name: string; server_version: string; api_version: number; signup: 'invite' | 'open'; setup_needed: boolean
+  account_purge: 'on' | 'off'
+}
 export type Token = { token: string }
 export type SignedIn = Token & { device_token: string | null }
 // The browser and system that signed in, never the token.
@@ -228,6 +231,7 @@ export type Transaction = {
   type: TxnType
   occurred_on: string
   occurred_time: string // HH:MM:SS
+  posted_on?: string | null // a card purchase billed on the next statement: that statement's first day
   category_id: string | null
   payee: string | null
   note: string | null
@@ -249,6 +253,7 @@ export type HistoryEntry = {
   type: TxnType
   occurred_on: string
   occurred_time: string | null
+  posted_on?: string | null
   category_id: string | null
   payee: string | null
   note: string | null

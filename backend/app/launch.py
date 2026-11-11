@@ -23,6 +23,7 @@ from urllib.parse import quote, unquote, urlsplit, urlunsplit
 
 import psycopg
 
+from app.core.hardening import hide_environment
 from app.jobs import backup, migrate, restore
 
 SECRETS = Path(os.environ.get("SECRETS_DIR", "/secrets"))
@@ -183,6 +184,7 @@ def serve() -> None:
 
 
 if __name__ == "__main__":
+    hide_environment()
     if sys.argv[1:] == ["secrets"]:
         make_postgres_password()
     elif sys.argv[1:] == ["jobs"]:

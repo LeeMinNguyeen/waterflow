@@ -6,6 +6,7 @@ address they reach the server at:
     invite  https://<server>/join?code=<code>  (the QR code holds the same link)
     reset   https://<server>/reset?token=<token>
 """
+import os
 from datetime import datetime, timedelta, timezone
 from typing import Annotated, Literal
 from uuid import UUID
@@ -136,9 +137,12 @@ class Job(BaseModel):
     enabled: bool
     next_run_at: datetime               # also while it's off
     last_started_at: datetime | None
-    last_finished_at: datetime | None   # still running while this is before last_started_at, or missing
+    last_finished_at: datetime | None
     last_result: Literal["done", "failed"] | None
     last_detail: str | None             # its last line of output
+    run_requested_at: datetime | None   # Run now, waiting for the scheduler while after last_started_at
+    running: bool                       # started, not finished, and not so long ago that it was surely killed
+    runs_within: Literal["30s", "1h"]   # how soon the scheduler looks: here, or an hourly job elsewhere (RUN_JOBS=off)
 
 
 def _jobs(db: Session) -> dict[str, dict]:
@@ -149,8 +153,21 @@ def _jobs(db: Session) -> dict[str, dict]:
 def jobs(db: Session = Depends(get_db)) -> list[Job]:
     """In the order they run."""
     now = datetime.now(timezone.utc)
+    within = "1h" if os.environ.get("RUN_JOBS", "on").lower() in ("off", "false", "0") else "30s"
+
+    def running(j: dict) -> bool:
+        started, finished = j["last_started_at"], j["last_finished_at"]
+        return bool(started) and (finished is None or finished < started) and now - started < timedelta(minutes=45)
     return [Job(**{k: v for k, v in j.items() if k != "changed_at"}, default_minute=schedule.default_minute(),
-                next_run_at=schedule.next_time(now, j["at_minute"], j["timezone"])) for j in _jobs(db).values()]
+                next_run_at=schedule.next_time(now, j["at_minute"], j["timezone"]), runs_within=within,
+                running=running(j)) for j in _jobs(db).values()]
+
+
+@router.post("/jobs/{name}/run", status_code=204)
+def run_job(name: str, db: Session = Depends(get_db)) -> Response:
+    db.execute(text("select admin_run_job(:n)"), {"n": name})
+    db.commit()
+    return Response(status_code=204)
 
 
 class JobChange(BaseModel):
@@ -162,8 +179,6 @@ class JobChange(BaseModel):
 
 @router.patch("/jobs/{name}", status_code=204)
 def change_job(name: str, body: JobChange, db: Session = Depends(get_db)) -> Response:
-    """The database refuses to turn off any job but the exchange rates: a server can't do without backups or the
-    purge."""
     job = _jobs(db).get(name)
     if job is None:
         raise HTTPException(404, "not_found")

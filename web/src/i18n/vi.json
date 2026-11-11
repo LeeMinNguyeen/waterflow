@@ -208,7 +208,8 @@
     "person_account": "Đây là tài khoản riêng của một người: hãy sửa ở mục Vay mượn.",
     "already_restored": "Giao dịch này đã được khôi phục.",
     "restore_expired": "Chỉ khôi phục được giao dịch đã xóa trong vòng 30 ngày.",
-    "restore_changed": "Một tài khoản của giao dịch này đã bị xóa hoặc đã đổi loại tiền, nên không thể khôi phục như cũ."
+    "restore_changed": "Một tài khoản của giao dịch này đã bị xóa hoặc đã đổi loại tiền, nên không thể khôi phục như cũ.",
+    "job_running": "Công việc đó đang chạy."
   },
   "nav": {
     "transactions": "Giao dịch",
@@ -220,6 +221,9 @@
     "people": "Vay mượn"
   },
   "txn": {
+    "nextStatement": "Tính vào kỳ sao kê sau",
+    "nextStatementCloses": "Thuộc kỳ sao kê chốt ngày {{date}}",
+    "billedFrom": "tính vào sao kê từ {{date}}",
     "add": "Thêm giao dịch",
     "edit": "Sửa giao dịch",
     "title": "Giao dịch",
@@ -483,7 +487,8 @@
     "idleSignOut": "Tự đăng xuất khi không hoạt động",
     "idleSignOutHint": "Trên mọi thiết bị: sau khoảng thời gian này không nhấp, gõ phím hay chạm, bạn sẽ bị đăng xuất, có cảnh báo trước một phút.",
     "idleOff": "Không (chỉ sau 30 ngày không dùng)",
-    "idleMinutes": "Sau {{minutes}} phút"
+    "idleMinutes": "Sau {{minutes}} phút",
+    "purgeOff": "Quản trị viên máy chủ này đã tắt việc xóa hằng ngày: tài khoản của bạn chỉ bị xóa hẳn khi việc này được bật lại."
   },
   "closing": {
     "title": "Tài khoản đang được đóng",
@@ -577,13 +582,20 @@
       "backup": "Sao lưu cơ sở dữ liệu",
       "rates": "Cập nhật tỷ giá"
     },
-    "jobRatesOn": "Cập nhật tỷ giá mỗi ngày",
     "jobOn": "Bật",
     "jobOff": "Tắt: tỷ giá giữ nguyên",
     "jobNever": "Chưa chạy",
     "jobRunning": "Đang chạy từ {{when}}",
     "jobDone": "Xong lúc {{when}}",
-    "jobFailed": "Lỗi lúc {{when}}"
+    "jobUnfinished": "Không chạy xong (bắt đầu lúc {{when}})",
+    "jobFailed": "Lỗi lúc {{when}}",
+    "jobDaily": "{{job}} hằng ngày",
+    "jobOffPlain": "Tắt",
+    "runNow": "Chạy ngay",
+    "jobStarting_30s": "Sẽ bắt đầu trong 30 giây…",
+    "jobStarting_1h": "Sẽ bắt đầu trong vòng một giờ…",
+    "backupOff": "Không có bản sao lưu: nếu ổ đĩa của máy này hỏng, mọi thứ sẽ mất. Khi cập nhật, máy chủ vẫn tự sao lưu trước.",
+    "purgeOff": "Các tài khoản đã đóng sẽ không bị xóa sau 30 ngày, dù người dùng được báo là sẽ bị xóa. Khi bật lại, mọi thứ đến hạn sẽ bị xóa. Các phiên đăng nhập hết hạn vẫn không dùng được."
   },
   "members": {
     "title": "Thành viên",

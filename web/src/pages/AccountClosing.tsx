@@ -10,6 +10,7 @@ import { useErrorText } from '../components/errors'
 import { currentLanguage } from '../i18n'
 import { signOut } from '../auth/signOut'
 import { send } from '../lib/api'
+import { useInstance } from '../lib/queries'
 
 // A closed account sees only this until it's restored or purged.
 export function AccountClosing({ requestedAt }: { requestedAt: string }) {
@@ -18,6 +19,7 @@ export function AccountClosing({ requestedAt }: { requestedAt: string }) {
   const qc = useQueryClient()
   const [error, setError] = useState<unknown>(null)
   const [busy, setBusy] = useState(false)
+  const instance = useInstance()
   const deletesOn = new Date(new Date(requestedAt).getTime() + 30 * 24 * 3600 * 1000)
   const date = new Intl.DateTimeFormat(currentLanguage() === 'vi' ? 'vi-VN' : 'en-GB', { dateStyle: 'long' }).format(deletesOn)
 
@@ -39,6 +41,7 @@ export function AccountClosing({ requestedAt }: { requestedAt: string }) {
       <Stack spacing={2}>
         <Typography variant="h5">{t('closing.title')}</Typography>
         <Typography>{t('closing.body', { date })}</Typography>
+        {instance.data?.account_purge === 'off' && <Typography color="textSecondary">{t('profile.purgeOff')}</Typography>}
         {error ? <Alert severity="error">{errorText(error)}</Alert> : null}
         <Button variant="contained" size="large" loading={busy} onClick={restore}>{t('closing.restore')}</Button>
         <Button color="inherit" onClick={() => signOut()}>{t('auth.signOut')}</Button>

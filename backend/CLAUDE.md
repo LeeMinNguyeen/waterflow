@@ -14,7 +14,8 @@ app/
   admin.py               operator commands: reset-password, make-admin, repurge
   core/                  settings.py (env), sign_in.py (argon2id, TOTP, codes, tokens, rate limits),
                          auth.py (session token -> user), db.py (per-request session, app.user_id),
-                         jobs.py (when each daily job is due), updates.py (the version, update checks), events.py
+                         jobs.py (when each daily job is due), updates.py (the version, update checks), events.py,
+                         hardening.py (a process hides its environment from others of the same user)
   api/                   main.py (app, web app files, CSP, /v1/instance), deps.py, errors.py, routes/v1/
                          (sign_in: setup, join, sign-in, 2FA, reset; admin; me; books, accounts, ...)
   domain/                transactions, bills, dashboard, export, book_setup

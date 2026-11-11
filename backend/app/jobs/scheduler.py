@@ -8,20 +8,30 @@ import os
 import subprocess
 import sys
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 
+from app.core.hardening import hide_environment
 from app.core.jobs import JOBS, is_due
 
 TICK = 30   # seconds
+SECRETS = {"purge": ("PURGE_DATABASE_URL",), "backup": ("BACKUP_DATABASE_URL",), "rates": ("FX_DATABASE_URL", "OXR_APP_ID")}
+
+
+def job_env(name: str, env: Mapping[str, str]) -> dict[str, str]:
+    """Without the other jobs' logins and keys: only the backup gets the owner's login, and the rates job, which reads
+    what a third party sends, gets neither that nor the purge's."""
+    others = {key for job, keys in SECRETS.items() if job != name for key in keys}
+    return {k: v for k, v in env.items() if k not in others}
 
 
 def run_job(name: str) -> tuple[bool, str]:
     """Runs one job as its own process: whether it worked, and its last line of output."""
-    p = subprocess.run([sys.executable, "-m", JOBS[name]], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    p = subprocess.run([sys.executable, "-m", JOBS[name]], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                       env=job_env(name, os.environ))
     out = p.stdout.strip()
     if out:
         print(out, flush=True)
@@ -32,7 +42,9 @@ def run_job(name: str) -> tuple[bool, str]:
 def run_due(engine: Engine, now: datetime, run: Callable[[str], tuple[bool, str]] = run_job) -> list[str]:
     """Runs every job that's due now, in order, recording each start and result. Returns their names."""
     with engine.begin() as c:
-        schedule = c.execute(text("select * from job_schedule()")).mappings().all()
+        asked = dict(c.execute(text("select name, run_requested_at from job_run_requests()")).all())
+        schedule = [{**job, "run_requested_at": asked.get(job["name"])}
+                    for job in c.execute(text("select * from job_schedule()")).mappings()]
     ran = []
     for job in schedule:
         if not is_due(now, job):
@@ -61,6 +73,7 @@ def once(engine: Engine, now: datetime, run: Callable[[str], tuple[bool, str]] =
 
 
 def main() -> None:
+    hide_environment()
     engine = create_engine(os.environ["PURGE_DATABASE_URL"], pool_pre_ping=True)
     if sys.argv[1:] == ["--once"]:
         sys.exit(once(engine, datetime.now(UTC)))

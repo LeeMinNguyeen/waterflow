@@ -108,7 +108,7 @@ def test_admin_can_open_sign_up(client, admin, invite_only):
     _, admin_token = admin
     assert client.patch("/v1/admin/instance", headers=bearer(admin_token), json={"signup": "open", "name": "Nhà"}).status_code == 204
     assert client.get("/v1/instance").json() | {"server_version": None} == {
-        "name": "Nhà", "signup": "open", "api_version": 1, "setup_needed": False, "server_version": None}
+        "name": "Nhà", "signup": "open", "api_version": 1, "setup_needed": False, "server_version": None, "account_purge": "on"}
     sign_up(client)
     client.patch("/v1/admin/instance", headers=bearer(admin_token), json={"name": "Waterflow"})
 
@@ -675,7 +675,7 @@ def test_setup_creates_the_admin_once(fresh_server, monkeypatch):
     assert ok.status_code == 201
     assert client.get("/v1/me", headers=bearer(ok.json()["token"])).json()["profile"]["is_admin"] is True
     assert client.get("/v1/instance").json() | {"server_version": None} == {
-        "name": "Nhà Lan", "signup": "invite", "api_version": 1, "setup_needed": False, "server_version": None}
+        "name": "Nhà Lan", "signup": "invite", "api_version": 1, "setup_needed": False, "server_version": None, "account_purge": "on"}
     again = client.post("/v1/setup", json={**body, "username": "boss2", "setup_code": code})
     assert (again.status_code, again.json()) == (403, {"detail": "setup_invalid"})
     _, code_after = migrate.run(url, passwords)
@@ -816,9 +816,9 @@ def test_job_schedule_times(monkeypatch):
     assert not due(t(2026, 10, 21, 4, 30), **failed_at | {"enabled": False})
 
 
-def test_daily_jobs_on_server_admin(client, admin, database):
-    """The admin sees each job's time and last run, sets the time in their own timezone, and can turn
-    only the exchange rates off."""
+def test_daily_jobs_on_server_admin(client, admin, database, monkeypatch):
+    """The admin sees each job's time and last run, sets the time in their own timezone, turns any job off, and asks
+    for one to run now."""
     _, admin_token = admin
     _, member = sign_up(client)
     url = "/v1/admin/jobs"
@@ -843,16 +843,34 @@ def test_daily_jobs_on_server_admin(client, admin, database):
 
         for body in ({"at_minute": 150}, {"at_minute": 1440, "timezone": "UTC"}, {"at_minute": 60, "timezone": "Mars/Base"}):
             assert patch("purge", **body).status_code == 422, body
-        assert patch("backup", enabled=False).json() == {"detail": "invalid"}                # can't do without backups
-        assert patch("purge", enabled=False).json() == {"detail": "invalid"}
-        assert patch("rates", enabled=False).status_code == 204 and listed()["rates"]["enabled"] is False
+        assert client.get("/v1/instance").json()["account_purge"] == "on"
+        for name in ("backup", "purge", "rates"):
+            assert patch(name, enabled=False).status_code == 204 and listed()[name]["enabled"] is False
+        assert client.get("/v1/instance").json()["account_purge"] == "off"
+        assert patch("purge", enabled=True).status_code == 204 and patch("backup", enabled=True).status_code == 204
         assert listed()["rates"]["at_minute"] is None                                        # left out: stays
         assert patch("backup", at_minute=None).status_code == 204                            # back to JOBS_HOUR
         assert (listed()["backup"]["at_minute"], listed()["backup"]["timezone"]) == (None, None)
         assert patch("nightly", enabled=True).json() == {"detail": "not_found"}
+
+        run = lambda name, token=admin_token: client.post(f"{url}/{name}/run", headers=bearer(token))  # noqa: E731
+        assert listed()["rates"]["run_requested_at"] is None and listed()["rates"]["runs_within"] == "30s"
+        assert run("rates", member).json() == {"detail": "admin_only"}
+        assert run("rates").status_code == 204 and listed()["rates"]["run_requested_at"] is not None   # though it's off
+        assert run("nightly").json() == {"detail": "not_found"}
+        with database.connect() as c:
+            c.execute(text("update jobs set last_started_at = now(), last_finished_at = null where name = 'backup'"))
+        assert (run("backup").status_code, run("backup").json()) == (409, {"detail": "job_running"})
+        assert listed()["backup"]["running"] is True
+        with database.connect() as c:                       # killed two hours ago, by a restart or a restore
+            c.execute(text("update jobs set last_started_at = now() - interval '2 hours' where name = 'backup'"))
+        assert listed()["backup"]["running"] is False and run("backup").status_code == 204
+        monkeypatch.setenv("RUN_JOBS", "off")
+        assert listed()["rates"]["runs_within"] == "1h"                                       # the hourly look elsewhere
     finally:
         with database.connect() as c:
-            c.execute(text("update jobs set at_minute = null, timezone = null, enabled = true, changed_at = null"))
+            c.execute(text("update jobs set at_minute = null, timezone = null, enabled = true, changed_at = null,"
+                           " run_requested_at = null, last_started_at = null, last_finished_at = null"))
 
 
 def test_update_info_and_one_click_update(client, admin, tmp_path, monkeypatch):

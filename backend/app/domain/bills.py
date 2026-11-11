@@ -6,6 +6,9 @@ amounts included, minus all the money in since. It's due on the first repayment 
 Next to it is the next statement so far, with only what's new in it: what it would ask for if it closed today, less
 what the last one still asks for. Once the last one is paid off, or had nothing to pay, only the next one shows.
 
+A purchase marked for the next statement (the bank posted it after its statement closed) counts from the first day
+of that one; what the card owes counts it from its own date.
+
 A purchase on a card paid in installments stays one expense for its full amount; the bill leaves out the part of
 it no statement has billed yet. Each statement bills one installment per plan (the last takes what's left, and a plan
 ended early bills everything left on the next statement), with the plan's fee all on the first installment's bill or
@@ -141,6 +144,11 @@ class Bill:
     statement_open: bool = False                             # card: the next statement so far
 
 
+# A purchase the bank posted after its statement closed is billed from that day; one paid in installments, by its plan.
+BILLED_ON = """case when t.posted_on is null or exists (select 1 from installment_plans p where p.transaction_id = t.id)
+                    then t.occurred_on else t.posted_on end"""
+
+
 def _sum(db: Session, sql: str, **params) -> int:
     return int(db.execute(text(
         "select coalesce(sum(e.amount), 0) from entries e join transactions t on t.id = e.transaction_id"
@@ -171,7 +179,7 @@ class _Statement:
 def _card_statement(db: Session, a: UUID, day: int, closes: date, today: date) -> _Statement:
     """The statement that closes on `closes`, the one before it having closed a month earlier."""
     before = last_statement(closes, day)
-    owed = max(0, -_sum(db, "t.occurred_on <= :d", a=a, d=closes))
+    owed = max(0, -_sum(db, BILLED_ON + " <= :d", a=a, d=closes))
     unbilled = not_counted = 0
     lines, fees = [], []
     for p in db.execute(text(PLANS + " where p.account_id = :a"), {"a": a}).mappings():

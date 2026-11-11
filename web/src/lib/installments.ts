@@ -40,3 +40,12 @@ export function planDates(plan: PlanForm, purchaseDate: string, statementDay: nu
   const firstStatement = statements.includes(plan.firstStatement) ? plan.firstStatement : statements[0] ?? ''
   return { convertedOn, firstStatement, statements }
 }
+
+// A purchase billed on the next statement counts from the day after its own statement closes (within a month of its
+// date, as the server asks): `closes` is the statement it lands on.
+export function nextStatement(purchaseDate: string, statementDay: number): { postedOn: string; closes: string } {
+  const [own, closes] = statementsFrom(purchaseDate, statementDay, 2)
+  const after = new Date(`${own}T00:00:00Z`)
+  after.setUTCDate(after.getUTCDate() + 1)
+  return { postedOn: after.toISOString().slice(0, 10), closes }
+}
