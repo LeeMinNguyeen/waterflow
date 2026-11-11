@@ -55,6 +55,8 @@ from urllib.parse import unquote
 from psycopg import Error as PsycopgError
 from psycopg.conninfo import conninfo_to_dict, make_conninfo
 
+from app.core.hardening import hide_environment
+
 # Each is dumped if it exists.
 SCHEMAS = ("public", "waterflow")
 KEEP = timedelta(days=5, hours=12)        # about 6 days, counting the newest
@@ -146,7 +148,7 @@ def run_backup(database_url: str, backup_dir: str) -> tuple[str, dict[str, int],
         raise BackupError(f"BACKUP_DIR {backup_dir} is not a directory: is the volume mounted?")
     pg_dump, pg_restore = _tools()
     dsn, password = _split(database_url)
-    env = dict(os.environ, PGAPPNAME="waterflow-backup")
+    env = {k: v for k, v in os.environ.items() if not k.endswith("DATABASE_URL")} | {"PGAPPNAME": "waterflow-backup"}
     # TLS as the address says (?sslmode=require for a database across the internet), else libpq's default, as in the
     # rest of the server: forcing it fails on a plain local Postgres.
     if password:
@@ -157,7 +159,7 @@ def run_backup(database_url: str, backup_dir: str) -> tuple[str, dict[str, int],
         local = os.path.join(tmp, name)
         _run([pg_dump, "--format=custom", "--no-password", *[f"--schema={s}" for s in SCHEMAS],
               f"--file={local}", f"--dbname={dsn}"], env)
-        toc = _run([pg_restore, "--list", local], env)
+        toc = _run([pg_restore, "--list", local], {k: v for k, v in env.items() if k != "PGPASSWORD"})
         tables = {s: toc.count(f" TABLE DATA {s} ") for s in SCHEMAS}
         if not tables["public"]:
             raise BackupError("the dump has no tables in schema public: wrong database?")
@@ -179,6 +181,7 @@ def run_backup(database_url: str, backup_dir: str) -> tuple[str, dict[str, int],
 
 
 def main() -> int:
+    hide_environment()
     url, backup_dir = os.environ.get("BACKUP_DATABASE_URL", ""), os.environ.get("BACKUP_DIR", "")
     try:
         if not url or not backup_dir:
