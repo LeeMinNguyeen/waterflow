@@ -1054,6 +1054,79 @@ def test_a_tar_that_isnt_exactly_a_backup_and_its_list_is_refused(client, admin,
     assert alone.status_code == 202, alone.text
 
 
+def test_a_tar_with_extended_headers_is_refused_before_it_is_parsed(client, admin, restore_dir, a_backup, monkeypatch):
+    """Pax, long-name and sparse members run parsing code that a crafted file can make slow, huge or crash: only plain
+    file headers get as far as tarfile."""
+    import io
+    import tarfile
+    from app.api.routes.v1 import restore
+    backups, _ = restore_dir
+    _, token = admin
+    name, data = "waterflow-20261102T190000Z.dump", a_backup.read_bytes()
+
+    def packed(fmt, **more):
+        out = io.BytesIO()
+        with tarfile.open(fileobj=out, mode="w:", format=fmt) as tar:
+            info = tarfile.TarInfo(name)
+            info.size = len(data)
+            for k, v in more.items():
+                setattr(info, k, v)
+            tar.addfile(info, io.BytesIO(data))
+        return out.getvalue()
+
+    crafted = (packed(tarfile.PAX_FORMAT, pax_headers={"GNU.sparse.map": "a,b,c"}),
+               packed(tarfile.PAX_FORMAT, pax_headers={"comment": "x" * 200}),
+               packed(tarfile.GNU_FORMAT, linkname="l" * 200, type=tarfile.SYMTYPE, size=0))
+    plain = packed(tarfile.USTAR_FORMAT)
+    crafted += (plain[:124] + b"00000000009\0" + plain[136:],)             # a size that isn't octal
+    opened = []
+    real = tarfile.open
+    monkeypatch.setattr(restore.tarfile, "open", lambda *a, **k: (opened.append(1), real(*a, **k))[1])
+    for bad in crafted:
+        r = upload(client, "/v1/admin/restore", token, bad, password=PASSWORD, confirm="true")
+        assert (r.status_code, r.json()) == (422, {"detail": "restore_invalid"})
+    assert not opened and list((backups / "restore").iterdir()) == []
+    assert upload(client, "/v1/admin/restore", token, plain, password=PASSWORD, confirm="true").status_code == 202
+
+
+def test_a_refused_tar_leaves_nothing_and_its_parts_have_their_own_limits(client, admin, restore_dir, a_backup, monkeypatch):
+    import tarfile
+    from app.api.routes.v1 import restore
+    backups, _ = restore_dir
+    _, token = admin
+    listed = ("purged_accounts.jsonl", b'{"user_id": "11111111-1111-1111-1111-111111111111"}\n', tarfile.REGTYPE)
+    no_backup = _tar(("waterflow-20261102T190000Z.dump", b"PGDMP not really", tarfile.REGTYPE), listed)
+    r = upload(client, "/v1/admin/restore", token, no_backup, password=PASSWORD, confirm="true")
+    assert (r.status_code, r.json()) == (422, {"detail": "restore_invalid"})
+    assert list((backups / "restore").iterdir()) == []
+
+    # A backup right at the limit still restores from its download, which is a little bigger; its list has its own limit.
+    dump = ("waterflow-20261102T190000Z.dump", a_backup.read_bytes(), tarfile.REGTYPE)
+    monkeypatch.setattr(restore, "MAX_DUMP", a_backup.stat().st_size)
+    monkeypatch.setattr(restore, "MAX_PURGED", len(listed[1]))
+    too_long = _tar(dump, (listed[0], listed[1] + b"\n", tarfile.REGTYPE))
+    r = upload(client, "/v1/admin/restore", token, too_long, password=PASSWORD, confirm="true")
+    assert (r.status_code, r.json()) == (422, {"detail": "restore_invalid"})
+    assert list((backups / "restore").iterdir()) == []
+    r = upload(client, "/v1/admin/restore", token, a_backup.read_bytes() + b"x", password=PASSWORD, confirm="true")
+    assert (r.status_code, r.json()) == (413, {"detail": "restore_too_large"})
+    assert upload(client, "/v1/admin/restore", token, _tar(dump, listed), password=PASSWORD, confirm="true").status_code == 202
+
+
+def test_downloading_a_backup_asks_for_the_two_factor_code(client, admin, restore_dir, a_backup):
+    backups, _ = restore_dir
+    _, token = admin
+    (backups / "waterflow-20261102T190000Z.dump").write_bytes(a_backup.read_bytes())
+    secret = client.post("/v1/auth/two-factor/setup", headers=bearer(token)).json()["secret"]
+    client.post("/v1/auth/two-factor/enable", headers=bearer(token), json={"secret": secret, "code": totp(secret)})
+    url = "/v1/admin/backups/waterflow-20261102T190000Z.dump/download"
+    assert client.post(url, headers=bearer(token), json={"password": PASSWORD}).json() == {"detail": "code_required"}
+    assert client.post(url, headers=bearer(token), json={"password": PASSWORD, "code": "000000"}).json() == {"detail": "invalid_code"}
+    code = totp(secret)
+    assert client.post(url, headers=bearer(token), json={"password": PASSWORD, "code": code}).status_code == 200
+    assert client.post(url, headers=bearer(token), json={"password": PASSWORD, "code": code}).json() == {"detail": "invalid_code"}
+
+
 def test_restoring_asks_for_the_two_factor_code(client, admin, restore_dir, a_backup):
     _, token = admin
     secret = client.post("/v1/auth/two-factor/setup", headers=bearer(token)).json()["secret"]

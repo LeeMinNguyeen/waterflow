@@ -472,8 +472,6 @@ function Users({ selfId }: { selfId: string }) {
   )
 }
 
-// Replaces everything on this server with a backup: the API checks the file and stops the server, which restores it
-// as it starts again. The restored database has the sessions of the backup's day, so this browser signs in again.
 type BackupFile = { name: string; size: number; taken_at: string }
 
 // The backups folder: each one downloads as one file that restores on its own, after the password (and code) again.
@@ -559,6 +557,8 @@ function Backups({ timezone }: { timezone: string }) {
   )
 }
 
+// Replaces everything on this server with a backup: the API checks the file and stops the server, which restores it
+// as it starts again. The restored database has the sessions of the backup's day, so this browser signs in again.
 function Restore() {
   const { t } = useTranslation()
   const errorText = useErrorText()

@@ -63,12 +63,33 @@ def _write(source, to: Path, size: int) -> None:
         raise HTTPException(422, "restore_invalid")
 
 
+def _plain_tar(path: Path) -> bool | None:
+    """False: not a tar. True: a tar of at most two plain files. None: any other tar. Read by hand, because tarfile
+    runs its extended-header parsing (pax records, long names, sparse maps) on whatever a file claims, before any
+    check here: a crafted upload could make that slow, take gigabytes of memory, or fail in ways it doesn't name."""
+    with open(path, "rb") as f:
+        for member in range(3):
+            header = f.read(512)
+            if member == 0 and header[257:262] != b"ustar":
+                return False
+            if not header.strip(b"\0"):
+                return member > 0
+            size = header[124:136].strip(b" \0")
+            if len(header) < 512 or header[156:157] not in (b"0", b"\0") or not size or size.strip(b"01234567"):
+                return None
+            f.seek((int(size, 8) + 511) // 512 * 512, os.SEEK_CUR)
+    return None
+
+
 def _unpack(partial: Path, where: Path) -> bool:
     """A downloaded backup (.tar): exactly a backup and, if there, the list of accounts deleted for good, plain files
     under their own names; nothing is extracted by its own path. The backup replaces the upload. True when the list
     came with it."""
-    if not tarfile.is_tarfile(partial):
+    plain = _plain_tar(partial)
+    if plain is False:
         return False
+    if plain is None:
+        raise HTTPException(422, "restore_invalid")
     dump, listed = where / "upload.dump.partial", where / "upload.purged.partial"
     seen = {}
     try:
@@ -81,7 +102,7 @@ def _unpack(partial: Path, where: Path) -> bool:
                     raise HTTPException(422, "restore_invalid")
                 seen[kind] = True
                 _write(tar.extractfile(m), dump if kind == "dump" else listed, m.size)
-    except tarfile.TarError:
+    except (tarfile.TarError, ValueError):
         raise HTTPException(422, "restore_invalid") from None
     if "dump" not in seen:
         raise HTTPException(422, "restore_invalid")
@@ -95,22 +116,20 @@ def _leave_request(dump: UploadFile, purged: UploadFile | None, background: Back
     where = restore.folder(_backup_dir())
     where.mkdir(parents=True, exist_ok=True)
     partial = where / "upload.partial"
-    _copy(dump, partial, MAX_DUMP)
+    leftovers = (partial, where / "upload.dump.partial", where / "upload.purged.partial", where / restore.PURGED)
+    _copy(dump, partial, MAX_DUMP + MAX_PURGED + 2**20)            # a download is a little bigger than its backup
     (where / restore.PURGED).unlink(missing_ok=True)
     try:
         listed = _unpack(partial, where)
-    except HTTPException:
-        for f in (partial, where / "upload.dump.partial", where / "upload.purged.partial", where / restore.PURGED):
-            f.unlink(missing_ok=True)
-        raise
-    try:
+        if partial.stat().st_size > MAX_DUMP:
+            raise HTTPException(413, "restore_too_large")
         restore.check(partial)
-    except restore.TooNew:
-        partial.unlink()
-        raise HTTPException(409, "restore_too_new") from None
-    except restore.RestoreError:
-        partial.unlink()
-        raise HTTPException(422, "restore_invalid") from None
+    except (HTTPException, restore.RestoreError) as e:
+        for f in leftovers:
+            f.unlink(missing_ok=True)
+        if isinstance(e, HTTPException):
+            raise
+        raise HTTPException(409, "restore_too_new") if isinstance(e, restore.TooNew) else HTTPException(422, "restore_invalid") from None
     if purged is not None and not listed:
         _copy(purged, where / restore.PURGED, MAX_PURGED)
     os.replace(partial, where / restore.REQUEST)
@@ -202,7 +221,7 @@ def download_backup(name: str, proof: Proof, background: BackgroundTasks, caller
     fd, out = tempfile.mkstemp(suffix=".tar")
     os.close(fd)
     try:
-        with tarfile.open(out, mode="w:") as tar:
+        with tarfile.open(out, mode="w:", format=tarfile.USTAR_FORMAT) as tar:         # no extended headers: see _plain_tar
             tar.add(path, arcname=path.name)
             info = tarfile.TarInfo(restore.PURGED)
             data = purged.read_bytes() if purged.is_file() else b""
