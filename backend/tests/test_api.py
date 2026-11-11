@@ -451,6 +451,82 @@ def test_open_statement(client, database):
     assert client.get(f"{base}/accounts/{card}/bills", headers=auth(signed_up(client))).status_code == 404
 
 
+def test_a_card_purchase_billed_on_the_next_statement(client, database):
+    """R-ACC-10: a card purchase can be billed on the next statement (the bank posted it after the statement closed):
+    it leaves the statement its date falls in and is on the one after; the card's balance doesn't change; only an
+    expense on a card with a statement day takes it, within a month of its date; a purchase paid in installments is
+    billed by its plan; the edit history keeps it and a restored purchase gets it back."""
+    from datetime import date as d
+    from types import SimpleNamespace
+
+    from sqlalchemy.orm import Session
+
+    from app.domain.bills import bills_for
+    u = signed_up(client)
+    bid, accts = new_book_with_accounts(client, u)
+    base = f"/v1/books/{bid}"
+    r = client.post(f"{base}/accounts", headers=auth(u), json={"id": str(uuid.uuid4()), "name": "Card", "kind": "credit_card",
+                    "opening_balance": 0, "opened_on": "2026-08-01", "statement_day": 1, "payment_due_day": 15})
+    assert r.status_code == 201, r.text
+    card = r.json()["id"]
+
+    def txn(type_, day, account, amount, **more):
+        return client.post(f"{base}/transactions", headers=auth(u), json={
+            "id": str(uuid.uuid4()), "type": type_, "occurred_on": day, "entries": [{"account_id": account, "amount": amount}], **more})
+
+    def bills(today):
+        a = SimpleNamespace(**next(x for x in client.get(f"{base}/accounts", headers=auth(u)).json() if x["id"] == card))
+        a.id = uuid.UUID(a.id)
+        with Session(database) as s:
+            return [(b.statement_open, b.period_end, b.amount, b.owed_now) for b in bills_for(s, a, today)]
+
+    assert txn("expense", "2026-10-20", card, -100_000).status_code == 201
+    late = txn("expense", "2026-10-31", card, -40_000, posted_on="2026-11-02")
+    assert late.status_code == 201 and late.json()["posted_on"] == "2026-11-02"
+    late = late.json()
+    # The statement closing 1 Nov leaves the late purchase to the next one; what the card owes counts it all along.
+    assert bills(d(2026, 10, 31)) == [(True, d(2026, 11, 1), 100_000, 140_000)]
+    assert bills(d(2026, 11, 5)) == [(False, d(2026, 11, 1), 100_000, 140_000), (True, d(2026, 12, 1), 40_000, 140_000)]
+
+    def put(**change):
+        body = {"type": "expense", "occurred_on": "2026-10-31", "entries": [{"account_id": card, "amount": -40_000}],
+                "version": client.get(f"{base}/transactions/{late['id']}", headers=auth(u)).json()["version"], **change}
+        return client.put(f"{base}/transactions/{late['id']}", headers=auth(u), json=body)
+
+    # Unticked, it's back on the statement of its date; ticked again, it moves again.
+    assert put().json()["posted_on"] is None
+    assert bills(d(2026, 11, 5)) == [(False, d(2026, 11, 1), 140_000, 140_000), (True, d(2026, 12, 1), 0, 140_000)]
+    assert put(posted_on="2026-11-02").json()["posted_on"] == "2026-11-02"
+    history = client.get(f"{base}/transactions/{late['id']}/history", headers=auth(u)).json()
+    assert [h.get("posted_on") for h in history] == ["2026-11-02", None, "2026-11-02"]
+
+    # Refused: on or before its date, more than a month later, not an expense, not on a card with a statement day.
+    for bad in (put(posted_on="2026-10-31"), put(posted_on="2026-10-30"), put(posted_on="2026-12-02"),
+                txn("refund", "2026-10-31", card, 40_000, posted_on="2026-11-02"),
+                txn("expense", "2026-10-31", accts["Cash"], -40_000, posted_on="2026-11-02")):
+        assert (bad.status_code, bad.json()) == (422, {"detail": "invalid"}), bad.text
+
+    # Paid in installments, the plan says which statements bill it.
+    r = client.post(f"{base}/installments", headers=auth(u), json={"id": str(uuid.uuid4()), "transaction_id": late["id"], "months": 2})
+    assert r.status_code == 201 and r.json()["first_statement"] == "2026-11-01"
+    assert bills(d(2026, 11, 5)) == [(False, d(2026, 11, 1), 120_000, 140_000), (True, d(2026, 12, 1), 20_000, 140_000)]
+    client.delete(f"{base}/installments/{r.json()['id']}?version={r.json()['version']}", headers=auth(u))
+    assert bills(d(2026, 11, 5))[0][2] == 100_000
+
+    # Deleted and restored, it's still on the next statement.
+    version = client.get(f"{base}/transactions/{late['id']}", headers=auth(u)).json()["version"]
+    assert client.delete(f"{base}/transactions/{late['id']}?version={version}", headers=auth(u)).status_code == 204
+    assert client.post(f"{base}/transactions/{late['id']}/restore", headers=auth(u)).status_code == 200
+    assert client.get(f"{base}/transactions/{late['id']}", headers=auth(u)).json()["posted_on"] == "2026-11-02"
+
+    import csv
+    import io
+    import zipfile
+    z = zipfile.ZipFile(io.BytesIO(client.get("/v1/me/export", headers=auth(u)).content))
+    rows = list(csv.DictReader(io.StringIO(z.read("transactions.csv").decode("utf-8-sig"))))
+    assert sorted((r["Date"], r["Billed from"]) for r in rows if r["Account"] == "Card") == [("2026-10-20", ""), ("2026-10-31", "2026-11-02")]
+
+
 def test_installment_plans(client, database):
     """R-ACC-8: a card purchase paid in installments stays one expense for its full amount; each statement bills one
     installment per plan, the fee at once or split into the installments, nothing charged twice; ending early bills

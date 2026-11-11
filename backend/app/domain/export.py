@@ -87,6 +87,7 @@ VI = {
     "Archived": "Đã lưu trữ", "Period": "Kỳ", "Starts": "Bắt đầu", "Ends": "Kết thúc",
     "They owe you": "Họ nợ bạn", "You owe them": "Bạn nợ họ", "From": "Từ", "To": "Sang", "Rate": "Tỷ giá",
     "From date": "Áp dụng từ ngày", "Transaction date": "Ngày giao dịch", "Transaction time": "Giờ giao dịch",
+    "Billed from": "Tính vào sao kê từ ngày",
     "Version": "Phiên bản",
     "Card": "Thẻ", "Purchase": "Khoản mua", "Months": "Số tháng", "Converted on": "Ngày chuyển trả góp",
     "First statement": "Kỳ sao kê đầu tiên", "Fee": "Phí", "Fee split into installments": "Phí chia vào từng kỳ",
@@ -199,7 +200,7 @@ def build_export(db: Session) -> bytes:
 
     txns = _rows(db, """
         select b.name as book, t.occurred_on, to_char(t.occurred_time, 'HH24:MI') as occurred_time, t.type::text as type,
-               c.name as category, t.payee, t.note,
+               t.posted_on, c.name as category, t.payee, t.note,
                uc.name as added_by, t.created_at, um.name as edited_by, t.modified_at, t.version,
                (select json_agg(json_build_object('account', a.name, 'amount', e.amount,
                                                   'currency', a.currency, 'mu', cur.minor_unit) order by e.amount)
@@ -225,10 +226,10 @@ def build_export(db: Session) -> bytes:
             "Received currency": second and second["currency"],
             "Added by": who(x["added_by"]), "Added at": x["created_at"],
             "Last edited by": who(x["edited_by"]) if x["version"] > 1 else None,
-            "Last edited at": x["modified_at"] if x["version"] > 1 else None})
+            "Last edited at": x["modified_at"] if x["version"] > 1 else None, "Billed from": x["posted_on"]})
     out("transactions.csv", rows, ["Book", "Date", "Time", "Type", "Category", "Payee", "Note", "Account", "Amount",
                                    "Currency", "To account", "Amount received", "Received currency",
-                                   "Added by", "Added at", "Last edited by", "Last edited at"])
+                                   "Added by", "Added at", "Last edited by", "Last edited at", "Billed from"])
 
     categories = _rows(db, """
         select b.name as book, c.name, p.name as parent, c.kind, c.color, c.archived_at
