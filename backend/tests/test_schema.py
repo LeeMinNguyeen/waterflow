@@ -944,15 +944,16 @@ def test_each_job_gets_only_its_own_login(monkeypatch):
 
 
 @pytest.mark.skipif(not sys.platform.startswith("linux") or os.geteuid() == 0, reason="Linux's /proc, read as another process of the same user")
-def test_a_process_holding_a_database_password_hides_its_environment():
-    """The launcher, the scheduler and the backup hold the owner's login in their environment: another process of the
-    same user (the API) can't read it from /proc."""
+def test_a_process_holding_the_owners_login_hides_its_environment():
+    """The launcher, the scheduler and the backup hold the owner's login in their environment: once they've started,
+    another process of the same user (the API) can't read it from /proc."""
     import subprocess
+    backend = Path(__file__).parent.parent
     code = ("import sys, time\n"
             "from app.core.hardening import hide_environment\n"
             "print('before', flush=True); sys.stdin.readline()\n"
             "hide_environment(); print('after', flush=True); time.sleep(30)\n")
-    p = subprocess.Popen([sys.executable, "-c", code], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True,
+    p = subprocess.Popen([sys.executable, "-c", code], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, cwd=backend,
                          env={**os.environ, "BACKUP_DATABASE_URL": "postgresql://owner:secret@db/postgres"})
     try:
         assert p.stdout.readline().strip() == "before"
@@ -960,6 +961,18 @@ def test_a_process_holding_a_database_password_hides_its_environment():
         p.stdin.write("\n")
         p.stdin.flush()
         assert p.stdout.readline().strip() == "after"
+        with pytest.raises(PermissionError):
+            Path(f"/proc/{p.pid}/environ").read_bytes()
+    finally:
+        p.kill()
+        p.wait()
+
+    # The scheduler itself: by its first look at a database that isn't there, it's hidden.
+    env = {**os.environ, "BACKUP_DATABASE_URL": "postgresql://owner:secret@db/postgres",
+           "PURGE_DATABASE_URL": "postgresql+psycopg://purge@127.0.0.1:1/none?connect_timeout=2"}
+    p = subprocess.Popen([sys.executable, "-m", "app.jobs.scheduler"], stdout=subprocess.PIPE, text=True, cwd=backend, env=env)
+    try:
+        assert p.stdout.readline().startswith("scheduler: ")
         with pytest.raises(PermissionError):
             Path(f"/proc/{p.pid}/environ").read_bytes()
     finally:

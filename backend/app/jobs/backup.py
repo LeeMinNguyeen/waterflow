@@ -159,7 +159,7 @@ def run_backup(database_url: str, backup_dir: str) -> tuple[str, dict[str, int],
         local = os.path.join(tmp, name)
         _run([pg_dump, "--format=custom", "--no-password", *[f"--schema={s}" for s in SCHEMAS],
               f"--file={local}", f"--dbname={dsn}"], env)
-        toc = _run([pg_restore, "--list", local], env)
+        toc = _run([pg_restore, "--list", local], {k: v for k, v in env.items() if k != "PGPASSWORD"})
         tables = {s: toc.count(f" TABLE DATA {s} ") for s in SCHEMAS}
         if not tables["public"]:
             raise BackupError("the dump has no tables in schema public: wrong database?")
