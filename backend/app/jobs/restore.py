@@ -175,7 +175,7 @@ def _apply(url: str, path: str, purged: Path | None, purge_log: str, sign_out: b
         _sign_everyone_out(url)
     if purged and purged.exists():
         have = set(Path(purge_log).read_text().split("\n")) if os.path.exists(purge_log) else set()
-        lines = [x for x in dict.fromkeys(purged.read_text().replace("\r", "").split("\n")) if x.strip() and x not in have]
+        lines = [x for x in dict.fromkeys(purged.read_text().split("\n")) if x.strip() and x not in have]
         if lines:
             with open(purge_log, "a") as log:
                 log.write("\n".join(lines) + "\n")

@@ -5,7 +5,6 @@ BACKUP_DIR/restore/ and stops the server; the launcher restores it as the server
 import io
 import json
 import os
-import shutil
 import signal
 import tarfile
 import tempfile
@@ -55,83 +54,66 @@ def _copy(upload: UploadFile, to: Path, limit: int) -> None:
         raise HTTPException(413, "restore_too_large")
 
 
-def _write(source, to: Path, size: int) -> None:
-    fd = os.open(to, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "wb") as out:
-        shutil.copyfileobj(source, out)
-    if to.stat().st_size != size:
-        raise HTTPException(422, "restore_invalid")
-
-
-def _plain_tar(path: Path) -> bool | None:
-    """False: not a tar. True: a tar of at most two plain files. None: any other tar. Read by hand, because tarfile
-    runs its extended-header parsing (pax records, long names, sparse maps) on whatever a file claims, before any
-    check here: a crafted upload could make that slow, take gigabytes of memory, or fail in ways it doesn't name."""
-    with open(path, "rb") as f:
+def _unpack(partial: Path, where: Path) -> bool | None:
+    """A downloaded backup (.tar) becomes its two parts, upload.dump.partial and, if there, upload.purged.partial: True
+    with the list, False without. None when the upload isn't a tar. Read by hand, plain file headers only: a tar
+    library also parses extended headers (pax records, long names, sparse maps), which a crafted upload can make slow,
+    huge or crash. Names are only compared, never used as paths."""
+    parts = {"dump": where / "upload.dump.partial", "purged": where / "upload.purged.partial"}
+    seen = set()
+    with open(partial, "rb") as f:
         for member in range(3):
             header = f.read(512)
             if member == 0 and header[257:262] != b"ustar":
-                return False
-            if not header.strip(b"\0"):
-                return member > 0
-            size = header[124:136].strip(b" \0")
-            if len(header) < 512 or header[156:157] not in (b"0", b"\0") or not size or size.strip(b"01234567"):
                 return None
-            f.seek((int(size, 8) + 511) // 512 * 512, os.SEEK_CUR)
-    return None
-
-
-def _unpack(partial: Path, where: Path) -> bool:
-    """A downloaded backup (.tar): exactly a backup and, if there, the list of accounts deleted for good, plain files
-    under their own names; nothing is extracted by its own path. The backup replaces the upload. True when the list
-    came with it."""
-    plain = _plain_tar(partial)
-    if plain is False:
-        return False
-    if plain is None:
-        raise HTTPException(422, "restore_invalid")
-    dump, listed = where / "upload.dump.partial", where / "upload.purged.partial"
-    seen = {}
-    try:
-        with tarfile.open(partial, mode="r:") as tar:              # uncompressed only: no decompression bomb
-            for i, m in enumerate(tar):
-                is_dump = bool(backup.DUMP_NAME.fullmatch(m.name)) and not m.name.endswith(".partial")
-                kind = "dump" if is_dump else "purged" if m.name == restore.PURGED else None
-                if i >= 2 or kind is None or kind in seen or not m.isreg() or \
-                        m.size > (MAX_DUMP if kind == "dump" else MAX_PURGED):
-                    raise HTTPException(422, "restore_invalid")
-                seen[kind] = True
-                _write(tar.extractfile(m), dump if kind == "dump" else listed, m.size)
-    except (tarfile.TarError, ValueError):
-        raise HTTPException(422, "restore_invalid") from None
+            if not header.strip(b"\0"):
+                break
+            name, size = header[:100].rstrip(b"\0").decode("ascii", "replace"), header[124:136].rstrip(b" \0")
+            kind = "dump" if (m := backup.DUMP_NAME.fullmatch(name)) and not m[2] else "purged" if name == restore.PURGED else None
+            if member == 2 or len(header) < 512 or header[156:157] not in (b"0", b"\0") or header[345:500].strip(b"\0") \
+                    or not size or size.strip(b"01234567") or kind is None or kind in seen \
+                    or int(size, 8) > (MAX_DUMP if kind == "dump" else MAX_PURGED):
+                raise HTTPException(422, "restore_invalid")
+            seen.add(kind)
+            left = int(size, 8)
+            fd = os.open(parts[kind], os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "wb") as out:
+                while left and (chunk := f.read(min(left, 2**20))):
+                    out.write(chunk)
+                    left -= len(chunk)
+            if left:
+                raise HTTPException(422, "restore_invalid")
+            f.seek(-int(size, 8) % 512, os.SEEK_CUR)
     if "dump" not in seen:
         raise HTTPException(422, "restore_invalid")
-    os.replace(dump, partial)
-    if "purged" in seen:
-        os.replace(listed, where / restore.PURGED)
     return "purged" in seen
 
 
 def _leave_request(dump: UploadFile, purged: UploadFile | None, background: BackgroundTasks) -> Response:
     where = restore.folder(_backup_dir())
     where.mkdir(parents=True, exist_ok=True)
-    partial = where / "upload.partial"
-    leftovers = (partial, where / "upload.dump.partial", where / "upload.purged.partial", where / restore.PURGED)
-    _copy(dump, partial, MAX_DUMP + MAX_PURGED + 2**20)            # a download is a little bigger than its backup
-    (where / restore.PURGED).unlink(missing_ok=True)
+    partial, unpacked, listed = where / "upload.partial", where / "upload.dump.partial", where / "upload.purged.partial"
+    for f in (unpacked, listed):                                   # from an upload the server stopped in the middle of
+        f.unlink(missing_ok=True)
     try:
-        listed = _unpack(partial, where)
-        if partial.stat().st_size > MAX_DUMP:
+        _copy(dump, partial, MAX_DUMP + MAX_PURGED + 2**20)        # a download is a little bigger than its backup
+        with_list = _unpack(partial, where)
+        if with_list is not None:
+            os.replace(unpacked, partial)
+        elif partial.stat().st_size > MAX_DUMP:
             raise HTTPException(413, "restore_too_large")
         restore.check(partial)
+        if purged is not None and not with_list:
+            _copy(purged, listed, MAX_PURGED)
     except (HTTPException, restore.RestoreError) as e:
-        for f in leftovers:
+        for f in (partial, unpacked, listed):
             f.unlink(missing_ok=True)
         if isinstance(e, HTTPException):
             raise
         raise HTTPException(409, "restore_too_new") if isinstance(e, restore.TooNew) else HTTPException(422, "restore_invalid") from None
-    if purged is not None and not listed:
-        _copy(purged, where / restore.PURGED, MAX_PURGED)
+    (where / restore.PURGED).unlink(missing_ok=True)
+    if listed.exists():
+        os.replace(listed, where / restore.PURGED)
     os.replace(partial, where / restore.REQUEST)
     (where / restore.STATUS).write_text(json.dumps({"status": "requested", "at": datetime.now(timezone.utc).isoformat(),
                                                     "detail": None}))
@@ -221,12 +203,13 @@ def download_backup(name: str, proof: Proof, background: BackgroundTasks, caller
     fd, out = tempfile.mkstemp(suffix=".tar")
     os.close(fd)
     try:
-        with tarfile.open(out, mode="w:", format=tarfile.USTAR_FORMAT) as tar:         # no extended headers: see _plain_tar
-            tar.add(path, arcname=path.name)
-            info = tarfile.TarInfo(restore.PURGED)
+        # Plain ustar headers with nothing of this machine's users in them: what _unpack reads.
+        with tarfile.open(out, mode="w:", format=tarfile.USTAR_FORMAT) as tar, open(path, "rb") as dump:
             data = purged.read_bytes() if purged.is_file() else b""
-            info.size, info.mtime = len(data), int(datetime.now(timezone.utc).timestamp())
-            tar.addfile(info, io.BytesIO(data))
+            for member, size, source in ((path.name, os.fstat(dump.fileno()).st_size, dump), (restore.PURGED, len(data), io.BytesIO(data))):
+                info = tarfile.TarInfo(member)
+                info.size, info.mtime = size, int(datetime.now(timezone.utc).timestamp())
+                tar.addfile(info, source)
     except BaseException:
         os.unlink(out)
         raise

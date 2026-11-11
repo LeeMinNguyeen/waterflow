@@ -1079,6 +1079,9 @@ def test_a_tar_with_extended_headers_is_refused_before_it_is_parsed(client, admi
                packed(tarfile.GNU_FORMAT, linkname="l" * 200, type=tarfile.SYMTYPE, size=0))
     plain = packed(tarfile.USTAR_FORMAT)
     crafted += (plain[:124] + b"00000000009\0" + plain[136:],)             # a size that isn't octal
+    hidden = packed(tarfile.PAX_FORMAT, pax_headers={"comment": "x" * 200})
+    size = b"\0" + b"%010o" % len(hidden) + b"\0"                          # read as 0 by tarfile, as the length by a strip
+    crafted += (plain[:124] + size + plain[136:512] + hidden + b"\0" * 1024,)
     opened = []
     real = tarfile.open
     monkeypatch.setattr(restore.tarfile, "open", lambda *a, **k: (opened.append(1), real(*a, **k))[1])
@@ -1111,6 +1114,29 @@ def test_a_refused_tar_leaves_nothing_and_its_parts_have_their_own_limits(client
     r = upload(client, "/v1/admin/restore", token, a_backup.read_bytes() + b"x", password=PASSWORD, confirm="true")
     assert (r.status_code, r.json()) == (413, {"detail": "restore_too_large"})
     assert upload(client, "/v1/admin/restore", token, _tar(dump, listed), password=PASSWORD, confirm="true").status_code == 202
+
+
+def test_a_refused_upload_leaves_an_accepted_request_whole(client, admin, restore_dir, a_backup, monkeypatch):
+    import tarfile
+    from app.api.routes.v1 import restore
+    backups, _ = restore_dir
+    _, token = admin
+    listed = ("purged_accounts.jsonl", b'{"user_id": "11111111-1111-1111-1111-111111111111"}\n', tarfile.REGTYPE)
+    dump = ("waterflow-20261102T190000Z.dump", a_backup.read_bytes(), tarfile.REGTYPE)
+    (backups / "restore").mkdir(exist_ok=True)
+    (backups / "restore" / "upload.purged.partial").write_text("left by an upload the server stopped in the middle of")
+    assert upload(client, "/v1/admin/restore", token, a_backup.read_bytes(), password=PASSWORD, confirm="true").status_code == 202
+    assert sorted(f.name for f in (backups / "restore").iterdir()) == ["request.dump", "status"]
+    assert upload(client, "/v1/admin/restore", token, _tar(dump, listed), password=PASSWORD, confirm="true").status_code == 202
+    waiting = {f.name: f.read_bytes() for f in (backups / "restore").iterdir() if f.name != "status"}
+    assert waiting.keys() == {"request.dump", "purged_accounts.jsonl"}
+    refused = upload(client, "/v1/admin/restore", token, _tar(listed), password=PASSWORD, confirm="true")
+    assert refused.status_code == 422
+    monkeypatch.setattr(restore, "MAX_PURGED", 10)
+    too_long = client.post("/v1/admin/restore", headers=bearer(token), data={"password": PASSWORD, "confirm": "true"},
+                           files={"file": ("waterflow.dump", a_backup.read_bytes()), "purged": ("purged_accounts.jsonl", b"x" * 11)})
+    assert (too_long.status_code, too_long.json()) == (413, {"detail": "restore_too_large"})
+    assert {f.name: f.read_bytes() for f in (backups / "restore").iterdir() if f.name != "status"} == waiting
 
 
 def test_downloading_a_backup_asks_for_the_two_factor_code(client, admin, restore_dir, a_backup):
