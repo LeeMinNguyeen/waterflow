@@ -147,6 +147,11 @@ def serve() -> None:
     def backup_first():
         backup_before_updating(admin, backup_dir)
 
+    # A stop asked for during a restore or the migrations waits for them to end, so a short one isn't cut midway
+    # (a long one still is, by the kill after the grace period: the restore then picks up on the next start).
+    stop_asked = []
+    signal.signal(signal.SIGTERM, lambda *_: stop_asked.append(True))
+    signal.signal(signal.SIGINT, lambda *_: stop_asked.append(True))
     restored = restore.restore_if_requested(admin, backup_dir)
     if restored:
         print(f"restore from the web app: {restored}", flush=True)
@@ -155,6 +160,9 @@ def serve() -> None:
           flush=True)
     if setup_code:
         print_setup_code(setup_code)
+    if stop_asked:
+        print("stopping, as asked while starting", flush=True)
+        sys.exit(0)
 
     base = {**_without_owner(), "SERVER_STARTED_AT": str(started), "LAUNCHER_PID": str(os.getpid())}
     api_env = {**base, "DATABASE_URL": login_url(admin, "api_login", passwords["api_login"])}
@@ -175,6 +183,8 @@ def serve() -> None:
             c.terminate()
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
+    if stop_asked:                       # asked between the check above and these
+        stop()
     while all(c.poll() is None for c in children):
         time.sleep(1)
     stop()

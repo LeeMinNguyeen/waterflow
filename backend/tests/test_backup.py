@@ -369,6 +369,115 @@ def test_a_failed_restore_puts_the_database_back(live, tmp_path, monkeypatch):
     assert not (backups / "restore" / "request.dump").exists()
 
 
+def test_a_restore_stopped_midway_puts_the_database_back(live, tmp_path):
+    """Killed after its safety backup, while loading (a restart, a reboot, a start-up timeout): the next start loads
+    the safety backup instead of backing up a half-empty database."""
+    from app.jobs import backup, restore as web_restore
+    name, dump = live
+    sql(name, "insert into users (id, username) values (gen_random_uuid(), 'after_backup')")
+    backups = requested(tmp_path, dump.read_bytes())
+    safety, _, _ = backup.run_backup(libpq_url(name), str(backups))
+    (backups / "restore" / "safety").write_text(Path(safety).name)
+    web_restore._empty(libpq_url(name))                            # stopped here, before the upload was loaded
+    assert web_restore.restore_if_requested(libpq_url(name), str(backups)) == "failed"
+    assert users(name) == ["after_backup", "backup_user"]
+    status = json.loads((backups / "restore" / "status").read_text())
+    assert status["status"] == "failed" and "interrupted" in status["detail"] and Path(safety).name in status["detail"]
+    assert not any((backups / "restore" / f).exists() for f in ("request.dump", "safety"))
+
+
+def test_a_stopped_restore_whose_safety_backup_is_gone_still_signs_everyone_out(live, tmp_path):
+    """Stopped after loading the upload, before signing out, and the backup from before it can't be found: the
+    upload's sessions must not work."""
+    from app.jobs import restore as web_restore
+    name, dump = live
+    who = "(select id from users where username = 'backup_user')"
+    sql(name, f"insert into sessions (token_sha256, user_id) values (sha256('s'), {who})")
+    backups = requested(tmp_path, dump.read_bytes())
+    (backups / "restore" / "safety").write_text("waterflow-20260101T000000Z.dump")       # not there
+    assert web_restore.restore_if_requested(libpq_url(name), str(backups)) == "failed"
+    assert sql(name, "select count(*) from sessions") == [(0,)]
+    assert "is missing" in json.loads((backups / "restore" / "status").read_text())["detail"]
+
+
+def test_a_failed_put_back_keeps_its_backup_until_a_restore_works(live, tmp_path, monkeypatch):
+    """Putting the database back failed: the backup to restore by hand stays out of pruning, and the next restore that
+    works lets it go."""
+    from app.jobs import backup, restore as web_restore
+    name, dump = live
+    backups = requested(tmp_path, dump.read_bytes())
+    safety, _, _ = backup.run_backup(libpq_url(name), str(backups))
+    (backups / "restore" / "safety").write_text(Path(safety).name)
+    real = web_restore._load
+    monkeypatch.setattr(web_restore, "_load", lambda url, path: (_ for _ in ()).throw(web_restore.RestoreError("")))
+    assert web_restore.restore_if_requested(libpq_url(name), str(backups)) == "failed"
+    assert "RestoreError" in json.loads((backups / "restore" / "status").read_text())["detail"]
+    assert (backups / "restore" / "keep").read_text().split() == [Path(safety).name]
+    assert not (backups / "restore" / "safety").exists()
+    from datetime import datetime, timedelta, timezone
+    assert Path(safety).name not in backup.prune(str(backups), datetime.now(timezone.utc) + timedelta(days=30))
+    monkeypatch.setattr(web_restore, "_load", real)
+    web_restore._empty(libpq_url(name))                        # the admin restores it by hand, then restores again
+    real(libpq_url(name), safety)
+    (backups / "restore" / "request.dump").write_bytes(dump.read_bytes())
+    assert web_restore.restore_if_requested(libpq_url(name), str(backups)) == "done"
+    assert not (backups / "restore" / "keep").exists()
+
+
+def test_every_failed_put_back_keeps_its_backup(live, tmp_path, monkeypatch):
+    """Two failed put-backs, with one restored by hand in between: both backups stay out of pruning."""
+    from datetime import datetime, timedelta, timezone
+    from app.jobs import backup, restore as web_restore
+    name, dump = live
+    backups = requested(tmp_path, dump.read_bytes())
+    real = web_restore._load
+    monkeypatch.setattr(web_restore, "_load", lambda url, path: (_ for _ in ()).throw(web_restore.RestoreError("")))
+    assert web_restore.restore_if_requested(libpq_url(name), str(backups)) == "failed"
+    first = (backups / "restore" / "keep").read_text().split()
+    assert len(first) == 1 and (backups / first[0]).exists()
+    web_restore._empty(libpq_url(name))
+    real(libpq_url(name), str(backups / first[0]))
+    (backups / "restore" / "request.dump").write_bytes(dump.read_bytes())
+    assert web_restore.restore_if_requested(libpq_url(name), str(backups)) == "failed"
+    kept = (backups / "restore" / "keep").read_text().split()
+    assert len(kept) == 2 and kept[0] == first[0]
+    assert not set(kept) & set(backup.prune(str(backups), datetime.now(timezone.utc) + timedelta(days=30)))
+
+
+def test_a_restore_names_its_safety_backup_until_it_ends(live, tmp_path, monkeypatch):
+    from app.jobs import restore as web_restore
+    name, dump = live
+    backups = requested(tmp_path, dump.read_bytes())
+    seen = []
+    real = web_restore._load
+    monkeypatch.setattr(web_restore, "_load", lambda url, path: (seen.append((backups / "restore" / "safety").read_text()),
+                                                                 real(url, path))[1])
+    assert web_restore.restore_if_requested(libpq_url(name), str(backups)) == "done"
+    assert seen and seen[0].startswith("waterflow-") and (backups / seen[0]).exists()
+    assert not (backups / "restore" / "safety").exists()
+
+
+def test_pruning_keeps_the_backup_a_restore_names(tmp_path):
+    from datetime import datetime, timezone
+    from app.jobs import backup
+    (tmp_path / "restore").mkdir()
+    for n in ("waterflow-20260101T000000Z.dump", "waterflow-20260102T000000Z.dump"):
+        (tmp_path / n).write_bytes(b"x")
+    (tmp_path / "restore" / "safety").write_text("waterflow-20260101T000000Z.dump")
+    assert backup.prune(str(tmp_path), datetime(2026, 11, 1, tzinfo=timezone.utc)) == ["waterflow-20260102T000000Z.dump"]
+    assert (tmp_path / "waterflow-20260101T000000Z.dump").exists()
+
+
+def test_pruning_keeps_every_backup_left_to_restore_by_hand(tmp_path):
+    from datetime import datetime, timezone
+    from app.jobs import backup
+    (tmp_path / "restore").mkdir()
+    names = [f"waterflow-2026010{d}T000000Z.dump" for d in (1, 2, 3)]
+    for n in names:
+        (tmp_path / n).write_bytes(b"x")
+    (tmp_path / "restore" / "keep").write_text(names[0] + "\n" + names[1] + "\n")
+    assert backup.prune(str(tmp_path), datetime(2026, 11, 1, tzinfo=timezone.utc)) == [names[2]]
+
 def test_a_backup_naming_roles_this_server_lacks_restores(live, tmp_path):
     """A backup from Supabase grants to and revokes from Supabase's own roles (anon, service_role...): on a server
     without them they're made, unable to sign in, instead of stopping the restore."""

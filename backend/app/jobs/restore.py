@@ -8,8 +8,12 @@ again, the launcher calls restore_if_requested() before the migrations:
     3. the upload's purged accounts added to PURGE_LOG, and every account in it purged again;
     4. if 2 or 3 fails, the backup from 1 loaded back.
 
+restore/safety names the backup from 1 from the moment it's made until the restore ends: a start that finds it
+(the server was stopped midway) loads that backup back instead of backing up a half-loaded database.
+
 restore/status records the outcome for Server admin. The migrations and the logins then run as on every start.
 """
+import contextlib
 import json
 import os
 import re
@@ -26,6 +30,8 @@ from app.jobs import account_deletion, backup, migrate
 REQUEST = "request.dump"
 PURGED = "purged_accounts.jsonl"
 STATUS = "status"
+SAFETY = "safety"
+KEEP = "keep"                            # names a backup a failed put-back left to restore by hand; kept from pruning
 ROLES = ("app_user", "account_purger", "fx_updater")
 
 
@@ -188,33 +194,95 @@ def _record(where: Path, status: str, detail: str | None = None) -> None:
     (where / STATUS).write_text(json.dumps({"status": status, "at": datetime.now(timezone.utc).isoformat(), "detail": detail}))
 
 
+def _name_safety(where: Path, before: str) -> None:
+    partial = where / (SAFETY + ".partial")
+    with open(partial, "w") as f:
+        f.write(os.path.basename(before))
+        f.flush()
+        os.fsync(f.fileno())             # a power cut mustn't leave the name and not its content
+    partial.replace(where / SAFETY)
+
+
+def _first_line(e: Exception, url: str) -> str:
+    text = backup._scrub(str(e), url).strip()
+    return text.splitlines()[0] if text else type(e).__name__
+
+
+def _keep(where: Path) -> None:
+    """The put-back failed: the backup to restore by hand stays out of pruning until a restore works."""
+    with contextlib.suppress(OSError), open(where / KEEP, "a") as f:
+        f.write((where / SAFETY).read_text().strip() + "\n")
+        f.flush()
+        os.fsync(f.fileno())
+
+
+def _resume(url: str, backup_dir: str, where: Path, purge_log: str) -> str:
+    """A restore stopped midway: the database may be half loaded, so the backup from before it goes back."""
+    name, loaded = "", False
+    print("a restore was interrupted: putting back the database from before it", flush=True)
+    try:
+        name = (where / SAFETY).read_text().strip()
+        m = backup.DUMP_NAME.fullmatch(name)
+        if not m or m[2] or not (Path(backup_dir) / name).is_file():
+            raise FileNotFoundError(name)
+        _empty(url)
+        _load(url, str(Path(backup_dir) / name))
+        loaded = True
+        _repurge(url, purge_log)
+        reason = f"the restore was interrupted; the database from before it is back ({name})"
+    except Exception as e:
+        if not loaded:
+            # The upload may be loaded: its sessions, devices, reset links and invites must not work.
+            with contextlib.suppress(Exception):
+                _sign_everyone_out(url)
+            _keep(where)
+        if isinstance(e, FileNotFoundError):
+            reason = f"the restore was interrupted, and the backup from before it ({name or 'unnamed'}) is missing: restore one by hand"
+        else:
+            reason = f"the restore was interrupted, and putting the database back failed ({_first_line(e, url)}): restore {name} by hand"
+    _record(where, "failed", reason)
+    print(f"restoring the uploaded backup failed: {reason}", flush=True)
+    return "failed"
+
+
 def restore_if_requested(url: str, backup_dir: str, purge_log: str | None = None) -> str | None:
     """'done' or 'failed' when a restore was waiting, None otherwise. Never raises: the server starts either way."""
     where = folder(backup_dir)
     request = where / REQUEST
-    if not request.exists():
+    if not request.exists() and not (where / SAFETY).exists():
         return None
     purge_log = purge_log or os.environ.get("PURGE_LOG") or os.path.join(backup_dir, "purged_accounts.jsonl")
+    if (where / SAFETY).exists():
+        try:
+            return _resume(url, backup_dir, where, purge_log)
+        finally:
+            for name in (REQUEST, PURGED, SAFETY):
+                (where / name).unlink(missing_ok=True)
     _record(where, "running")
     before = None
     try:
         check(request)
-        before, _, _ = backup.run_backup(url, backup_dir)
+        taken, _, _ = backup.run_backup(url, backup_dir)
+        _name_safety(where, taken)
+        before = taken
         _apply(url, str(request), where / PURGED, purge_log)
+        (where / SAFETY).unlink(missing_ok=True)
+        (where / KEEP).unlink(missing_ok=True)
         _record(where, "done")
         print(f"restored the uploaded backup; the database before it is in {os.path.basename(before)}", flush=True)
         return "done"
     except Exception as e:
-        reason = backup._scrub(str(e), url).splitlines()[0] if str(e) else type(e).__name__
+        reason = _first_line(e, url)
         if before:
             try:
                 _apply(url, before, None, purge_log, sign_out=False)     # taken seconds ago: its sessions are the live ones
+                (where / SAFETY).unlink(missing_ok=True)
             except Exception as again:
-                reason += f"; putting the database back failed too ({backup._scrub(str(again), url).splitlines()[0]}):" \
-                          f" restore {os.path.basename(before)} by hand"
+                _keep(where)
+                reason += f"; putting the database back failed too ({_first_line(again, url)}): restore {os.path.basename(before)} by hand"
         _record(where, "failed", reason)
         print(f"restoring the uploaded backup failed: {reason}", flush=True)
         return "failed"
     finally:
-        for name in (REQUEST, PURGED):
+        for name in (REQUEST, PURGED, SAFETY):
             (where / name).unlink(missing_ok=True)
