@@ -29,9 +29,10 @@ or a new server, as its owner. tests/test_backup.py runs the `$` lines.
        Everyone signs in again: the dump's sessions, remembered devices and
        reset links would work again, even ones ended after it. So would an
        invite used or revoked after it: every unused one is revoked, and the
-       admin makes new ones.
+       admin makes new ones. Sign-up goes back to invite-only: open on the
+       dump's day, it would be open again to anyone.
        $ psql -v ON_ERROR_STOP=1 "$NEW_DB_URL" <<< "select format('delete from public.%I', t) from unnest(array['sessions', 'remembered_devices', 'password_resets']) t where to_regclass('public.' || t) is not null \gexec"
-       $ psql -v ON_ERROR_STOP=1 "$NEW_DB_URL" <<< "update public.invites set revoked_at = now() where used_at is null and revoked_at is null and expires_at > now()"
+       $ psql -v ON_ERROR_STOP=1 "$NEW_DB_URL" <<< "update public.invites set revoked_at = now() where used_at is null and revoked_at is null and expires_at > now(); update public.instance_settings set signup = 'invite'"
     4. Start the server. Before anyone uses it, redo the purges made since the
        dump, which brought those accounts back:
            docker compose exec waterflow python -m app.admin repurge
@@ -55,6 +56,8 @@ from urllib.parse import unquote
 
 from psycopg import Error as PsycopgError
 from psycopg.conninfo import conninfo_to_dict, make_conninfo
+
+from app.core.hardening import hide_environment
 
 # Each is dumped if it exists.
 SCHEMAS = ("public", "waterflow")
@@ -154,7 +157,7 @@ def run_backup(database_url: str, backup_dir: str) -> tuple[str, dict[str, int],
         raise BackupError(f"BACKUP_DIR {backup_dir} is not a directory: is the volume mounted?")
     pg_dump, pg_restore = _tools()
     dsn, password = _split(database_url)
-    env = dict(os.environ, PGAPPNAME="waterflow-backup")
+    env = {k: v for k, v in os.environ.items() if not k.endswith("DATABASE_URL")} | {"PGAPPNAME": "waterflow-backup"}
     # TLS as the address says (?sslmode=require for a database across the internet), else libpq's default, as in the
     # rest of the server: forcing it fails on a plain local Postgres.
     if password:
@@ -165,7 +168,7 @@ def run_backup(database_url: str, backup_dir: str) -> tuple[str, dict[str, int],
         local = os.path.join(tmp, name)
         _run([pg_dump, "--format=custom", "--no-password", *[f"--schema={s}" for s in SCHEMAS],
               f"--file={local}", f"--dbname={dsn}"], env)
-        toc = _run([pg_restore, "--list", local], env)
+        toc = _run([pg_restore, "--list", local], {k: v for k, v in env.items() if k != "PGPASSWORD"})
         tables = {s: toc.count(f" TABLE DATA {s} ") for s in SCHEMAS}
         if not tables["public"]:
             raise BackupError("the dump has no tables in schema public: wrong database?")
@@ -187,6 +190,7 @@ def run_backup(database_url: str, backup_dir: str) -> tuple[str, dict[str, int],
 
 
 def main() -> int:
+    hide_environment()
     url, backup_dir = os.environ.get("BACKUP_DATABASE_URL", ""), os.environ.get("BACKUP_DIR", "")
     try:
         if not url or not backup_dir:

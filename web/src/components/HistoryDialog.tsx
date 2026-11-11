@@ -59,6 +59,7 @@ export function HistoryDialog({ book, txnId, onClose }: { book: Book; txnId: str
                       t(`txn.types.${h.type}`),
                       day.format(new Date(`${h.occurred_on}T00:00:00`)) + (h.occurred_time ? ` ${h.occurred_time.slice(0, 5)}` : ''),
                       ...(h.entries ?? []).map((e) => <>{accountName(e.account_id)} <Money amount={e.amount} currency={e.currency ?? ''} /></>),
+                      h.posted_on && t('txn.billedFrom', { date: day.format(new Date(`${h.posted_on}T00:00:00`)) }),
                       categoryName(h.category_id),
                       h.payee,
                       h.note,

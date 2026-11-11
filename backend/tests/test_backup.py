@@ -138,6 +138,7 @@ def test_restore_commands_documented():
     assert len(RESTORE) == 6 and RESTORE[0].startswith("psql") and RESTORE[3].startswith("pg_restore --no-owner")
     assert "'sessions', 'remembered_devices', 'password_resets'" in RESTORE[4]
     assert "update public.invites set revoked_at = now() where used_at is null and revoked_at is null and expires_at > now()" in RESTORE[5]
+    assert "update public.instance_settings set signup = 'invite'" in RESTORE[5]
 
 
 def test_backup_restores_everything(source, target, tmp_path):
@@ -256,6 +257,7 @@ def live(source, tmp_path):
     sql(ADMIN_URL.database, f'create database "{name}"')
     dump, _ = backup(tmp_path)
     restore(dump, name, RESTORE, tmp_path)
+    sql(name, "update instance_settings set signup = 'open'")       # the tests add users without invites
     yield name, dump
     sql(ADMIN_URL.database, f'drop database "{name}" with (force)')
 
@@ -291,9 +293,26 @@ def test_restore_requested_from_the_web(live, tmp_path):
     assert web_restore.restore_if_requested(libpq_url(name), str(backups)) is None
 
 
+def test_a_restore_adds_only_the_purged_accounts_the_server_lacks(live, tmp_path):
+    """A download carries this server's own list: restoring it here mustn't double the list each time."""
+    from app.jobs import restore as web_restore
+    name, dump = live
+    known = json.dumps({"user_id": str(uuid.uuid4()), "purged_at": "2026-10-20T00:00:00Z"})
+    new = json.dumps({"user_id": str(uuid.uuid4()), "purged_at": "2026-10-21T00:00:00Z"})
+    backups = requested(tmp_path, dump.read_bytes(), known + "\n" + new + "\n")
+    (backups / "purged_accounts.jsonl").write_text(known + "\n")
+    assert web_restore.restore_if_requested(libpq_url(name), str(backups)) == "done"
+    assert (backups / "purged_accounts.jsonl").read_text() == known + "\n" + new + "\n"
+    (backups / "restore" / "request.dump").write_bytes(dump.read_bytes())
+    (backups / "restore" / "purged_accounts.jsonl").write_text("")
+    assert web_restore.restore_if_requested(libpq_url(name), str(backups)) == "done"
+    assert (backups / "purged_accounts.jsonl").read_text() == known + "\n" + new + "\n"
+
+
 def test_a_restore_signs_everyone_out(live, tmp_path):
     """Sessions, remembered devices and reset links in the backup would work again, even ones ended after it; so would
-    an invite used or revoked after it: every unused one is revoked."""
+    an invite used or revoked after it: every unused one is revoked. Sign-up open on the backup's day, and closed
+    since, would be open again to anyone: it goes back to invite-only."""
     from app.jobs import backup, restore as web_restore
     name, _ = live
     who = "(select id from users where username = 'backup_user')"
@@ -301,7 +320,8 @@ def test_a_restore_signs_everyone_out(live, tmp_path):
         f"insert into remembered_devices (token_sha256, user_id) values (sha256('d'), {who})",
         f"insert into password_resets (token_sha256, user_id, expires_at) values (sha256('r'), {who}, now() + interval '1 day')",
         "insert into invites (code_sha256, expires_at) values (sha256('open'), now() + interval '1 day')",
-        f"insert into invites (code_sha256, expires_at, used_by, used_at) values (sha256('used'), now() + interval '1 day', {who}, now())")
+        f"insert into invites (code_sha256, expires_at, used_by, used_at) values (sha256('used'), now() + interval '1 day', {who}, now())",
+        "update instance_settings set signup = 'open'")
     signed_in = tmp_path / "with-sessions"
     signed_in.mkdir()
     dump, _, _ = backup.run_backup(libpq_url(name), str(signed_in))
@@ -310,6 +330,7 @@ def test_a_restore_signs_everyone_out(live, tmp_path):
     assert sql(name, "select (select count(*) from sessions) + (select count(*) from remembered_devices)"
                      " + (select count(*) from password_resets)") == [(0,)]
     assert sql(name, "select code_sha256 = sha256('open'), revoked_at is not null from invites order by 1") == [(False, False), (True, True)]
+    assert sql(name, "select signup from instance_settings") == [("invite",)]
 
 
 def test_signing_out_skips_tables_an_older_backup_lacks():
