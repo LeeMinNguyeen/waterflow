@@ -303,7 +303,7 @@ function TxnForm({ book, txn: initial, defaults, onClose, minorOf, carry, onSwit
       type: form.type,
       occurred_on: form.date,
       occurred_time: form.time,
-      posted_on: later && form.nextStatement ? later.postedOn : null,
+      posted_on: txn && !accounts.data ? txn.posted_on ?? null : later && form.nextStatement ? later.postedOn : null,
       entries,
       category_id: form.category || null,
       payee: form.payee.trim() || null,

@@ -288,7 +288,7 @@ def build_export(db: Session) -> bytes:
 
     history = _rows(db, """
         select b.name as book, h.snapshot->>'occurred_on' as occurred_on, left(h.snapshot->>'occurred_time', 5) as occurred_time,
-               h.snapshot->>'type' as type,
+               h.snapshot->>'type' as type, h.snapshot->>'posted_on' as posted_on,
                c.name as category, h.snapshot->>'payee' as payee, h.snapshot->>'note' as note,
                h.version, h.action, u.name as changed_by, h.changed_at,
                (select json_agg(json_build_object('account', a.name, 'amount', (e->>'amount')::bigint,
@@ -310,10 +310,11 @@ def build_export(db: Session) -> bytes:
         "Book": h["book"], "Transaction date": h["occurred_on"], "Transaction time": h["occurred_time"],
         "Type": word(h["type"]), "Category": h["category"],
         "Payee": h["payee"], "Note": h["note"], "Version": h["version"], "Action": word(h["action"]),
-        "Changed by": who(h["changed_by"]), "Changed at": h["changed_at"], "Amounts": amounts(h["entries"])}
+        "Changed by": who(h["changed_by"]), "Changed at": h["changed_at"], "Amounts": amounts(h["entries"]),
+        "Billed from": h["posted_on"]}
         for h in history],
         ["Book", "Transaction date", "Transaction time", "Type", "Category", "Payee", "Note", "Version", "Action", "Changed by",
-         "Changed at", "Amounts"])
+         "Changed at", "Amounts", "Billed from"])
 
     out("my_activity.csv", [{
         "Time": a["at"], "Book": a["book_name"], "What": word(a["table_name"]), "Change": t(a["action"].lower())}

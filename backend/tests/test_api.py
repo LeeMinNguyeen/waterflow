@@ -525,6 +525,9 @@ def test_a_card_purchase_billed_on_the_next_statement(client, database):
     z = zipfile.ZipFile(io.BytesIO(client.get("/v1/me/export", headers=auth(u)).content))
     rows = list(csv.DictReader(io.StringIO(z.read("transactions.csv").decode("utf-8-sig"))))
     assert sorted((r["Date"], r["Billed from"]) for r in rows if r["Account"] == "Card") == [("2026-10-20", ""), ("2026-10-31", "2026-11-02")]
+    edits = list(csv.DictReader(io.StringIO(z.read("edit_history.csv").decode("utf-8-sig"))))
+    assert [r["Billed from"] for r in edits if r["Transaction date"] == "2026-10-31" and r["Action"] != "deleted"] == [
+        "2026-11-02", "", "2026-11-02", "2026-11-02"]
 
 
 def test_installment_plans(client, database):
