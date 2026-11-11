@@ -632,7 +632,7 @@
   },
   "restore": {
     "title": "Khôi phục bản sao lưu",
-    "intro": "Thay toàn bộ dữ liệu trên máy chủ này bằng một bản sao lưu: tệp tải về từ mục Bản sao lưu, của máy chủ này hoặc máy chủ khác, hoặc tệp .dump trong thư mục sao lưu. Máy chủ sẽ sao lưu dữ liệu hiện có trước, rồi khởi động lại, và mọi người đăng nhập lại bằng mật khẩu của ngày sao lưu. Các lời mời chưa dùng sẽ hết hiệu lực: hãy tạo lời mời mới.",
+    "intro": "Thay toàn bộ dữ liệu trên máy chủ này bằng một bản sao lưu: tệp tải về từ mục Bản sao lưu, của máy chủ này hoặc máy chủ khác, hoặc tệp .dump trong thư mục sao lưu. Máy chủ sẽ sao lưu dữ liệu hiện có trước, rồi khởi động lại, và mọi người đăng nhập lại bằng mật khẩu của ngày sao lưu. Các lời mời chưa dùng sẽ hết hiệu lực và việc đăng ký trở về chỉ theo lời mời: hãy tạo lời mời mới, và mở lại đăng ký nếu bạn muốn.",
     "file": "Tệp sao lưu",
     "choose": "Chọn…",
     "password": "Mật khẩu của bạn",
