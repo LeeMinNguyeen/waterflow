@@ -81,10 +81,19 @@ def as_owner(admin: str, role: str = owner.OWNER) -> str:
     except psycopg.Error as e:
         why = backup._scrub(str(e).splitlines()[0], admin)
         if not handed_over_before:
+            OWNER_PASSWORD.unlink()
             print(f"WARNING: the database is still run as its superuser: handing it to {role} failed ({why})", flush=True)
             return admin
         print(f"WARNING: the hand-over to {role} failed this time ({why}); carrying on as {role}", flush=True)
     return login_url(admin, role, password, "postgresql")
+
+
+def owner_url(admin: str) -> str:
+    """For the operator's commands: the owner's URL once the built-in database has been handed over, without doing it
+    again. What they change belongs to the owner, and its triggers mustn't run as the superuser."""
+    if os.environ.get("ADMIN_DATABASE_URL", "").strip() or not OWNER_PASSWORD.exists():
+        return admin
+    return login_url(admin, owner.OWNER, OWNER_PASSWORD.read_text().strip(), "postgresql")
 
 
 def login_url(admin: str, login: str, password: str, driver: str = "postgresql+psycopg") -> str:
@@ -141,7 +150,7 @@ def run_jobs_once() -> None:
     admin = admin_url()
     passwords = login_passwords()
     wait_for(admin)
-    with psycopg.connect(admin, autocommit=True) as conn:
+    with psycopg.connect(admin, autocommit=True, options=owner.PINNED) as conn:
         migrate.rename_old_schema(conn)
     admin = as_owner(admin)
     env = {**_without_owner(), **jobs_env(admin, passwords, os.environ.get("BACKUP_DIR", "/backups"))}
@@ -165,7 +174,7 @@ def serve() -> None:
     passwords = login_passwords()
     wait_for(admin)
     backup_dir = os.environ.get("BACKUP_DIR", "/backups")
-    with psycopg.connect(admin, autocommit=True) as conn:
+    with psycopg.connect(admin, autocommit=True, options=owner.PINNED) as conn:
         migrate.rename_old_schema(conn)          # before any backup, which dumps schema waterflow
     admin = as_owner(admin)
 

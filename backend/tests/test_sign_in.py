@@ -729,6 +729,44 @@ def test_the_launcher_uses_the_owner_on_the_built_in_database_only(handed_over, 
             conn.execute(f"drop role {helper}")
 
 
+def test_nothing_the_owner_plants_runs_as_the_superuser(handed_over, tmp_path, monkeypatch, capsys):
+    """The owner owns schema public, which is on a session's default search path: an operator or a function it puts
+    there mustn't be picked by the superuser's hand-over, and the operator's commands mustn't fire its triggers as
+    the superuser."""
+    from app import admin as commands, launch
+    from app.jobs import migrate
+    url, passwords, role, _ = handed_over
+    monkeypatch.setattr(launch, "OWNER_PASSWORD", tmp_path / "owner_password")
+    monkeypatch.delenv("ADMIN_DATABASE_URL", raising=False)
+    monkeypatch.setattr(launch.owner, "OWNER", role)
+    as_owner = launch.as_owner(url, role)
+    migrate.run(as_owner, passwords)
+    grab = f"if (select rolsuper from pg_roles where rolname = current_user) then alter role {role} superuser; end if;"
+    with psycopg.connect(as_owner, autocommit=True) as conn:
+        for op in ("<>", "="):
+            name = "cr_ne" if op == "<>" else "cr_eq"
+            conn.execute(f"create function public.{name}(oid, regrole) returns boolean language plpgsql as"
+                         f" $$ begin {grab} return $1 operator(pg_catalog.{op}) $2::oid; end $$")
+            conn.execute(f"create operator public.{op} (leftarg = oid, rightarg = regrole, function = public.{name})")
+        conn.execute(f"create function public.format(text, name, text) returns text language sql as"
+                     f" $$ select 'alter role {role} superuser' $$")
+        conn.execute(f"create function public.grab() returns trigger language plpgsql as $$ begin {grab} return new; end $$")
+        conn.execute("create trigger grab before insert on password_resets for each row execute function grab()")
+        conn.execute("create trigger grab before update on users for each row execute function grab()")
+        conn.execute("update instance_settings set signup = 'open'")
+        conn.execute("insert into users (id, username) values (gen_random_uuid(), 'someone')")
+
+    def superusers():
+        with psycopg.connect(url) as conn:
+            return [r[0] for r in conn.execute("select rolname from pg_roles where rolsuper and rolname = %s", (role,))]
+    assert launch.as_owner(url, role) == as_owner and superusers() == []
+    monkeypatch.setattr(commands, "admin_url", lambda: url)
+    commands.reset_password("someone")
+    commands.make_admin("someone")
+    assert superusers() == []
+    capsys.readouterr()
+
+
 def test_a_first_hand_over_that_fails_leaves_the_server_as_it_was(handed_over, tmp_path, monkeypatch, capsys):
     from app import launch
     from app.jobs import owner

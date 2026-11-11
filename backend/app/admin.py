@@ -19,7 +19,7 @@ from sqlalchemy import create_engine
 
 from app.core.sign_in import new_token
 from app.jobs import account_deletion
-from app.launch import admin_url, login_passwords, login_url
+from app.launch import admin_url, login_passwords, login_url, owner_url
 
 USAGE = __doc__
 
@@ -34,7 +34,7 @@ def _user(conn: psycopg.Connection, username: str):
 
 def reset_password(username: str) -> None:
     token, digest = new_token()
-    with psycopg.connect(admin_url()) as conn:
+    with psycopg.connect(owner_url(admin_url())) as conn:
         user_id, _, disabled = _user(conn, username)
         if disabled:
             raise SystemExit(f"{username} is disabled, so a reset link wouldn't work: enable it on Server admin first,"
@@ -46,7 +46,7 @@ def reset_password(username: str) -> None:
 
 
 def make_admin(username: str) -> None:
-    with psycopg.connect(admin_url()) as conn:
+    with psycopg.connect(owner_url(admin_url())) as conn:
         user_id, closing, _ = _user(conn, username)
         if closing:
             raise SystemExit(f"{username} is closing (deleted, can be restored within 30 days): an admin only once"
