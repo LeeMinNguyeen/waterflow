@@ -1,10 +1,13 @@
 """Run:  TEST_ADMIN_URL=postgresql+psycopg://postgres@localhost/postgres pytest -q tests/"""
+import os
+import sys
 import threading
 import time
 import uuid
 from datetime import UTC, date, datetime, timedelta
 
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
 from sqlalchemy import create_engine, text
@@ -916,6 +919,52 @@ def test_scheduler_runs_what_is_due_as_the_purge_login(database):
                 last_finished_at="null", last_result="null", last_detail="null")
         purger.dispose()
         api.dispose()
+
+
+def test_each_job_gets_only_its_own_login(monkeypatch):
+    """R-SEC-2: the rates job, which reads a third party's answer, and the purge never see the owner's login, which
+    only the backup needs; no job sees another's."""
+    from types import SimpleNamespace
+
+    from app.jobs import scheduler
+    env = {"PATH": "/bin", "BACKUP_DIR": "/backups", "PURGE_LOG": "/backups/purged_accounts.jsonl", "OXR_APP_ID": "key",
+           "PURGE_DATABASE_URL": "purge", "FX_DATABASE_URL": "fx", "BACKUP_DATABASE_URL": "owner"}
+    secret = {"PURGE_DATABASE_URL", "FX_DATABASE_URL", "BACKUP_DATABASE_URL", "OXR_APP_ID"}
+    assert {job: sorted(secret & scheduler.job_env(job, env).keys()) for job in ("purge", "backup", "rates")} == {
+        "purge": ["PURGE_DATABASE_URL"], "backup": ["BACKUP_DATABASE_URL"], "rates": ["FX_DATABASE_URL", "OXR_APP_ID"]}
+    assert all(scheduler.job_env(job, env).keys() >= {"PATH", "BACKUP_DIR", "PURGE_LOG"} for job in ("purge", "backup", "rates"))
+
+    for k, v in env.items():
+        monkeypatch.setenv(k, v)
+    given = {}
+    monkeypatch.setattr(scheduler.subprocess, "run",
+                        lambda cmd, **kw: (given.update(kw["env"]), SimpleNamespace(stdout="1 rate\n", returncode=0))[1])
+    assert scheduler.run_job("rates") == (True, "1 rate")
+    assert given["FX_DATABASE_URL"] == "fx" and not {"BACKUP_DATABASE_URL", "PURGE_DATABASE_URL"} & given.keys()
+
+
+@pytest.mark.skipif(not sys.platform.startswith("linux") or os.geteuid() == 0, reason="Linux's /proc, read as another process of the same user")
+def test_a_process_holding_a_database_password_hides_its_environment():
+    """The launcher, the scheduler and the backup hold the owner's login in their environment: another process of the
+    same user (the API) can't read it from /proc."""
+    import subprocess
+    code = ("import sys, time\n"
+            "from app.core.hardening import hide_environment\n"
+            "print('before', flush=True); sys.stdin.readline()\n"
+            "hide_environment(); print('after', flush=True); time.sleep(30)\n")
+    p = subprocess.Popen([sys.executable, "-c", code], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True,
+                         env={**os.environ, "BACKUP_DATABASE_URL": "postgresql://owner:secret@db/postgres"})
+    try:
+        assert p.stdout.readline().strip() == "before"
+        assert b"owner:secret" in Path(f"/proc/{p.pid}/environ").read_bytes()
+        p.stdin.write("\n")
+        p.stdin.flush()
+        assert p.stdout.readline().strip() == "after"
+        with pytest.raises(PermissionError):
+            Path(f"/proc/{p.pid}/environ").read_bytes()
+    finally:
+        p.kill()
+        p.wait()
 
 
 def test_a_job_asked_to_run_now_runs_once_even_if_off(database):
