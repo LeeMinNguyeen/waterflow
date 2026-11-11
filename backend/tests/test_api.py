@@ -869,6 +869,13 @@ def test_transaction_filters_by_amount_and_no_category_with_a_summary(client, da
     assert ids(account_id=usd, min=5_000, max=15_000) == {dollars}                # $50 to $150, on that account's side
     assert ids(category_id="none") == {loose, paid, abroad}
     assert ids(category_id="none", type="transfer") == {moved, dollars}
+    assert ids(currency="USD") == {espresso, laptop}                               # a transfer by what left: VND
+    assert ids(currency="USD,KWD") == {espresso, laptop, abroad}
+    assert ids(currency="USD", min=200, max=500) == {espresso}                    # one currency: $2.00 to $5.00
+    assert ids(currency="USD,VND", min=20_000, max=30_000) == {loose, back}       # several: read as the book's, ₫
+    assert ids(account_id=usd, currency="VND") == set()                            # the account's own side: USD
+    for bad in ("usd", "USD,", "US", ",".join(["USD"] * 21)):
+        assert client.get(base, headers=auth(u), params={"currency": bad}).status_code == 422, bad
     assert client.get(base, headers=auth(u), params={"category_id": "nothing"}).status_code == 422
     assert client.get(base, headers=auth(u), params={"min": -1}).status_code == 422
 

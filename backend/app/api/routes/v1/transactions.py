@@ -96,15 +96,16 @@ class Filters(BaseModel):
     date_from: date | None = None
     date_to: date | None = None
     q: str | None = None                       # in payee or note
-    # Minor units of the filtered account's currency, else the book's; each amount is read in its own currency,
-    # without its sign: the filtered account's side, else what left.
+    currencies: list[str] | None = None        # the amount's: the filtered account's side, else what left
+    # Minor units of the filtered account's currency, else the only currency asked for, else the book's; each amount is
+    # read in its own currency, without its sign.
     min: int | None = None
     max: int | None = None
 
     def params(self) -> dict:
         return {"acc": self.account_id, "cat": self.category_id, "no_cat": self.no_category, "type": self.type,
                 "from": self.date_from, "to": self.date_to, "q": self.q.strip() if self.q and self.q.strip() else None,
-                "min": self.min, "max": self.max}
+                "cur": self.currencies, "min": self.min, "max": self.max}
 
 
 def filters(
@@ -114,12 +115,14 @@ def filters(
     date_from: date | None = Query(None, alias="from"),
     date_to: date | None = Query(None, alias="to"),
     q: Annotated[str | None, Query(max_length=100)] = None,
+    currency: Annotated[str | None, Query(pattern=r"^[A-Z]{3}(,[A-Z]{3}){0,19}$")] = None,
     min: Annotated[int | None, Query(ge=0, le=MAX_AMOUNT)] = None,
     max: Annotated[int | None, Query(ge=0, le=MAX_AMOUNT)] = None,
 ) -> Filters:
     none = category_id == "none"
     return Filters(account_id=account_id, category_id=None if none else category_id, no_category=none, type=type,
-                   date_from=date_from, date_to=date_to, q=q, min=min, max=max)
+                   date_from=date_from, date_to=date_to, q=q, currencies=currency.split(",") if currency else None,
+                   min=min, max=max)
 
 
 FILTERS = """
@@ -132,11 +135,17 @@ FILTERS = """
    and (cast(:to as date) is null or t.occurred_on <= cast(:to as date))
    and (cast(:q as text) is null
         or position(lower(cast(:q as text)) in lower(coalesce(t.payee, '') || ' ' || coalesce(t.note, ''))) > 0)
+   and (cast(:cur as text[]) is null or exists (
+        select 1 from entries e join accounts a on a.id = e.account_id
+         where e.transaction_id = t.id and a.currency = any (cast(:cur as text[]))
+           and case when cast(:acc as uuid) is not null then e.account_id = cast(:acc as uuid)
+                    else t.type <> 'transfer' or e.amount < 0 end))
    and ((cast(:min as bigint) is null and cast(:max as bigint) is null)
         or (select abs(sum(e.amount * power(10::numeric, ref.minor_unit - c.minor_unit)))
               from entries e join accounts a on a.id = e.account_id join currencies c on c.code = a.currency,
                    (select minor_unit from currencies where code = coalesce(
                       (select currency from accounts where id = cast(:acc as uuid)),
+                      case when cardinality(cast(:cur as text[])) = 1 then (cast(:cur as text[]))[1] end,
                       (select base_currency from books where id = :b))) ref
              where e.transaction_id = t.id
                and case when cast(:acc as uuid) is not null then e.account_id = cast(:acc as uuid)

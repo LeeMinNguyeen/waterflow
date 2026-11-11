@@ -314,7 +314,10 @@
     "spent": "Chi tiêu",
     "income": "Thu nhập",
     "notIncluded_one": "{{count}} giao dịch chưa tính",
-    "notIncluded_other": "{{count}} giao dịch chưa tính"
+    "notIncluded_other": "{{count}} giao dịch chưa tính",
+    "amountFrom": "Từ",
+    "amountTo": "Đến",
+    "currency": "Tiền tệ"
   },
   "cat": {
     "title": "Danh mục",
