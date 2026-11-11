@@ -115,6 +115,8 @@ describe('setting up a new server', () => {
     await renderApp(<Setup />)
     await userEvent.click(await screen.findByRole('button', { name: 'Restore a backup instead' }))
     expect(screen.getByRole('button', { name: 'English ▾' })).toBeInTheDocument()
+    expect(screen.queryByText(/purged/i)).toBeNull()
+    expect(document.querySelector('input[type=file]')).toHaveAttribute('accept', '.tar,.dump')
     await userEvent.type(screen.getByLabelText(/^Setup code/), 'cjjv-sj9h-edwz')
     await userEvent.upload(screen.getByLabelText('Backup file'), new File(['dump'], 'waterflow.dump'))
     await userEvent.click(screen.getByRole('button', { name: 'Restore' }))

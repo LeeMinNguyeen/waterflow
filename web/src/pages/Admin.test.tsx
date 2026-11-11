@@ -41,6 +41,9 @@ function server() {
     'PATCH /v1/admin/jobs/purge': undefined,
     'POST /v1/admin/jobs/backup/run': undefined,
     'GET /v1/admin/restore': null,
+    'GET /v1/admin/backups': [
+      { name: 'waterflow-20261102T190000Z.dump', size: 2_500_000, taken_at: '2026-11-02T19:00:00Z' },
+      { name: 'waterflow-20261101T190000Z.dump', size: 2_400_000, taken_at: '2026-11-01T19:00:00Z' }],
     'GET /v1/auth/two-factor': { enabled: false, recovery_codes_left: 0 },
   })
 }
@@ -95,6 +98,43 @@ describe('the daily jobs on Server admin (waterflow#6)', () => {
       ['/v1/admin/jobs/backup', { at_minute: 180, timezone: 'Asia/Ho_Chi_Minh' }],
       ['/v1/admin/jobs/rates', { enabled: true }],
     ])
+  })
+})
+
+describe('downloading a backup (waterflow#136, #141)', () => {
+  it('lists the backups and downloads one after the password', async () => {
+    const api = server()
+    api.routes['POST /v1/admin/backups/waterflow-20261102T190000Z.dump/download'] = ({ body }: { body: unknown }) =>
+      (body as { password: string }).password === 'right password!'
+        ? new Response('tar', { status: 200, headers: { 'Content-Disposition': 'attachment; filename="waterflow-20261102T190000Z.tar"' } })
+        : new Response(JSON.stringify({ detail: 'invalid_credentials' }), { status: 401 })
+    const saved: string[] = []
+    globalThis.URL.createObjectURL = () => 'blob:x'
+    globalThis.URL.revokeObjectURL = () => {}
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) { saved.push(this.download) })
+    await renderApp(<Admin />)
+    const section = (await screen.findByRole('heading', { name: 'Backups' })).closest('section')!
+    const rows = (await within(section).findAllByRole('row')).slice(1)
+    expect(rows.map((r) => r.textContent)).toEqual([expect.stringContaining('3 Nov 2026, 02:00'), expect.stringContaining('2 Nov 2026, 02:00')])
+    expect(rows[0]).toHaveTextContent('2.4 MB')
+    await userEvent.click(within(rows[0]).getByRole('button', { name: 'Download' }))
+    const dialog = await screen.findByRole('dialog')
+    await userEvent.type(within(dialog).getByLabelText(/Your password/), 'wrong password!')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Download' }))
+    expect(await within(dialog).findByText('Wrong username or password.')).toBeInTheDocument()
+    await userEvent.clear(within(dialog).getByLabelText(/Your password/))
+    await userEvent.type(within(dialog).getByLabelText(/Your password/), 'right password!')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Download' }))
+    await waitFor(() => expect(saved).toEqual(['waterflow-20261102T190000Z.tar']))
+    click.mockRestore()
+  })
+
+  it('restores one file, a .tar or a .dump, with no separate list', async () => {
+    server()
+    await renderApp(<Admin />)
+    const restore = (await screen.findByRole('heading', { name: 'Restore a backup' })).closest('section')!
+    expect(within(restore).queryByText(/Purged accounts list/)).toBeNull()
+    expect(restore.querySelector('input[type=file]')).toHaveAttribute('accept', '.tar,.dump')
   })
 })
 
