@@ -221,6 +221,9 @@
     "people": "Vay mượn"
   },
   "txn": {
+    "nextStatement": "Tính vào kỳ sao kê sau",
+    "nextStatementCloses": "Thuộc kỳ sao kê chốt ngày {{date}}",
+    "billedFrom": "tính vào sao kê từ {{date}}",
     "add": "Thêm giao dịch",
     "edit": "Sửa giao dịch",
     "title": "Giao dịch",

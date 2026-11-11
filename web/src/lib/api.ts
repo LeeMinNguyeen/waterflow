@@ -229,6 +229,7 @@ export type Transaction = {
   type: TxnType
   occurred_on: string
   occurred_time: string // HH:MM:SS
+  posted_on?: string | null // a card purchase billed on the next statement: that statement's first day
   category_id: string | null
   payee: string | null
   note: string | null
@@ -250,6 +251,7 @@ export type HistoryEntry = {
   type: TxnType
   occurred_on: string
   occurred_time: string | null
+  posted_on?: string | null
   category_id: string | null
   payee: string | null
   note: string | null

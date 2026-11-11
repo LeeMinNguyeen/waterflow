@@ -35,7 +35,7 @@ import { categoryTree } from '../lib/categories'
 import { shiftDay, timeIn, todayIn } from '../lib/labels'
 import { amountText, negated, parseAmount } from '../lib/money'
 import { personName } from '../lib/people'
-import { fromPlan, noPlan, planDates, validMonths, type PlanForm } from '../lib/installments'
+import { fromPlan, nextStatement, noPlan, planDates, validMonths, type PlanForm } from '../lib/installments'
 import { useAccounts, useBooks, useCategories, useCurrencies, useInstallments, useInvalidateBook, usePayees, useUsual } from '../lib/queries'
 import { AmountField } from './AmountField'
 import { CategoryPicker } from './CategoryPicker'
@@ -44,6 +44,7 @@ import { TimeField } from './TimeField'
 import { useErrorText } from './errors'
 import { HistoryDialog } from './HistoryDialog'
 import { InstallmentFields } from './InstallmentFields'
+import { NextStatementField } from './NextStatementField'
 import { Money } from './Money'
 import { CategoryPills, PickRow, Pill, Sheet } from './PhoneForm'
 import { newId } from '../lib/uuid'
@@ -66,6 +67,7 @@ type Form = {
   category: string
   payee: string
   note: string
+  nextStatement: boolean
 }
 
 export type TxnDefaults = { account?: string }
@@ -237,6 +239,7 @@ function TxnForm({ book, txn: initial, defaults, onClose, minorOf, carry, onSwit
   const setPlan = (patch: Partial<PlanForm>) => setPlanEdit({ ...plan, ...patch })
   const planned = !!card?.statement_day && plan.on
   const fee = parseAmount(plan.fee || '0', amountMinor, lang)
+  const later = card?.statement_day && !plan.on && form.date ? nextStatement(form.date, card.statement_day) : null
   const planReady = !planned || (validMonths(plan.months) && fee !== null && fee >= 0)
   const losesPlan = !!saved && !(card && card.id === saved.account_id)
 
@@ -288,7 +291,7 @@ function TxnForm({ book, txn: initial, defaults, onClose, minorOf, carry, onSwit
     setSuggestion(null)
     touched.current.delete('category')
     touched.current.delete('payee')
-    setForm((f) => ({ ...f, amount: '', amountReceived: '', category: '', payee: '', note: '' }))
+    setForm((f) => ({ ...f, amount: '', amountReceived: '', category: '', payee: '', note: '', nextStatement: false }))
     amountRef.current?.focus()
   }
 
@@ -300,6 +303,7 @@ function TxnForm({ book, txn: initial, defaults, onClose, minorOf, carry, onSwit
       type: form.type,
       occurred_on: form.date,
       occurred_time: form.time,
+      posted_on: txn && !accounts.data ? txn.posted_on ?? null : later && form.nextStatement ? later.postedOn : null,
       entries,
       category_id: form.category || null,
       payee: form.payee.trim() || null,
@@ -348,6 +352,7 @@ function TxnForm({ book, txn: initial, defaults, onClose, minorOf, carry, onSwit
     const saved: Partial<Form> = toForm(txn, book, minorOf)
     delete saved.date
     delete saved.time
+    delete saved.nextStatement
     const live = (accountId?: string) => (accountId && !byId.get(accountId)?.archived_at ? accountId : '')
     const category = categories.data?.find((c) => c.id === saved.category)
     onDuplicate?.({ ...saved, account: live(saved.account), toAccount: live(saved.toAccount), category: category && !category.archived_at ? category.id : '' })
@@ -519,6 +524,9 @@ function TxnForm({ book, txn: initial, defaults, onClose, minorOf, carry, onSwit
             {(form.type === 'expense' || form.type === 'refund') && (
               <FormControlLabel label={t('txn.types.refund')} disabled={readOnly}
                 control={<Checkbox checked={form.type === 'refund'} onChange={(e) => set({ type: e.target.checked ? 'refund' : 'expense' })} />} />
+            )}
+            {later && !readOnly && (!txn || installments.isFetched) && (
+              <NextStatementField checked={form.nextStatement} closes={later.closes} onChange={(nextStatement) => set({ nextStatement })} />
             )}
             {card && !readOnly && (!txn || installments.isFetched) && (
               <InstallmentFields card={card} plan={plan} onChange={setPlan} purchaseDate={form.date}
@@ -693,6 +701,9 @@ function TxnForm({ book, txn: initial, defaults, onClose, minorOf, carry, onSwit
             <DateField label={t('txn.date')} required value={form.date} onChange={(date) => set({ date })} />
             <TimeField label={t('txn.time')} required value={form.time} onChange={(time) => set({ time })} />
           </Box>
+          {later && !readOnly && (!txn || installments.isFetched) && (
+            <NextStatementField checked={form.nextStatement} closes={later.closes} onChange={(nextStatement) => set({ nextStatement })} />
+          )}
           {card && !readOnly && (!txn || installments.isFetched) && (
             <InstallmentFields card={card} plan={plan} onChange={setPlan} purchaseDate={form.date}
               amount={entries ? Math.abs(entries[0].amount) : null} minorUnit={minor(card.id)} />
@@ -750,7 +761,7 @@ function TxnForm({ book, txn: initial, defaults, onClose, minorOf, carry, onSwit
 
 function toForm(txn: Transaction | null | undefined, book: Book, minorOf: (currency: string) => number, defaults?: TxnDefaults): Form {
   if (!txn) {
-    return { type: 'expense', date: todayIn(book.timezone), time: timeIn(book.timezone), account: defaults?.account ?? '', toAccount: '', amount: '', amountReceived: '', category: '', payee: '', note: '' }
+    return { type: 'expense', date: todayIn(book.timezone), time: timeIn(book.timezone), account: defaults?.account ?? '', toAccount: '', amount: '', amountReceived: '', category: '', payee: '', note: '', nextStatement: false }
   }
   const lang = currentLanguage()
   const text = (e: Entry, signed = false) => amountText(signed ? e.amount : Math.abs(e.amount), minorOf(e.currency ?? ''), lang)
@@ -768,5 +779,6 @@ function toForm(txn: Transaction | null | undefined, book: Book, minorOf: (curre
     category: txn.category_id ?? '',
     payee: txn.payee ?? '',
     note: txn.note ?? '',
+    nextStatement: !!txn.posted_on,
   }
 }

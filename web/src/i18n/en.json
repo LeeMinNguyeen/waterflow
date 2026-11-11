@@ -221,6 +221,9 @@
     "people": "People"
   },
   "txn": {
+    "nextStatement": "Bill on the next statement",
+    "nextStatementCloses": "On the statement closing {{date}}",
+    "billedFrom": "billed from {{date}}",
     "add": "Add transaction",
     "edit": "Edit transaction",
     "title": "Transactions",
