@@ -607,6 +607,109 @@ def test_the_old_default_server_name_becomes_waterflow(fresh_server):
         assert conn.execute("select name from instance_settings").fetchone()[0] == "Waterflow"
 
 
+@pytest.fixture
+def handed_over(fresh_server):
+    """Hands a database to an owner of its own name, and drops that role afterwards."""
+    from app.jobs import migrate, owner
+    from app.launch import login_url
+    url, passwords = fresh_server
+    role = f"wf_owner_{uuid.uuid4().hex[:8]}"
+    try:
+        yield url, passwords, role, lambda: (owner.hand_over(url, "pw", role), login_url(url, role, "pw", "postgresql"))[1]
+    finally:
+        with psycopg.connect(url, autocommit=True) as conn:
+            if conn.execute("select 1 from pg_roles where rolname = %s", (role,)).fetchone():
+                conn.execute(f"reassign owned by {role} to current_user")
+                conn.execute(f"drop owned by {role}")
+                for login, group in migrate.LOGINS.items():
+                    if conn.execute("select 1 from pg_roles where rolname = %s", (login,)).fetchone():
+                        conn.execute(f"revoke {group} from {login} granted by {role}")
+                conn.execute(f"drop role {role}")
+
+
+def _not_the_owners(conn, role):
+    return conn.execute("""
+        select c.relname from pg_class c join pg_namespace n on n.oid = c.relnamespace
+         where n.nspname in ('public', 'waterflow') and c.relkind in ('r', 'v', 'S', 'm') and c.relowner <> %(r)s::regrole
+        union all
+        select p.proname from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+         where n.nspname in ('public', 'waterflow') and p.proowner <> %(r)s::regrole
+           and not exists (select 1 from pg_depend d where d.objid = p.oid and d.deptype = 'e')
+        union all
+        select t.typname from pg_type t join pg_namespace n on n.oid = t.typnamespace
+         where n.nspname in ('public', 'waterflow') and t.typtype in ('e', 'd') and t.typowner <> %(r)s::regrole
+        union all
+        select nspname from pg_namespace where nspname in ('public', 'waterflow') and nspowner <> %(r)s::regrole
+        union all
+        select extname from pg_extension where extname = 'pgcrypto' and extowner <> %(r)s::regrole""", {"r": role}).fetchall()
+
+
+def test_an_existing_built_in_database_is_handed_to_an_owner_that_is_no_superuser(handed_over, tmp_path):
+    """R-SEC-8: a server built by the superuser (every compose install before this) gives everything to a role that
+    isn't one, once; from then on the migrations, the logins, the backup and a restore all work as that role, and
+    what it makes later keeps the defaults (no EXECUTE for PUBLIC)."""
+    from app.jobs import backup, migrate, restore
+    url, passwords, role, hand_over = handed_over
+    migrate.run(url, passwords)
+    with psycopg.connect(url, autocommit=True) as conn:
+        conn.execute("update instance_settings set signup = 'open'")
+        conn.execute("insert into users (id, username) values (gen_random_uuid(), 'before')")
+    as_owner = hand_over()
+    assert hand_over() == as_owner                                              # every start: nothing left to do
+    with psycopg.connect(url) as conn:
+        assert _not_the_owners(conn, role) == []
+        assert conn.execute("select rolsuper or rolbypassrls or rolcreatedb, rolcreaterole from pg_roles where rolname = %s",
+                            (role,)).fetchone() == (False, True)
+    assert migrate.run(as_owner, passwords)[0] == []                            # the logins' passwords, as the owner
+    with psycopg.connect(as_owner, autocommit=True) as conn:
+        assert conn.execute("select current_user").fetchone()[0] == role
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            conn.execute(f"alter role {role} superuser")
+        conn.execute("create function made_later() returns int language sql as 'select 1'")
+        assert not conn.execute("select has_function_privilege('public', 'made_later()', 'execute')").fetchone()[0]
+        conn.execute("drop function made_later()")
+        assert conn.execute("select username from users").fetchall() == [("before",)]
+    (tmp_path / "backups").mkdir()
+    dump, tables, _ = backup.run_backup(as_owner, str(tmp_path / "backups"))
+    assert tables["public"] > 10
+    with psycopg.connect(as_owner, autocommit=True) as conn:
+        conn.execute("insert into users (id, username) values (gen_random_uuid(), 'after')")
+    restore._apply(as_owner, dump, None, str(tmp_path / "purged.jsonl"))
+    with psycopg.connect(url) as conn:
+        assert conn.execute("select username from users").fetchall() == [("before",)]
+        assert _not_the_owners(conn, role) == []
+    assert migrate.run(as_owner, passwords)[0] == []
+
+
+def test_a_new_built_in_database_is_built_by_an_owner_that_is_no_superuser(handed_over):
+    from app.jobs import migrate
+    url, passwords, role, hand_over = handed_over
+    as_owner = hand_over()
+    applied, setup_code = migrate.run(as_owner, passwords)
+    assert len(applied) > 10 and setup_code
+    with psycopg.connect(url) as conn:
+        assert _not_the_owners(conn, role) == []
+        assert not conn.execute("select has_function_privilege('public', 'am_admin()', 'execute')").fetchone()[0]
+
+
+def test_the_launcher_uses_the_owner_on_the_built_in_database_only(handed_over, tmp_path, monkeypatch, capsys):
+    from app import launch
+    from app.jobs import owner
+    url, _, role, _ = handed_over
+    monkeypatch.setattr(launch, "OWNER_PASSWORD", tmp_path / "owner_password")
+    monkeypatch.setenv("ADMIN_DATABASE_URL", url)
+    assert launch.as_owner(url, role) == url and not (tmp_path / "owner_password").exists()     # the operator's own database
+    monkeypatch.delenv("ADMIN_DATABASE_URL")
+    as_owner = launch.as_owner(url, role)
+    assert (tmp_path / "owner_password").stat().st_mode & 0o777 == 0o600
+    with psycopg.connect(as_owner) as conn:
+        assert conn.execute("select current_user, (select rolsuper from pg_roles where rolname = current_user)").fetchone() == (role, False)
+    assert launch.as_owner(url, role) == as_owner
+    monkeypatch.setattr(owner, "hand_over", lambda *a: (_ for _ in ()).throw(psycopg.errors.InsufficientPrivilege("no")))
+    assert launch.as_owner(url, role) == url                                    # the server still starts
+    assert "still run as its superuser" in capsys.readouterr().out
+
+
 def test_logins_are_set_again_by_an_owner_that_is_no_superuser(fresh_server):
     """Supabase's owner isn't a superuser, and since PostgreSQL 16 only a superuser may name SUPERUSER or BYPASSRLS
     in ALTER ROLE. Such an owner (CREATEROLE, with admin option on the logins and roles it made) sets the passwords

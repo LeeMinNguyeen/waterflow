@@ -19,7 +19,8 @@ app/
   api/                   main.py (app, web app files, CSP, /v1/instance), deps.py, errors.py, routes/v1/
                          (sign_in: setup, join, sign-in, 2FA, reset; admin; me; books, accounts, ...)
   domain/                transactions, bills, dashboard, export, book_setup
-  jobs/                  migrate, scheduler (daily), account_deletion, backup, restore, fx_update
+  jobs/                  migrate, owner (the built-in database's owner, no superuser), scheduler (daily),
+                         account_deletion, backup, restore, fx_update
 tests/                   conftest.py (throwaway database), test_schema, test_api, test_sign_in, test_backup
 scripts/dev.sh           the API from source with --reload, against the compose stack's database
 ```

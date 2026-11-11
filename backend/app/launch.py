@@ -24,11 +24,12 @@ from urllib.parse import quote, unquote, urlsplit, urlunsplit
 import psycopg
 
 from app.core.hardening import hide_environment
-from app.jobs import backup, migrate, restore
+from app.jobs import backup, migrate, owner, restore
 
 SECRETS = Path(os.environ.get("SECRETS_DIR", "/secrets"))
 POSTGRES_PASSWORD = SECRETS / "postgres_password"
 LOGIN_PASSWORDS = SECRETS / "db_logins.json"
+OWNER_PASSWORD = SECRETS / "owner_password"
 
 
 def _write_secret(path: Path, value: str, mode: int = 0o600) -> None:
@@ -62,6 +63,24 @@ def admin_url() -> str:
         return own.replace("postgresql+psycopg://", "postgresql://")
     password = POSTGRES_PASSWORD.read_text().strip()
     return f"postgresql://postgres:{password}@db:5432/postgres?sslmode=disable"
+
+
+def as_owner(admin: str, role: str = owner.OWNER) -> str:
+    """On the built-in database, the URL of the owner that is no superuser, after handing it everything (app/jobs/owner.py).
+    A server with its own database keeps the owner it was given. If the hand-over fails the server still starts, as
+    before it."""
+    if os.environ.get("ADMIN_DATABASE_URL", "").strip():
+        return admin
+    if not OWNER_PASSWORD.exists():
+        _write_secret(OWNER_PASSWORD, secrets.token_hex(24))
+    password = OWNER_PASSWORD.read_text().strip()
+    try:
+        owner.hand_over(admin, password, role)
+    except psycopg.Error as e:
+        print(f"WARNING: the database is still run as its superuser: handing it to {role} failed"
+              f" ({backup._scrub(str(e).splitlines()[0], admin)})", flush=True)
+        return admin
+    return login_url(admin, role, password, "postgresql")
 
 
 def login_url(admin: str, login: str, password: str, driver: str = "postgresql+psycopg") -> str:
@@ -120,6 +139,7 @@ def run_jobs_once() -> None:
     wait_for(admin)
     with psycopg.connect(admin, autocommit=True) as conn:
         migrate.rename_old_schema(conn)
+    admin = as_owner(admin)
     env = {**_without_owner(), **jobs_env(admin, passwords, os.environ.get("BACKUP_DIR", "/backups"))}
     sys.exit(subprocess.run([sys.executable, "-m", "app.jobs.scheduler", "--once"], env=env).returncode)
 
@@ -143,6 +163,7 @@ def serve() -> None:
     backup_dir = os.environ.get("BACKUP_DIR", "/backups")
     with psycopg.connect(admin, autocommit=True) as conn:
         migrate.rename_old_schema(conn)          # before any backup, which dumps schema waterflow
+    admin = as_owner(admin)
 
     def backup_first():
         backup_before_updating(admin, backup_dir)
