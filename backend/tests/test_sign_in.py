@@ -1055,8 +1055,8 @@ def test_a_tar_that_isnt_exactly_a_backup_and_its_list_is_refused(client, admin,
 
 
 def test_a_tar_with_extended_headers_is_refused_before_it_is_parsed(client, admin, restore_dir, a_backup, monkeypatch):
-    """Pax, long-name and sparse members run parsing code that a crafted file can make slow, huge or crash: only plain
-    file headers get as far as tarfile."""
+    """Pax, long-name and sparse members run parsing code that a crafted file can make slow, huge or crash: no tar
+    library reads an upload."""
     import io
     import tarfile
     from app.api.routes.v1 import restore
@@ -1137,6 +1137,28 @@ def test_a_refused_upload_leaves_an_accepted_request_whole(client, admin, restor
                            files={"file": ("waterflow.dump", a_backup.read_bytes()), "purged": ("purged_accounts.jsonl", b"x" * 11)})
     assert (too_long.status_code, too_long.json()) == (413, {"detail": "restore_too_large"})
     assert {f.name: f.read_bytes() for f in (backups / "restore").iterdir() if f.name != "status"} == waiting
+
+
+def test_a_download_leaves_no_copy_of_the_backup_behind(client, admin, restore_dir, a_backup, tmp_path, monkeypatch):
+    """Whatever the request asks for: a Range the server can't answer used to skip the clean-up."""
+    import tempfile
+    backups, _ = restore_dir
+    _, token = admin
+    (backups / "waterflow-20261102T190000Z.dump").write_bytes(a_backup.read_bytes())
+    (backups / "waterflow-20261101T190000Z.dump").write_bytes(a_backup.read_bytes())
+    work = tmp_path / "work"
+    work.mkdir()
+    monkeypatch.setattr(tempfile, "tempdir", str(work))
+    url = "/v1/admin/backups/waterflow-20261102T190000Z.dump/download"
+    sizes = set()
+    for headers in ({}, {"Range": "bytes=abc"}, {"Range": "bytes=999999999-"}, {"Range": "bytes=0-9"}):
+        r = client.post(url, headers=bearer(token) | headers, json={"password": PASSWORD})
+        assert r.status_code == 200 and int(r.headers["content-length"]) == len(r.content), (headers, r.status_code)
+        sizes.add(len(r.content))
+        assert list(work.iterdir()) == []
+    assert len(sizes) == 1
+    (backups / "waterflow-20261101T190000Z.dump").unlink()
+    assert [b["name"] for b in client.get("/v1/admin/backups", headers=bearer(token)).json()] == ["waterflow-20261102T190000Z.dump"]
 
 
 def test_downloading_a_backup_asks_for_the_two_factor_code(client, admin, restore_dir, a_backup):

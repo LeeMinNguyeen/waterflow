@@ -2,6 +2,7 @@
 the setup code). The API never has the database owner's login, so it only checks the file, leaves it in
 BACKUP_DIR/restore/ and stops the server; the launcher restores it as the server starts again
 (app/jobs/restore.py). Everyone is signed out: the restored database has the sessions of the backup's day."""
+import contextlib
 import io
 import json
 import os
@@ -13,7 +14,7 @@ from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException, Request, Response, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -111,6 +112,8 @@ def _leave_request(dump: UploadFile, purged: UploadFile | None, background: Back
         if isinstance(e, HTTPException):
             raise
         raise HTTPException(409, "restore_too_new") if isinstance(e, restore.TooNew) else HTTPException(422, "restore_invalid") from None
+    # No request while its two files change: a stop in between mustn't pair one upload's backup with another's list.
+    (where / restore.REQUEST).unlink(missing_ok=True)
     (where / restore.PURGED).unlink(missing_ok=True)
     if listed.exists():
         os.replace(listed, where / restore.PURGED)
@@ -185,14 +188,17 @@ def _backups() -> list[Path]:
 def list_backups(db: Session = Depends(get_db)) -> list[Backup]:
     if not db.execute(text("select am_admin()")).scalar():
         raise HTTPException(403, "admin_only")
-    return [Backup(name=p.name, size=p.stat().st_size,
-                   taken_at=datetime.strptime(backup.DUMP_NAME.fullmatch(p.name)[1], "%Y%m%dT%H%M%SZ").replace(tzinfo=timezone.utc))
-            for p in _backups()]
+    out = []
+    for p in _backups():
+        with contextlib.suppress(FileNotFoundError):       # pruned since it was listed
+            out.append(Backup(name=p.name, size=p.stat().st_size, taken_at=datetime.strptime(
+                backup.DUMP_NAME.fullmatch(p.name)[1], "%Y%m%dT%H%M%SZ").replace(tzinfo=timezone.utc)))
+    return out
 
 
 @router.post("/admin/backups/{name}/download")
-def download_backup(name: str, proof: Proof, background: BackgroundTasks, caller: Caller = Depends(current_caller),
-                    db: Session = Depends(get_db)) -> FileResponse:
+def download_backup(name: str, proof: Proof, caller: Caller = Depends(current_caller),
+                    db: Session = Depends(get_db)) -> StreamingResponse:
     """One file that restores on its own: the backup and this server's list of accounts deleted for good, as it is
     now (it must cover every account deleted after the backup was taken)."""
     _proves_it(db, caller, proof)
@@ -200,22 +206,29 @@ def download_backup(name: str, proof: Proof, background: BackgroundTasks, caller
     if path is None:
         raise HTTPException(404, "not_found")
     purged = Path(os.environ.get("PURGE_LOG") or Path(_backup_dir()) / restore.PURGED)
-    fd, out = tempfile.mkstemp(suffix=".tar")
-    os.close(fd)
+    # Unnamed: gone with its last reader, however the request ends. Plain ustar headers with nothing of this machine's
+    # users in them: what _unpack reads.
+    out = tempfile.TemporaryFile()
     try:
-        # Plain ustar headers with nothing of this machine's users in them: what _unpack reads.
-        with tarfile.open(out, mode="w:", format=tarfile.USTAR_FORMAT) as tar, open(path, "rb") as dump:
+        with tarfile.open(fileobj=out, mode="w:", format=tarfile.USTAR_FORMAT) as tar, open(path, "rb") as dump:
             data = purged.read_bytes() if purged.is_file() else b""
             for member, size, source in ((path.name, os.fstat(dump.fileno()).st_size, dump), (restore.PURGED, len(data), io.BytesIO(data))):
                 info = tarfile.TarInfo(member)
                 info.size, info.mtime = size, int(datetime.now(timezone.utc).timestamp())
                 tar.addfile(info, source)
+        size = out.tell()
+        out.seek(0)
     except BaseException:
-        os.unlink(out)
+        out.close()
         raise
-    background.add_task(os.unlink, out)
+
+    def parts():
+        with out:
+            while chunk := out.read(2**20):
+                yield chunk
     print(f"backup downloaded: {name} by {caller.id}", flush=True)
-    return FileResponse(out, media_type="application/x-tar", filename=name.removesuffix(".dump") + ".tar")
+    return StreamingResponse(parts(), media_type="application/x-tar", headers={
+        "Content-Length": str(size), "Content-Disposition": f'attachment; filename="{name.removesuffix(".dump")}.tar"'})
 
 
 class RestoreStatus(BaseModel):
