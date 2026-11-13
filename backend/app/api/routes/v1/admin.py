@@ -7,7 +7,7 @@ address they reach the server at:
     reset   https://<server>/reset?token=<token>
 """
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Annotated, Literal
 from uuid import UUID
 
@@ -120,11 +120,62 @@ def revoke_invite(invite_id: UUID, db: Session = Depends(get_db)) -> Response:
 class InstanceChange(BaseModel):
     name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=60)] | None = None
     signup: Literal["invite", "open"] | None = None
+    usage_stats: Literal["on", "off"] | None = None
+    usage_keep_days: Literal[30, 90, 180, 365] | None = None
 
 
 @router.patch("/instance", status_code=204)
 def change_instance(body: InstanceChange, db: Session = Depends(get_db)) -> Response:
     db.execute(text("select admin_set_instance(:n, :s)"), {"n": body.name, "s": body.signup})
+    if body.usage_stats or body.usage_keep_days:
+        db.execute(text("select admin_set_usage(:on, :keep)"),
+                   {"on": body.usage_stats and body.usage_stats == "on", "keep": body.usage_keep_days})
+    db.commit()
+    return Response(status_code=204)
+
+
+class People(BaseModel):
+    accounts: int
+    new_this_month: int
+    today: int
+    days_7: int
+    days_30: int
+
+
+class UsageDay(BaseModel):
+    day: date
+    people: int
+
+
+class FeatureUse(BaseModel):
+    feature: str
+    people: int
+    times: int
+
+
+class ServerSize(BaseModel):
+    books: int
+    shared_books: int
+
+
+class Usage(BaseModel):
+    collecting: bool
+    keep_days: int
+    since: date | None          # the oldest day there are numbers for
+    people: People              # today, days_7 and days_30: people active, by UTC day
+    days: list[UsageDay]        # the last 30 days, oldest first
+    features: list[FeatureUse]  # the last 30 days, the most people first
+    server: ServerSize
+
+
+@router.get("/usage")
+def usage_numbers(db: Session = Depends(get_db)) -> Usage:
+    return Usage(**db.execute(text("select admin_usage()")).scalar())
+
+
+@router.delete("/usage", status_code=204)
+def delete_usage(db: Session = Depends(get_db)) -> Response:
+    db.execute(text("select admin_delete_usage()"))
     db.commit()
     return Response(status_code=204)
 

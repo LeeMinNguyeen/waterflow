@@ -16,7 +16,7 @@ def test_health_needs_no_token(client):
 def test_instance_needs_no_token(client):
     r = client.get("/v1/instance").json()
     assert r["api_version"] == 1 and r["signup"] == "open" and r["name"] == "Waterflow"
-    assert set(r) == {"name", "server_version", "api_version", "signup", "setup_needed", "account_purge"}
+    assert set(r) == {"name", "server_version", "api_version", "signup", "setup_needed", "account_purge", "usage_stats"}
     assert r["account_purge"] == "on"
 
 

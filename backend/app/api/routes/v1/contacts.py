@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_db
 from app.api.models import CurrencyCode, Name
 from app.api.routes.v1.books import get_book, require_role
+from app.core import usage
 
 router = APIRouter(prefix="/books/{book_id}/contacts")
 
@@ -72,6 +73,7 @@ def create_contact(book_id: UUID, body: CreateContact, db: Session = Depends(get
                    {"i": body.id, "b": book_id, "n": body.name, "o": body.note or None}).rowcount
     if n and body.currency:
         db.execute(text("update accounts set currency = :c where id = :i and kind = 'person'"), {"i": body.id, "c": body.currency})
+    usage.count(db, "person")
     db.commit()
     return get_contact(db, book_id, body.id)
 
