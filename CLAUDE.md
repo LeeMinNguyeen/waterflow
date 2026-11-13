@@ -60,8 +60,12 @@ A change's risk is set by what it touches, not by who wrote it.
 | Risk | What it touches | Before it merges into `dev` |
 |---|---|---|
 | Low | Docs, string files, tests only, styling with no logic change, CLAUDE.md files | CI passes |
-| Medium | Everything else: features and fixes in `web/` and the API routes | CI passes, and `/code-review` at `low` in a fresh context with every Important finding fixed or answered in the PR |
-| High | The paths in `.github/CODEOWNERS` (migrations, sign-in, sessions, two-step codes, invites and resets, money parsing, backup, restore, purge and account deletion, updates, the image, compose and CI); anything else that changes how money is stored, signed or summed; a change to an existing `/v1` route | `/code-review` at `high` and `/security-review`, each in a fresh context; the PR says how to revert it |
+| Medium | Everything else: features and fixes in `web/` and the API routes | CI passes, and a review in a fresh context with every Important finding fixed or answered in the PR |
+| High | The paths in `.github/CODEOWNERS` (migrations, sign-in, sessions, two-step codes, invites and resets, money parsing, backup, restore, purge and account deletion, updates, the image, compose and CI); anything else that changes how money is stored, signed or summed; a change to an existing `/v1` route | A code and security review in a fresh context, and again after each fix (three rounds at most); the PR says how to revert it |
+
+Who reviews: a fresh-context reviewer on a cheaper model for medium changes and for the second and third rounds of
+any change, which check a fix; the strongest model for the first round of a high-risk one, code and security in
+one pass. `/code-review` and `/security-review` do the same for a contributor without that setup.
 
 No PR needs the project owner's approval to merge into `dev`. The release PR (`dev` into `main`) lists the high-risk
 PRs it carries, for the project owner to read before merging; only the project owner merges into `main`.
