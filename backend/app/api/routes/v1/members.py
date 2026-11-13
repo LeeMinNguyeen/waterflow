@@ -13,6 +13,7 @@ from app.api.deps import get_db
 from app.api.routes.v1.books import get_book, require_role
 from app.core import sign_in as si
 from app.core.auth import current_user
+from app.core import usage
 
 router = APIRouter()
 
@@ -62,6 +63,7 @@ def invite(book_id: UUID, body: Invite, user_id: UUID = Depends(current_user),
                             " on conflict do nothing"), {"b": book_id, "u": invitee, "r": body.role, "me": user_id}).rowcount
     if not added:                   # the same invite sent twice at once
         raise HTTPException(409, "cannot_invite")
+    usage.count(db, "book_shared")
     db.commit()
     return list_members(book_id, user_id, db)
 

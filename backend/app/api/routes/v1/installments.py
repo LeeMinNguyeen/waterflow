@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_db
 from app.api.routes.v1.books import get_book, require_role
 from app.domain.bills import installment_plans, next_on_or_after
+from app.core import usage
 
 router = APIRouter(prefix="/books/{book_id}/installments")
 
@@ -85,6 +86,7 @@ def create_plan(book_id: UUID, body: CreatePlan, db: Session = Depends(get_db)) 
         " on conflict (id) do nothing"),
         {"i": body.id, "b": book_id, "t": body.transaction_id, "m": body.months, "c": converted, "f": first,
          "fee": body.fee, "split": body.fee_split, "counts": body.counts_toward_limit})
+    usage.count(db, "installment")
     db.commit()
     return _plan(db, book_id, body.id)
 

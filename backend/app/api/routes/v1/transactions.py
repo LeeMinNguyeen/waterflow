@@ -16,6 +16,7 @@ from app.api.models import MAX_AMOUNT, CurrencyCode
 from app.api.routes.v1.books import get_book, require_role
 from app.domain.transactions import Entry as EntryIn
 from app.domain.transactions import TxnIn, create_transaction, delete_transaction, update_transaction
+from app.core import usage
 
 router = APIRouter(prefix="/books/{book_id}/transactions")
 
@@ -162,6 +163,9 @@ def list_transactions(
     db: Session = Depends(get_db),
 ) -> Page:
     get_book(db, book_id)
+    if after is None and f.model_dump(exclude={"account_id"}, exclude_defaults=True):
+        usage.count(db, "filters")
+        db.commit()
     c_on, c_tm, c_at, c_id = _uncursor(after) if after else (None, None, None, None)
     rows = db.execute(text(SELECT + """,
        r.running_balance
@@ -215,6 +219,9 @@ def create(book_id: UUID, body: CreateTxn, db: Session = Depends(get_db)) -> Tra
     require_role(get_book(db, book_id), "owner", "editor")
     _on_a_card_with_statements(db, book_id, body)
     create_transaction(db, body.to_domain(body.id, book_id))
+    usage.count(db, f"transaction_{body.type}" if body.type in ("expense", "income", "transfer", "refund") else "transaction_other")
+    if body.posted_on:
+        usage.count(db, "next_statement")
     db.commit()
     return get_transaction(db, book_id, body.id)
 
@@ -317,6 +324,7 @@ select distinct on (h.transaction_id) h.transaction_id as id, h.changed_at as de
 def restore(book_id: UUID, txn_id: UUID, db: Session = Depends(get_db)) -> Transaction:
     require_role(get_book(db, book_id), "owner", "editor")
     db.execute(text("select restore_transaction(:b, :t)"), {"b": book_id, "t": txn_id})
+    usage.count(db, "transaction_restore")
     db.commit()
     return get_transaction(db, book_id, txn_id)
 
@@ -369,6 +377,7 @@ def update(book_id: UUID, txn_id: UUID, body: UpdateTxn, db: Session = Depends(g
     _not_in_another_book(db, book_id, txn_id)
     _on_a_card_with_statements(db, book_id, body)
     update_transaction(db, body.to_domain(txn_id, book_id), body.version)
+    usage.count(db, "transaction_edit")
     db.commit()
     return get_transaction(db, book_id, txn_id)
 
@@ -378,6 +387,7 @@ def delete(book_id: UUID, txn_id: UUID, version: int, db: Session = Depends(get_
     require_role(get_book(db, book_id), "owner", "editor")
     _not_in_another_book(db, book_id, txn_id)
     delete_transaction(db, book_id, txn_id, version)
+    usage.count(db, "transaction_delete")
     db.commit()
     return Response(status_code=204)
 
