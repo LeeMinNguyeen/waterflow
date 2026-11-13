@@ -61,3 +61,15 @@ def database():
         c.execute(text(f'drop database "{DB_NAME}" with (force)'))
         for login in ("t_api", "t_fx", "t_purge"):
             c.execute(text(f"drop role if exists {login}"))
+
+
+@pytest.fixture(scope="module")
+def client(database):
+    from fastapi.testclient import TestClient
+
+    from app.api.main import app
+    from app.core import sign_in
+    saved = sign_in.sign_ups_per_ip, sign_in.per_ip
+    sign_in.sign_ups_per_ip = sign_in.per_ip = sign_in.RateLimit(100_000, 60)    # every test signs up from one address
+    yield TestClient(app)
+    sign_in.sign_ups_per_ip, sign_in.per_ip = saved
