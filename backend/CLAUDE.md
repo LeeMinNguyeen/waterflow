@@ -21,7 +21,7 @@ app/
   domain/                transactions, bills, dashboard, export, book_setup
   jobs/                  migrate, owner (the built-in database's owner, no superuser), scheduler (daily),
                          account_deletion, backup, restore, fx_update
-tests/                   conftest.py (throwaway database), test_schema, test_api, test_sign_in, test_backup
+tests/                   conftest.py (throwaway database), test_schema, test_api_* (by area, shared helpers in api_helpers), test_sign_in, test_backup
 scripts/dev.sh           the API from source with --reload, against the compose stack's database
 ```
 
