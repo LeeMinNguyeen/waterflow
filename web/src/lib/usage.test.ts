@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { session } from '../auth/session'
 import { fakeApi } from '../test/fakeApi'
 import { reportUse, resetReported } from './usage'
 
@@ -14,6 +15,14 @@ describe('reporting a use (waterflow#229)', () => {
     reportUse('card_pay')
     reportUse('hide_amounts')
     expect(sent(api)).toEqual([{ feature: 'card_pay' }, { feature: 'hide_amounts' }])
+  })
+
+  it('sends again for whoever signs in next on this tab', () => {
+    const api = fakeApi({ 'POST /v1/usage': undefined })
+    reportUse('layout_phone')
+    session.set('someone-else')
+    reportUse('layout_phone')
+    expect(sent(api)).toHaveLength(2)
   })
 
   it('sends again on a new UTC day', () => {
