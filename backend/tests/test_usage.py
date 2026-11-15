@@ -116,7 +116,7 @@ def test_old_numbers_are_purged_and_the_admin_can_delete_them_all(client, databa
     assert dict((f, times) for f, _, times in rows(database))["transaction_expense"] == 1
 
 
-def test_counting_never_fails_the_request_and_has_a_ceiling(client, database, admin, monkeypatch):
+def test_counting_never_fails_the_request_and_has_a_ceiling(client, database, admin):
     client.patch("/v1/admin/instance", headers=auth(admin), json={"usage_stats": "on"})
     u = signed_up(client)
     assert client.post("/v1/usage", headers=auth(u), json={"feature": "hide_amounts"}).status_code == 204
@@ -124,6 +124,7 @@ def test_counting_never_fails_the_request_and_has_a_ceiling(client, database, ad
         c.execute(text("update usage_days set count = 2147483647 where feature = 'hide_amounts'"))
     assert client.post("/v1/usage", headers=auth(u), json={"feature": "hide_amounts"}).status_code == 204
     with database.connect() as c:
+        assert c.execute(text("select count from usage_days where feature = 'hide_amounts'")).scalar() == 1_000_000
         c.execute(text("alter table usage_days add constraint broken check (feature <> 'transaction_expense') not valid"))
     try:
         bid, accts = new_book_with_accounts(client, u)
