@@ -25,6 +25,7 @@ import { liabilityKinds, send, type Account, type Bill, type Book, type Installm
 import { timeIn, todayIn } from '../lib/labels'
 import { amountText, parseAmount } from '../lib/money'
 import { useFormatMoney } from '../lib/hideAmounts'
+import { useReportUse } from '../lib/useReportUse'
 import { Money } from '../components/Money'
 import { useAccounts, useBills, useInstallments, useInvalidateBook } from '../lib/queries'
 import { newId } from '../lib/uuid'
@@ -133,6 +134,7 @@ function PayBillDialog({ book, account, bill, minorUnit, onClose }: {
   const errorText = useErrorText()
   const lang = currentLanguage()
   const invalidate = useInvalidateBook()
+  const reportUse = useReportUse()
   const accounts = useAccounts(book.id, false)
   const transferId = useRef(newId())
   const [from, setFrom] = useState<string | null>(null)
@@ -174,6 +176,7 @@ function PayBillDialog({ book, account, bill, minorUnit, onClose }: {
       }
       await post(transferId.current, 'transfer', [{ account_id: payFrom, amount: -parsed }, { account_id: account.id, amount: parsed }],
         bill.kind === 'card' ? t('bill.cardNote', { date: day(bill.period_end) }) : t('bill.loanNote', { date: day(bill.due_on) }))
+      if (bill.kind === 'card') reportUse('card_pay')
       toast(t('toast.paymentSaved'))
       onClose()
     } catch (err) {

@@ -1,9 +1,10 @@
-import { screen, within } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { Book } from '../lib/api'
 import { fakeApi } from '../test/fakeApi'
 import { desktop, renderApp } from '../test/render'
+import { resetReported } from '../lib/usage'
 import { Shell } from './Shell'
 
 const personal: Book = { id: 'b1', name: 'Personal', base_currency: 'VND', timezone: 'UTC', role: 'owner', archived_at: null, version: 1 }
@@ -16,6 +17,7 @@ function server(admin = false) {
     'GET /v1/books': [personal, family],
     'GET /v1/me/book-invites': [],
     'GET /v1/books/b1/changes': { marker: '1.1' },
+    'POST /v1/usage': undefined,
   })
 }
 const page = (route = '/books/b1') => renderApp(<Shell book={personal}><p>page</p></Shell>, { route })
@@ -136,5 +138,54 @@ describe('hiding amounts (waterflow#104)', () => {
     server()
     await page()
     expect(screen.getByRole('button', { name: 'Hide amounts' })).toBeInTheDocument()
+  })
+})
+
+describe('reporting how the app is used (waterflow#229)', () => {
+  beforeEach(() => resetReported())
+  const usage = (stats?: 'on' | 'off') => fakeApi({
+    'GET /v1/instance': { server_version: '0.6.0', ...(stats && { usage_stats: stats }) },
+    'GET /v1/me': { id: 'u1', profile: { username: 'admin', is_admin: false } },
+    'GET /v1/books': [personal],
+    'GET /v1/me/book-invites': [],
+    'GET /v1/books/b1/changes': { marker: '1.1' },
+    'POST /v1/usage': undefined,
+  })
+  const reported = (api: ReturnType<typeof fakeApi>) => api.calls.filter((c) => c.path === '/v1/usage').map((c) => (c.body as { feature: string }).feature)
+
+  it('tells the server the layout and appearance once each when numbers are on', async () => {
+    desktop(false)
+    const api = usage('on')
+    await page()
+    await waitFor(() => expect(reported(api).sort()).toEqual(['appearance_light', 'layout_phone']))
+  })
+
+  it('reports a desktop in dark mode', async () => {
+    desktop(true, { dark: true })
+    const api = usage('on')
+    await page()
+    await waitFor(() => expect(reported(api).sort()).toEqual(['appearance_dark', 'layout_desktop']))
+    desktop(false)
+  })
+
+  it('reports hiding amounts when it is turned on', async () => {
+    desktop(true)
+    const api = usage('on')
+    await page()
+    await waitFor(() => expect(reported(api)).toContain('layout_desktop'))
+    expect(reported(api)).not.toContain('hide_amounts')
+    await userEvent.click(screen.getByRole('button', { name: 'Hide amounts' }))
+    await waitFor(() => expect(reported(api)).toContain('hide_amounts'))
+    desktop(false)
+  })
+
+  it.each([['off' as const], [undefined]])('reports nothing when numbers are %s', async (stats) => {
+    desktop(false)
+    const api = usage(stats)
+    await page()
+    await screen.findByText('page')
+    await waitFor(() => expect(api.calls.some((c) => c.path === '/v1/instance')).toBe(true))
+    await new Promise((r) => setTimeout(r, 50))
+    expect(reported(api)).toEqual([])
   })
 })

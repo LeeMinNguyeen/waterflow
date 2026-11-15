@@ -35,11 +35,12 @@ import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import useMediaQuery from '@mui/material/useMediaQuery'
 import { useTheme } from '@mui/material/styles'
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useHideAmounts } from '../lib/hideAmounts'
 import { Link as RouterLink, useLocation, useNavigate } from 'react-router'
 import type { Book, Transaction } from '../lib/api'
+import { useReportUse } from '../lib/useReportUse'
 import { useBookChanges, useBooks, useInstance, useMe } from '../lib/queries'
 import { signOut } from '../auth/signOut'
 import { BookInvites } from './BookInvites'
@@ -100,7 +101,14 @@ export function Shell({ book, children }: { book: Book; children: ReactNode }) {
 
 function Frame({ book, children, onAdd }: { book: Book; children: ReactNode; onAdd: () => void }) {
   const { t } = useTranslation()
-  const desktop = useMediaQuery(useTheme().breakpoints.up('md'))
+  const theme = useTheme()
+  const desktop = useMediaQuery(theme.breakpoints.up('md'))
+  const dark = theme.palette.mode === 'dark'
+  const { hidden } = useHideAmounts()
+  const reportUse = useReportUse()
+  useEffect(() => reportUse(desktop ? 'layout_desktop' : 'layout_phone'), [reportUse, desktop])
+  useEffect(() => reportUse(dark ? 'appearance_dark' : 'appearance_light'), [reportUse, dark])
+  useEffect(() => { if (hidden) reportUse('hide_amounts') }, [reportUse, hidden])
   const { pathname } = useLocation()
   const me = useMe()
   const version = useInstance().data?.server_version
