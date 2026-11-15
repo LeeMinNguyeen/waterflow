@@ -108,7 +108,8 @@ def test_admin_can_open_sign_up(client, admin, invite_only):
     _, admin_token = admin
     assert client.patch("/v1/admin/instance", headers=bearer(admin_token), json={"signup": "open", "name": "Nhà"}).status_code == 204
     assert client.get("/v1/instance").json() | {"server_version": None} == {
-        "name": "Nhà", "signup": "open", "api_version": 1, "setup_needed": False, "server_version": None, "account_purge": "on"}
+        "name": "Nhà", "signup": "open", "api_version": 1, "setup_needed": False, "server_version": None, "account_purge": "on",
+        "usage_stats": "off"}
     sign_up(client)
     client.patch("/v1/admin/instance", headers=bearer(admin_token), json={"name": "Waterflow"})
 
@@ -848,7 +849,8 @@ def test_setup_creates_the_admin_once(fresh_server, monkeypatch):
     assert ok.status_code == 201
     assert client.get("/v1/me", headers=bearer(ok.json()["token"])).json()["profile"]["is_admin"] is True
     assert client.get("/v1/instance").json() | {"server_version": None} == {
-        "name": "Nhà Lan", "signup": "invite", "api_version": 1, "setup_needed": False, "server_version": None, "account_purge": "on"}
+        "name": "Nhà Lan", "signup": "invite", "api_version": 1, "setup_needed": False, "server_version": None, "account_purge": "on",
+        "usage_stats": "off"}
     again = client.post("/v1/setup", json={**body, "username": "boss2", "setup_code": code})
     assert (again.status_code, again.json()) == (403, {"detail": "setup_invalid"})
     _, code_after = migrate.run(url, passwords)

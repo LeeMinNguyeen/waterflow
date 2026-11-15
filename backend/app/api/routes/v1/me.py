@@ -13,6 +13,7 @@ from app.core import sign_in as si
 from app.core.auth import Caller, current_caller
 from app.core.events import account_event
 from app.domain.export import build_export
+from app.core import usage
 
 router = APIRouter()
 
@@ -108,8 +109,23 @@ def restore(caller: Caller = Depends(current_caller), db: Session = Depends(get_
     raise HTTPException(409, "not_restorable")
 
 
+class Used(BaseModel):
+    feature: Annotated[str, StringConstraints(max_length=40)]
+
+
+@router.post("/usage", status_code=204)
+def used(body: Used, db: Session = Depends(get_db)) -> Response:
+    """What only the app knows it did (hiding amounts, the layout): one of the server's list, never free text."""
+    if not db.execute(text("select usage_count(:f, true)"), {"f": body.feature}).scalar():
+        raise HTTPException(422, "invalid")
+    db.commit()
+    return Response(status_code=204)
+
+
 @router.get("/me/export")
 def export(db: Session = Depends(get_db)) -> Response:
     body = build_export(db)
+    usage.count(db, "export")
+    db.commit()
     name = f"waterflow-export-{datetime.now(timezone.utc).date().isoformat()}.zip"
     return Response(body, media_type="application/zip", headers={"Content-Disposition": f'attachment; filename="{name}"'})

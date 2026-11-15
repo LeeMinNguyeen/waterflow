@@ -19,6 +19,7 @@ from app.api.models import MAX_AMOUNT, CurrencyCode, Name
 from app.api.routes.v1.books import get_book, require_role
 from app.domain.bills import Bill, bill_for, bills_for
 from app.domain.transactions import Entry, TxnIn, create_transaction
+from app.core import usage
 
 router = APIRouter(prefix="/books/{book_id}/accounts")
 
@@ -154,6 +155,7 @@ def create_account(book_id: UUID, body: CreateAccount, db: Session = Depends(get
         create_transaction(db, TxnIn(id=opening_balance_id(body.id), book_id=book_id, type="opening_balance",
                                      occurred_on=body.opened_on or _today(db, book_id),
                                      entries=[Entry(body.id, body.opening_balance)]))
+    usage.count(db, "account")
     db.commit()
     return get_account(db, book_id, body.id)
 

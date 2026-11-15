@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_db
 from app.api.models import MAX_AMOUNT
 from app.api.routes.v1.books import get_book, require_role
+from app.core import usage
 
 router = APIRouter(prefix="/books/{book_id}/budgets")
 
@@ -82,6 +83,7 @@ def create_budget(book_id: UUID, body: CreateBudget, db: Session = Depends(get_d
                     " on conflict (id) do nothing"),
                {"i": body.id, "b": book_id, "c": body.category_id, "x": list(dict.fromkeys(body.excluded_category_ids)), "p": body.period, "a": body.amount,
                 "s": body.starts_on, "e": body.ends_on})
+    usage.count(db, "budget")
     db.commit()
     return get_budget(db, book_id, body.id)
 
