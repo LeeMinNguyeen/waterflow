@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 import type { Account, Bill, Book } from '../lib/api'
 import { todayIn } from '../lib/labels'
 import { currencies, fakeApi } from '../test/fakeApi'
+import { resetReported } from '../lib/usage'
 import { renderApp } from '../test/render'
 import { AccountDialog } from './AccountDialog'
 import { BillPanel, InstallmentsPanel } from './AccountBill'
@@ -255,4 +256,26 @@ describe('installments on a card (waterflow#71)', () => {
     await renderApp(<AccountDialog book={book} account={card} onClose={() => {}} />)
     expect(await screen.findByRole('heading', { name: 'Installments' })).toBeInTheDocument()
   })
+})
+
+describe('reporting a card payment (waterflow#229)', () => {
+  const pay = async (usage_stats?: 'on' | 'off') => {
+    resetReported()
+    const api = fakeApi({
+      'GET /v1/instance': { server_version: '0.6.0', ...(usage_stats && { usage_stats }) },
+      'GET /v1/currencies': currencies,
+      'GET /v1/books/b1/accounts': [bank, cash, card],
+      'GET /v1/books/b1/accounts/card/bills': [cardBill],
+      'POST /v1/books/b1/transactions': {},
+      'POST /v1/usage': undefined,
+    })
+    await panel(card)
+    await userEvent.click(await screen.findByRole('button', { name: 'Pay' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Confirm payment' }))
+    await waitFor(() => expect(api.calls.some((c) => c.path === '/v1/books/b1/transactions' && c.method === 'POST')).toBe(true))
+    await new Promise((r) => setTimeout(r, 50))
+    return api.calls.filter((c) => c.path === '/v1/usage').map((c) => c.body)
+  }
+  it('posts card_pay when numbers are on', async () => expect(await pay('on')).toEqual([{ feature: 'card_pay' }]))
+  it('posts nothing when they are off', async () => expect(await pay('off')).toEqual([]))
 })
