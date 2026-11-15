@@ -43,8 +43,7 @@ export function AdminUsage() {
   const [confirming, setConfirming] = useState(false)
   const [busy, setBusy] = useState(false)
 
-  if (usage.isError) return <Alert severity="error">{errorText(usage.error)}</Alert>
-  if (!usage.data) return null
+  if (!usage.data) return usage.isError ? <Alert severity="error">{errorText(usage.error)}</Alert> : null
   const u = usage.data
   const hasNumbers = u.since !== null || u.features.length > 0 || u.days.some((d) => d.people > 0)
 
@@ -73,15 +72,18 @@ export function AdminUsage() {
         {KEEP_DAYS.map((d) => <MenuItem key={d} value={d}>{t('usage.keepDays', { count: d })}</MenuItem>)}
       </TextField>
       {hasNumbers && (
-        <Box><Button color="error" onClick={() => setConfirming(true)} sx={{ ml: -1.75 }}>{t('usage.delete')}</Button></Box>
+        <Box><Button color="error" onClick={() => { setError(null); setConfirming(true) }} sx={{ ml: -1.75 }}>{t('usage.delete')}</Button></Box>
       )}
-      {error ? <Alert severity="error">{errorText(error)}</Alert> : null}
+      {error && !confirming ? <Alert severity="error">{errorText(error)}</Alert> : null}
       <Typography variant="caption" color="textDisabled" sx={{ maxWidth: 560 }}>{t(hasNumbers ? 'usage.note' : 'usage.offNote')}</Typography>
-      <Dialog open={confirming} onClose={() => setConfirming(false)} fullWidth maxWidth="xs">
+      <Dialog open={confirming} onClose={() => { if (!busy) { setError(null); setConfirming(false) } }} fullWidth maxWidth="xs">
         <DialogTitle>{t('usage.deleteTitle')}</DialogTitle>
-        <DialogContent><DialogContentText>{t('usage.deleteBody')}</DialogContentText></DialogContent>
+        <DialogContent>
+          <DialogContentText>{t('usage.deleteBody')}</DialogContentText>
+          {error ? <Alert severity="error" sx={{ mt: 2 }}>{errorText(error)}</Alert> : null}
+        </DialogContent>
         <DialogFooter>
-          <Button onClick={() => setConfirming(false)}>{t('common.cancel')}</Button>
+          <Button disabled={busy} onClick={() => { setError(null); setConfirming(false) }}>{t('common.cancel')}</Button>
           <Button color="error" variant="contained" loading={busy} onClick={() => run(() => send('DELETE', '/v1/admin/usage'))}>{t('usage.deleteConfirm')}</Button>
         </DialogFooter>
       </Dialog>
@@ -103,7 +105,7 @@ export function AdminUsage() {
   return (
     <Stack spacing={4} sx={{ pt: 3.5 }}>
       <Box sx={{ display: { xs: 'grid', md: 'flex' }, gridTemplateColumns: '1fr 1fr', gap: { xs: '20px 16px', md: 8 }, pb: { xs: 2.5, md: 4 }, borderBottom: 1, borderColor: 'divider' }}>
-        <Box sx={{ gridColumn: { xs: '1 / 3', md: 'auto' } }}><Stat label={t('usage.people')} value={u.people.accounts} /></Box>
+        <Box sx={{ gridColumn: { xs: '1 / 3', md: 'auto' } }}><Stat label={t('usage.accounts')} value={u.people.accounts} /></Box>
         <Stat label={t('usage.today')} value={u.people.today} />
         <Stat label={t('usage.days7')} value={u.people.days_7} />
         <Stat label={t('usage.days30')} value={u.people.days_30} />

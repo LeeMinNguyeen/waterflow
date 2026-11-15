@@ -112,6 +112,16 @@ describe('the Usage tab on Server admin (waterflow#229)', () => {
     await waitFor(() => expect(api.writes()).toContainEqual(expect.objectContaining({ method: 'DELETE', path: '/v1/admin/usage' })))
   })
 
+  it('says so inside the dialog when deleting fails', async () => {
+    const api = server()
+    api.routes['DELETE /v1/admin/usage'] = new Response(JSON.stringify({ detail: 'admin_only' }), { status: 403 })
+    await renderApp(<Admin />, { route: '/?tab=usage' })
+    await userEvent.click(await screen.findByRole('button', { name: 'Delete the numbers collected' }))
+    const dialog = await screen.findByRole('dialog')
+    await userEvent.click(within(dialog).getByRole('button', { name: /^Delete/ }))
+    expect(await within(dialog).findByRole('alert')).toBeInTheDocument()
+  })
+
   it('reads in Vietnamese', async () => {
     server()
     await renderApp(<Admin />, { route: '/admin?tab=usage', lang: 'vi' })

@@ -707,7 +707,7 @@
     "offTitle": "Số liệu sử dụng đang tắt",
     "offBody": "Khi bật, máy chủ đếm xem tính năng nào được dùng và bởi bao nhiêu người, mặc định trong 90 ngày gần nhất: ví dụ tháng này có bao nhiêu người thêm giao dịch hoặc bật xác minh hai bước. Máy chủ không bao giờ ghi lại số tiền, số dư, người nhận, ghi chú, tên sổ, tài khoản hay danh mục, nội dung tìm kiếm, hoặc ai đã làm gì. Không có gì rời khỏi máy chủ này.",
     "offNote": "Bật để xem số liệu tại đây. Mọi người thấy trong Hồ sơ của mình việc này đang bật hay tắt.",
-    "people": "Số người",
+    "accounts": "Số người",
     "today": "Hoạt động hôm nay",
     "days7": "7 ngày qua",
     "days30": "30 ngày qua",

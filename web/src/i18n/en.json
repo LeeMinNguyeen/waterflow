@@ -707,7 +707,7 @@
     "offTitle": "Usage numbers are off",
     "offBody": "When this is on, the server counts which features are used and by how many people, for the last 90 days by default: for example how many people added a transaction this month or turned on two-step sign-in. It never records amounts, balances, payees, notes, names of books, accounts or categories, search text, or which person did what. Nothing leaves this server.",
     "offNote": "Turn this on to see the numbers here. People see on their Profile whether it is on.",
-    "people": "People",
+    "accounts": "People",
     "today": "Active today",
     "days7": "Last 7 days",
     "days30": "Last 30 days",
