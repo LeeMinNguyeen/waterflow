@@ -33,6 +33,7 @@ function server() {
     'PATCH /v1/admin/instance': undefined,
     'GET /v1/admin/update': { current_version: '0.1.3', latest_version: '0.1.3', release_url: null, changelog_url: null,
       update_available: false, updater: false, status: null },
+    'GET /v1/admin/usage': { collecting: false, keep_days: 90, since: null, people: { accounts: 1, new_this_month: 0, today: 0, days_7: 0, days_30: 0 }, days: [], features: [], server: { books: 0, shared_books: 0 } },
     'GET /v1/admin/invites': [],
     'GET /v1/admin/users': [],
     'GET /v1/admin/jobs': jobs,

@@ -11,16 +11,19 @@ import FormControlLabel from '@mui/material/FormControlLabel'
 import MenuItem from '@mui/material/MenuItem'
 import Stack from '@mui/material/Stack'
 import Switch from '@mui/material/Switch'
+import Tab from '@mui/material/Tab'
 import Table from '@mui/material/Table'
 import TableBody from '@mui/material/TableBody'
 import TableCell from '@mui/material/TableCell'
 import TableHead from '@mui/material/TableHead'
 import TableRow from '@mui/material/TableRow'
+import Tabs from '@mui/material/Tabs'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useSearchParams } from 'react-router'
 import { FormSection, PageHeader } from '../components/Page'
 import { useErrorText } from '../components/errors'
 import { currentLanguage } from '../i18n'
@@ -33,6 +36,7 @@ import { updating, useUpdating, type UpdateInfo } from '../lib/updating'
 import { DialogFooter } from '../components/DialogFooter'
 import { copyText } from '../lib/clipboard'
 import { useToast } from '../lib/toast'
+import { AdminUsage } from './AdminUsage'
 
 type AdminUser = {
   id: string; username: string; display_name: string | null; is_admin: boolean; created_at: string
@@ -80,20 +84,33 @@ function ShowOnce({ title, body, link, qr, code, onClose }: {
   )
 }
 
+const tabSx = { minHeight: 40, minWidth: 0, px: 0.25, mr: 3, textTransform: 'none', fontSize: 14, color: 'text.secondary', '&.Mui-selected': { color: 'text.primary', fontWeight: 500 } }
+
 export function Admin() {
   const { t } = useTranslation()
   const me = useMe()
+  const [params, setParams] = useSearchParams()
   if (!me.data?.profile.is_admin) return <Alert severity="info">{t('errors.admin_only')}</Alert>
+  const tab = params.get('tab') === 'usage' ? 'usage' : 'server'
   return (
     <Stack spacing={2} sx={{ maxWidth: 960 }}>
       <PageHeader title={t('admin.title')} />
-      <ServerSettings />
-      <Updates />
-      <Jobs timezone={me.data.profile.timezone} />
-      <Invites />
-      <Users selfId={me.data.id} />
-      <Backups timezone={me.data.profile.timezone} />
-      <Restore />
+      <Tabs value={tab} onChange={(_, v: string) => setParams(v === 'usage' ? { tab: 'usage' } : {}, { replace: true })}
+        sx={{ minHeight: 40, borderBottom: 1, borderColor: 'divider', '& .MuiTabs-indicator': { height: 2 } }}>
+        <Tab value="server" label={t('admin.tabServer')} sx={tabSx} />
+        <Tab value="usage" label={t('admin.tabUsage')} sx={tabSx} />
+      </Tabs>
+      {tab === 'usage' ? <AdminUsage /> : (
+        <>
+          <ServerSettings />
+          <Updates />
+          <Jobs timezone={me.data.profile.timezone} />
+          <Invites />
+          <Users selfId={me.data.id} />
+          <Backups timezone={me.data.profile.timezone} />
+          <Restore />
+        </>
+      )}
     </Stack>
   )
 }
