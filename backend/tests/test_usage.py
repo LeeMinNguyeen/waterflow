@@ -97,11 +97,14 @@ def test_old_numbers_are_purged_and_the_admin_can_delete_them_all(client, databa
     expense(client, u, bid, accts["Cash"])
     with database.connect() as c:
         key = bytes(c.execute(text("select usage_key from instance_settings")).scalar())
-        c.execute(text("insert into usage_days (day, feature, user_ref, count) values"
-                       " (current_date - 31, 'export', sha256('old'), 4), (current_date - 29, 'export', sha256('kept'), 1)"))
-        assert c.execute(text("select purge_usage()")).scalar() == 1
-        assert c.execute(text("select count(*) from usage_days where feature = 'export'")).scalar() == 1
-    assert hasattr(account_deletion, "purge_usage")
+        mine = bytes(c.execute(text("select user_ref from usage_days where feature = 'transaction_expense'")).scalar())
+        c.execute(text("insert into usage_days (day, feature, user_ref, count) values (current_date - 31, 'export', :r, 4),"
+                       " (current_date - 29, 'export', :r, 1), (current_date, 'export', sha256('nobody'), 1)"), {"r": mine})
+        # Older than the admin keeps them, or of nobody still here (a purged account): gone at the next purge.
+        assert c.execute(text("select purge_usage()")).scalar() == 2
+        assert c.execute(text("select day = current_date - 29, user_ref = :r from usage_days where feature = 'export'"),
+                         {"r": mine}).all() == [(True, True)]
+    assert account_deletion.purge_usage(database) == 0
     assert client.delete("/v1/admin/usage", headers=auth(admin)).status_code == 204
     assert rows(database) == []
     with database.connect() as c:
@@ -111,3 +114,21 @@ def test_old_numbers_are_purged_and_the_admin_can_delete_them_all(client, databa
     client.patch("/v1/admin/instance", headers=auth(admin), json={"usage_stats": "off"})
     expense(client, u, bid, accts["Cash"])
     assert dict((f, times) for f, _, times in rows(database))["transaction_expense"] == 1
+
+
+def test_counting_never_fails_the_request_and_has_a_ceiling(client, database, admin, monkeypatch):
+    client.patch("/v1/admin/instance", headers=auth(admin), json={"usage_stats": "on"})
+    u = signed_up(client)
+    assert client.post("/v1/usage", headers=auth(u), json={"feature": "hide_amounts"}).status_code == 204
+    with database.connect() as c:
+        c.execute(text("update usage_days set count = 2147483647 where feature = 'hide_amounts'"))
+    assert client.post("/v1/usage", headers=auth(u), json={"feature": "hide_amounts"}).status_code == 204
+    with database.connect() as c:
+        c.execute(text("alter table usage_days add constraint broken check (feature <> 'transaction_expense') not valid"))
+    try:
+        bid, accts = new_book_with_accounts(client, u)
+        saved = expense(client, u, bid, accts["Cash"])                             # counting fails; the expense is saved
+        assert client.get(f"/v1/books/{bid}/transactions/{saved['id']}", headers=auth(u)).status_code == 200
+    finally:
+        with database.connect() as c:
+            c.execute(text("alter table usage_days drop constraint broken"))

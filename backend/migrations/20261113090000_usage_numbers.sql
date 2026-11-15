@@ -59,7 +59,7 @@ begin
   end if;
   ref := sha256(s.usage_key || uuid_send(who));
   insert into usage_days (day, feature, user_ref) values (today, p_feature, ref)
-  on conflict (day, feature, user_ref) do update set count = usage_days.count + 1;
+  on conflict (day, feature, user_ref) do update set count = least(usage_days.count, 999999) + 1;
   insert into usage_days (day, feature, user_ref) values (today, 'active', ref) on conflict do nothing;
   return true;
 end $$;
@@ -118,8 +118,11 @@ language plpgsql security definer set search_path = pg_catalog, public, pg_temp 
 declare
   n int;
 begin
-  delete from usage_days
-   where day < (now() at time zone 'utc')::date - (select usage_keep_days from instance_settings);
+  -- Older than the admin keeps them, or of nobody still here: a purged account, or a key since replaced.
+  delete from usage_days d
+   where d.day < (now() at time zone 'utc')::date - (select usage_keep_days from instance_settings)
+      or not exists (select 1 from users u, instance_settings s
+                      where u.deleted_at is null and d.user_ref = sha256(s.usage_key || uuid_send(u.id)));
   get diagnostics n = row_count;
   return n;
 end $$;
