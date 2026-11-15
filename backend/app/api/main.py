@@ -110,13 +110,15 @@ class Instance(BaseModel):
     signup: str             # invite | open
     setup_needed: bool      # no admin yet
     account_purge: Literal["on", "off"]    # off: closed accounts aren't deleted after their 30 days
+    usage_stats: Literal["on", "off"]      # on: the admin collects counts of people and features used
 
 
 @v1.get("/instance")
 def instance(db: Session = Depends(get_public_db)) -> Instance:
     row = db.execute(text("select * from instance_info()")).mappings().one()
     purge = "on" if db.execute(text("select account_purge_on()")).scalar() else "off"
-    return Instance(server_version=SERVER_VERSION, api_version=API_VERSION, account_purge=purge, **row)
+    counting = "on" if db.execute(text("select usage_on()")).scalar() else "off"
+    return Instance(server_version=SERVER_VERSION, api_version=API_VERSION, account_purge=purge, usage_stats=counting, **row)
 
 
 for module in (sign_in, admin, restore, me, reference, books, members, accounts, contacts, categories, budgets,

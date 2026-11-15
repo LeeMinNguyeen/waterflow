@@ -61,6 +61,11 @@ def purge_expired_sign_in(engine) -> int:
         return conn.execute(text("select purge_expired_sign_in()")).scalar_one()
 
 
+def purge_usage(engine) -> int:
+    with engine.begin() as conn:
+        return conn.execute(text("select purge_usage()")).scalar_one()
+
+
 def repurge(engine, purge_log: str) -> int:
     ids = list(dict.fromkeys(r["user_id"] for r in _read(purge_log) if "purged_at" in r))
     with engine.begin() as conn:
@@ -74,7 +79,8 @@ if __name__ == "__main__":
     else:
         errors = []
         for name, step in (("purged {} accounts", lambda: len(run_purge(eng))),
-                           ("deleted {} expired sessions", lambda: purge_expired_sign_in(eng))):
+                           ("deleted {} expired sessions", lambda: purge_expired_sign_in(eng)),
+                           ("deleted {} old usage numbers", lambda: purge_usage(eng))):
             try:                    # one step failing doesn't skip the other
                 print(name.format(step()))
             except Exception as e:

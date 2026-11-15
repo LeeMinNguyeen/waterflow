@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_db
 from app.api.models import Name
 from app.api.routes.v1.books import get_book, require_role
+from app.core import usage
 
 router = APIRouter(prefix="/books/{book_id}/categories")
 
@@ -62,6 +63,7 @@ def create_category(book_id: UUID, body: CreateCategory, db: Session = Depends(g
     db.execute(text("insert into categories (id, book_id, parent_id, name, kind, color) values (:i, :b, :p, :n, :k, :c)"
                     " on conflict (id) do nothing"),
                {"i": body.id, "b": book_id, "p": body.parent_id, "n": body.name, "k": body.kind, "c": body.color})
+    usage.count(db, "category")
     db.commit()
     return get_category(db, book_id, body.id)
 
