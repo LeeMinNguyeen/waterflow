@@ -189,3 +189,20 @@ describe('the closed account\'s screen while the daily deletion is off (waterflo
     expect(await screen.findByText(/turned off the daily deletion/)).toBeInTheDocument()
   })
 })
+
+describe('usage numbers on this server (waterflow#229)', () => {
+  it.each([
+    ['on', "This server's admin collects usage numbers: which features are used and how often, never your data."],
+    ['off', "This server doesn't collect usage numbers."],
+  ] as const)('says when collecting is %s', async (usage_stats, line) => {
+    fakeApi({
+      'GET /v1/me': me,
+      'GET /v1/instance': { name: 'Nhà', server_version: '0.6.0', api_version: 1, signup: 'invite', setup_needed: false, account_purge: 'on', usage_stats },
+      'GET /v1/auth/two-factor': { enabled: false, recovery_codes_left: 0 },
+      'GET /v1/auth/sessions': [],
+    })
+    await renderApp(<Profile />)
+    expect(await screen.findByText(line)).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Privacy on this server' })).toBeInTheDocument()
+  })
+})

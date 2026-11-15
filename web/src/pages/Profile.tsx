@@ -45,6 +45,7 @@ export function Profile() {
       <Appearance />
       <Security />
       <Devices profile={me.data.profile} />
+      <PrivacyOnServer />
       <YourData profile={me.data.profile} />
     </Stack>
   )
@@ -327,6 +328,17 @@ function Devices({ profile }: { profile: ProfileT }) {
       )}
       {notice && <Alert severity="success">{notice}</Alert>}
       {error ? <Alert severity="error">{errorText(error)}</Alert> : null}
+    </FormSection>
+  )
+}
+
+function PrivacyOnServer() {
+  const { t } = useTranslation()
+  const instance = useInstance()
+  if (!instance.data) return null
+  return (
+    <FormSection title={t('profile.privacy')}>
+      <Typography color="textSecondary">{t(instance.data.usage_stats === 'on' ? 'profile.usageOn' : 'profile.usageOff')}</Typography>
     </FormSection>
   )
 }
