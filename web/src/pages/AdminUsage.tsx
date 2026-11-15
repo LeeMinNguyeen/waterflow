@@ -64,14 +64,16 @@ export function AdminUsage() {
 
   const collecting = (
     <FormSection title={t('usage.collecting')}>
-      <FormControlLabel label={t('usage.collect')} sx={{ alignSelf: 'start', height: 36 }}
-        control={<Switch checked={u.collecting} disabled={busy} onChange={(e) => run(() => send('PATCH', '/v1/admin/instance', { usage_stats: e.target.checked ? 'on' : 'off' }))} />} />
+      <Box>
+        <FormControlLabel label={t('usage.collect')} sx={{ ml: '-12px', height: 36 }}
+          control={<Switch checked={u.collecting} disabled={busy} onChange={(e) => run(() => send('PATCH', '/v1/admin/instance', { usage_stats: e.target.checked ? 'on' : 'off' }))} />} />
+      </Box>
       <TextField select label={t('usage.keepFor')} value={u.keep_days} disabled={!u.collecting || busy} sx={{ width: 240 }}
         onChange={(e) => run(() => send('PATCH', '/v1/admin/instance', { usage_keep_days: Number(e.target.value) }))}>
         {KEEP_DAYS.map((d) => <MenuItem key={d} value={d}>{t('usage.keepDays', { count: d })}</MenuItem>)}
       </TextField>
       {hasNumbers && (
-        <Button color="error" onClick={() => setConfirming(true)} sx={{ alignSelf: 'start', ml: -1.75 }}>{t('usage.delete')}</Button>
+        <Box><Button color="error" onClick={() => setConfirming(true)} sx={{ ml: -1.75 }}>{t('usage.delete')}</Button></Box>
       )}
       {error ? <Alert severity="error">{errorText(error)}</Alert> : null}
       <Typography variant="caption" color="textDisabled" sx={{ maxWidth: 560 }}>{t(hasNumbers ? 'usage.note' : 'usage.offNote')}</Typography>
