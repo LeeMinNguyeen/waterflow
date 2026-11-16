@@ -348,6 +348,51 @@ def test_pruning_skips_what_isnt_a_backup_file_of_its_own(tmp_path):
     assert backup.prune(str(tmp_path), datetime(2026, 11, 1, tzinfo=timezone.utc)) == ["waterflow-20200102T000000Z.dump"]
 
 
+def test_the_request_is_copied_not_moved_and_only_a_plain_file_is_taken(tmp_path, monkeypatch):
+    """The API can swap an entry between a check and a move: the launcher reads the entry once, through a handle it
+    checked, into a file of its own."""
+    from app.jobs import restore as web_restore
+    backups = tmp_path / "backups"
+    (backups / "restore").mkdir(parents=True)
+    where = web_restore.state(str(backups))
+    (backups / "restore" / "request.dump").write_bytes(b"PGDMP")
+    os.mkfifo(backups / "restore" / "purged_accounts.jsonl")
+    with pytest.raises(web_restore.RestoreError):
+        web_restore._take(str(backups), where)
+    assert not any(p.exists() or p.is_symlink() for p in (where / "request.dump", where / "purged_accounts.jsonl"))
+    assert not os.path.lexists(backups / "restore" / "purged_accounts.jsonl")                  # removed from the API's folder
+    (backups / "restore" / "request.dump").write_bytes(b"PGDMP")
+    (backups / "restore" / "purged_accounts.jsonl").mkdir()
+    (backups / "restore" / "purged_accounts.jsonl" / "x").write_text("")
+    with pytest.raises(web_restore.RestoreError):
+        web_restore._take(str(backups), where)
+    (backups / "restore" / "purged_accounts.jsonl" / "x").unlink()
+    (backups / "restore" / "purged_accounts.jsonl").rmdir()
+    (backups / "restore" / "request.dump").write_bytes(b"PGDMP")
+    (backups / "restore" / "purged_accounts.jsonl").write_text('{"user_id": "11111111-1111-1111-1111-111111111111"}\n')
+    web_restore._take(str(backups), where)
+    assert (where / "request.dump").read_bytes() == b"PGDMP" and not (backups / "restore" / "request.dump").exists()
+    assert os.stat(where / "request.dump").st_uid == os.geteuid()
+
+
+def test_pruning_skips_a_name_that_only_looks_like_a_backup(tmp_path):
+    from datetime import datetime, timezone
+    from app.jobs import backup
+    (tmp_path / "waterflow-20201399T000000Z.dump").write_bytes(b"x")
+    (tmp_path / "waterflow-20200102T000000Z.dump").write_bytes(b"x")
+    assert backup.prune(str(tmp_path), datetime(2026, 11, 1, tzinfo=timezone.utc)) == ["waterflow-20200102T000000Z.dump"]
+
+
+def test_only_lines_naming_an_account_reach_the_purged_list(live, tmp_path):
+    from app.jobs import restore as web_restore
+    name, dump = live
+    gone = "22222222-2222-2222-2222-222222222222"
+    backups = requested(tmp_path, dump.read_bytes(), 'not json\n{"user_id": "x"}\n[1]\n{"user_id": "' + gone + '", "purged_at": "2026-10-20T00:00:00Z"}\n')
+    assert web_restore.restore_if_requested(libpq_url(name), str(backups)) == "done"
+    assert (backups / "purged_accounts.jsonl").read_text().strip().splitlines() == [
+        '{"user_id": "' + gone + '", "purged_at": "2026-10-20T00:00:00Z"}']
+
+
 def test_a_restore_signs_everyone_out(live, tmp_path):
     """Sessions, remembered devices and reset links in the backup would work again, even ones ended after it; so would
     an invite used or revoked after it: every unused one is revoked. Sign-up open on the backup's day, and closed

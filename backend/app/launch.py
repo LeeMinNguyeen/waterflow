@@ -168,7 +168,7 @@ def backup_before_updating(admin: str, backup_dir: str) -> None:
     """Stops the server with a plain reason, not a traceback, when the backup an update needs can't be made."""
     try:
         path, _, _ = backup.run_backup(admin, backup_dir)
-    except (backup.BackupError, OSError) as e:
+    except (backup.BackupError, OSError, ValueError) as e:
         hint = (" The image's pg_dump can't back up a newer PostgreSQL than its own: see Own database in the docs."
                 if "version mismatch" in str(e) else "")
         raise SystemExit(f"the backup before updating failed, so nothing was updated: {backup._scrub(str(e), admin)}.{hint}") from None

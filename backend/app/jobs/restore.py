@@ -17,9 +17,11 @@ import contextlib
 import json
 import os
 import re
+import shutil
 import stat
 import subprocess
 import tempfile
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -66,30 +68,48 @@ def _plain_own(path: Path, owner: int | None = None) -> bool:
     return stat.S_ISREG(st.st_mode) and st.st_nlink == 1 and (owner is None or st.st_uid == owner)
 
 
+def _copy_in(source: Path, target: Path) -> bool:
+    """Reads the API's entry once, through a handle checked to be a plain file (the API can swap the name between a
+    check and a use), into a new file of the launcher's own. False, and nothing made, for anything else."""
+    try:
+        fd = os.open(source, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except FileNotFoundError:
+        return True
+    except OSError:
+        return False
+    try:
+        st = os.fstat(fd)
+        if not stat.S_ISREG(st.st_mode) or st.st_nlink != 1:
+            return False
+        out = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o640)
+        with os.fdopen(out, "wb") as dst, os.fdopen(os.dup(fd), "rb") as src:
+            shutil.copyfileobj(src, dst)
+        return True
+    finally:
+        os.close(fd)
+
+
 def _take(backup_dir: str, where: Path) -> None:
-    """Moves the API's request into the launcher's folder, where the API can't change it. Anything there but a plain
-    file (a link, a hard link, a folder) is refused, and removed if it can be."""
+    """The API's request, copied into the launcher's folder where the API can't change it. Anything but a plain file
+    (a link, a hard link, a folder, a pipe) is refused, and removed from the API's folder if it can be."""
     inbox = folder(backup_dir)
     for name in (REQUEST, PURGED):
-        with contextlib.suppress(OSError):
-            (where / name).unlink(missing_ok=True)
-    refused = False
+        _remove(where / name)
+    taken = [_copy_in(inbox / name, where / name) for name in (REQUEST, PURGED)]
     for name in (REQUEST, PURGED):
-        try:
-            st = os.lstat(inbox / name)
-        except FileNotFoundError:
-            continue
-        if stat.S_ISREG(st.st_mode) and st.st_nlink == 1:
-            os.replace(inbox / name, where / name)
-        else:
-            refused = True
-            with contextlib.suppress(OSError):
-                (inbox / name).rmdir() if stat.S_ISDIR(st.st_mode) else (inbox / name).unlink()
-    if refused or (os.path.lexists(where / REQUEST) and not _plain_own(where / REQUEST)):
+        _remove(inbox / name)
+    if not all(taken) or not (where / REQUEST).exists():
         for name in (REQUEST, PURGED):
-            with contextlib.suppress(OSError):
-                (where / name).unlink(missing_ok=True)
+            _remove(where / name)
         raise RestoreError("the upload is not a plain file")
+
+
+def _remove(path: Path) -> None:
+    with contextlib.suppress(OSError):
+        if path.is_dir() and not path.is_symlink():
+            path.rmdir()
+        else:
+            path.unlink(missing_ok=True)
 
 
 def server_versions() -> list[str]:
@@ -221,6 +241,15 @@ def _sign_everyone_out(url: str) -> None:
             conn.execute("update public.instance_settings set signup = 'invite'")
 
 
+def _purged_line(line: str) -> bool:
+    """One the purged list can hold: a JSON object naming an account (the purge job reads every line back)."""
+    try:
+        record = json.loads(line)
+        return isinstance(record, dict) and bool(uuid.UUID(str(record.get("user_id"))))
+    except ValueError:
+        return False
+
+
 def _apply(url: str, path: str, purged: Path | None, purge_log: str, sign_out: bool = True) -> None:
     _empty(url)
     _load(url, path)
@@ -228,7 +257,7 @@ def _apply(url: str, path: str, purged: Path | None, purge_log: str, sign_out: b
         _sign_everyone_out(url)
     if purged and purged.exists():
         have = set(Path(purge_log).read_text().split("\n")) if os.path.exists(purge_log) else set()
-        lines = [x for x in dict.fromkeys(purged.read_text().split("\n")) if x.strip() and x not in have]
+        lines = [x for x in dict.fromkeys(purged.read_text(errors="replace").split("\n")) if _purged_line(x) and x not in have]
         if lines:
             users.append_own(Path(purge_log), "\n".join(lines) + "\n")
     _repurge(url, purge_log)
@@ -302,9 +331,9 @@ def restore_if_requested(url: str, backup_dir: str, purge_log: str | None = None
             return _resume(url, backup_dir, where, purge_log)
         finally:
             for name in (REQUEST, PURGED, SAFETY):
-                (where / name).unlink(missing_ok=True)
+                _remove(where / name)
             for name in (REQUEST, PURGED):
-                (inbox / name).unlink(missing_ok=True)
+                _remove(inbox / name)
     try:
         _take(backup_dir, where)
     except (RestoreError, OSError) as e:
@@ -338,4 +367,4 @@ def restore_if_requested(url: str, backup_dir: str, purge_log: str | None = None
         return "failed"
     finally:
         for name in (REQUEST, PURGED, SAFETY):
-            (where / name).unlink(missing_ok=True)
+            _remove(where / name)

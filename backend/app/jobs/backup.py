@@ -125,18 +125,20 @@ def prune(backup_dir: str, now: datetime) -> list[str]:
             kept.update(Path(backup_dir, "restore-state", marker).read_text().split())
         except FileNotFoundError:
             pass
-    old = [n for n in sorted(os.listdir(backup_dir))
-           if n not in kept and (m := DUMP_NAME.fullmatch(n))
-           and now - datetime.strptime(m[1], "%Y%m%dT%H%M%SZ").replace(tzinfo=timezone.utc) > KEEP]
     removed = []
-    for n in old:
+    for n in sorted(os.listdir(backup_dir)):
         path = os.path.join(backup_dir, n)
         try:
+            m = DUMP_NAME.fullmatch(n)
+            if n in kept or not m or now - datetime.strptime(m[1], "%Y%m%dT%H%M%SZ").replace(tzinfo=timezone.utc) <= KEEP:
+                continue
             st = os.lstat(path)
             if stat.S_ISLNK(st.st_mode) or (stat.S_ISREG(st.st_mode) and st.st_uid == os.geteuid()):
                 os.remove(path)
                 removed.append(n)
-        except OSError:
+            else:
+                print(f"left {n}: not a backup file of this server's own", flush=True)
+        except (OSError, ValueError):
             continue
     return removed
 
