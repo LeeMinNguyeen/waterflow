@@ -30,11 +30,18 @@ COPY backend/migrations ./migrations
 COPY VERSION ./VERSION
 COPY --from=web /web/dist ./web
 
-# Not root. The secrets, backups and updates volumes start from these folders,
-# so they belong to this user.
-RUN useradd --system --uid 10001 waterflow \
- && mkdir /secrets /backups /updates && chown waterflow /secrets /backups /updates
-USER waterflow
+# Starts as root only to set up these folders on every start, then runs as two
+# users (app/core/users.py): waterflow (the launcher and the jobs) and
+# waterflow-api (the API), which share the group waterflow-files for the
+# backups and updates folders. The volumes start from these folders.
+RUN groupadd --system --gid 10001 waterflow \
+ && groupadd --system --gid 10002 waterflow-api \
+ && groupadd --system --gid 10003 waterflow-files \
+ && useradd --system --uid 10001 --gid waterflow --groups waterflow-files waterflow \
+ && useradd --system --uid 10002 --gid waterflow-api --groups waterflow-files waterflow-api \
+ && mkdir /secrets /backups /updates \
+ && chown waterflow:waterflow /secrets && chmod 711 /secrets \
+ && chown waterflow:waterflow-files /backups /updates && chmod 2770 /backups /updates
 
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s \

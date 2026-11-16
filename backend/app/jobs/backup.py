@@ -141,7 +141,7 @@ def _reserve(backup_dir: str, now: datetime) -> tuple[str, int]:
             continue
         try:
             # Owner-only: a dump holds password hashes and two-factor secrets.
-            fd = os.open(final + ".partial", os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            fd = os.open(final + ".partial", os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o640)
         except FileExistsError:
             continue
         if not os.path.exists(final):

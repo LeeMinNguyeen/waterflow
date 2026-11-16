@@ -97,7 +97,7 @@ def backup(tmp_path):
     assert r.returncode == 0, r.stderr
     files = os.listdir(bucket)
     assert len(files) == 1 and files[0].startswith("waterflow-") and files[0].endswith(".dump"), files
-    assert (bucket / files[0]).stat().st_mode & 0o777 == 0o600            # holds password hashes
+    assert (bucket / files[0]).stat().st_mode & 0o777 == 0o640            # password hashes: the server's two users only
     return bucket / files[0], r.stdout
 
 

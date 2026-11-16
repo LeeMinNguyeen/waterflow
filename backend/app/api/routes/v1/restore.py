@@ -32,8 +32,13 @@ MAX_PURGED = 10 * 2**20
 
 
 def stop_server() -> None:
-    """The launcher stops its children and exits; Docker, or Cloud Run, starts the server again."""
-    os.kill(int(os.environ.get("LAUNCHER_PID") or os.getpid()), signal.SIGTERM)
+    """The launcher stops its children and exits; Docker, or Cloud Run, starts the server again. Through the pipe it
+    gave the API, which runs as another user and can't signal it; a signal where there's no pipe (a reloading API in
+    development)."""
+    try:
+        os.write(int(os.environ["STOP_FD"]), b"x")
+    except (KeyError, ValueError, OSError):
+        os.kill(int(os.environ.get("LAUNCHER_PID") or os.getpid()), signal.SIGTERM)
 
 
 def _backup_dir() -> str:
@@ -43,7 +48,7 @@ def _backup_dir() -> str:
 def _copy(upload: UploadFile, to: Path, limit: int) -> None:
     """Owner-only, like the nightly backups: a backup holds password hashes."""
     size = 0
-    fd = os.open(to, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    fd = os.open(to, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o640)
     with os.fdopen(fd, "wb") as out:
         while chunk := upload.file.read(2**20):
             size += len(chunk)
@@ -77,7 +82,7 @@ def _unpack(partial: Path, where: Path) -> bool | None:
                 raise HTTPException(422, "restore_invalid")
             seen.add(kind)
             left = int(size, 8)
-            fd = os.open(parts[kind], os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            fd = os.open(parts[kind], os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o640)
             with os.fdopen(fd, "wb") as out:
                 while left and (chunk := f.read(min(left, 2**20))):
                     out.write(chunk)

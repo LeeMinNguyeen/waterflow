@@ -14,6 +14,7 @@ those passwords instead of making new ones.
 import json
 import os
 import secrets
+import select
 import signal
 import subprocess
 import sys
@@ -23,6 +24,7 @@ from urllib.parse import quote, unquote, urlsplit, urlunsplit
 
 import psycopg
 
+from app.core import users
 from app.core.hardening import hide_environment
 from app.jobs import backup, migrate, owner, restore
 
@@ -41,9 +43,8 @@ def _write_secret(path: Path, value: str, mode: int = 0o600) -> None:
 
 def make_postgres_password() -> None:
     if not POSTGRES_PASSWORD.exists():
-        # Readable by the database container's own user too. The secrets volume
-        # is mounted only into the database and this server.
-        _write_secret(POSTGRES_PASSWORD, secrets.token_hex(24), 0o644)
+        # The database container reads it with the postgres image's group (app/core/users.py sets the owners).
+        _write_secret(POSTGRES_PASSWORD, secrets.token_hex(24), 0o640 if os.geteuid() == 0 else 0o644)
         print("made the built-in database's password", flush=True)
 
 
@@ -173,7 +174,7 @@ def backup_before_updating(admin: str, backup_dir: str) -> None:
     print(f"before updating: backed up to {path}", flush=True)
 
 
-def serve() -> None:
+def serve(split: bool = False) -> None:
     started = time.time()              # before the backup and migrations: see app/core/updates.py status()
     admin = admin_url()
     passwords = login_passwords()
@@ -203,14 +204,21 @@ def serve() -> None:
         print("stopping, as asked while starting", flush=True)
         sys.exit(0)
 
+    stop_read, stop_write = os.pipe()
     base = {**_without_owner(), "SERVER_STARTED_AT": str(started), "LAUNCHER_PID": str(os.getpid())}
     api_env = {**base, "DATABASE_URL": login_url(admin, "api_login", passwords["api_login"])}
     port = os.environ.get("PORT", "8080")
     reload = ["--reload"] if os.environ.get("DEV_RELOAD") else []        # development only (scripts/dev.sh)
+    if not reload:                       # a reloading API runs in a process of its own that doesn't get the pipe
+        api_env["STOP_FD"] = str(stop_write)
     children = [
         subprocess.Popen([sys.executable, "-m", "uvicorn", "app.api.main:app", "--host", "0.0.0.0", "--port", port,
-                          "--proxy-headers", "--forwarded-allow-ips", "*", *reload], env=api_env),
+                          "--proxy-headers", "--forwarded-allow-ips", "*", *reload], env=api_env, pass_fds=(stop_write,),
+                         preexec_fn=users.become(users.IDS.api, users.IDS.api_group, users.IDS.files) if split else None),
     ]
+    if split:
+        users.drop()
+    os.close(stop_write)
     if jobs_here():
         children.append(subprocess.Popen([sys.executable, "-m", "app.jobs.scheduler"],
                                          env={**base, **jobs_env(admin, passwords, backup_dir)}))
@@ -224,19 +232,41 @@ def serve() -> None:
     signal.signal(signal.SIGINT, stop)
     if stop_asked:                       # asked between the check above and these
         stop()
+    sys.exit(supervise(children, stop_read))
+
+
+def supervise(children: list[subprocess.Popen], stop_read: int) -> int:
+    """Until a child stops, or the API asks through the pipe (a restore): then stops them all. Their first non-zero
+    exit code, or 0."""
     while all(c.poll() is None for c in children):
-        time.sleep(1)
-    stop()
+        if select.select([stop_read], [], [], 1)[0] and os.read(stop_read, 1):
+            break
+    for c in children:
+        if c.poll() is None:
+            c.terminate()
     for c in children:
         c.wait(timeout=20)
-    sys.exit(next((c.returncode for c in children if c.returncode), 0))
+    return next((c.returncode for c in children if c.returncode), 0)
+
+
+def main(argv: list[str]) -> None:
+    hide_environment()
+    how = users.plan(os.geteuid(), os.environ)
+    if argv == ["secrets"]:
+        make_postgres_password()
+        if how != "as_is":
+            users.prepare(SECRETS)
+        return
+    if how != "as_is":
+        users.prepare(SECRETS, Path(os.environ.get("BACKUP_DIR", "/backups")), Path(os.environ.get("UPDATES_DIR", "/updates")))
+        users.drop_keeping_root()
+        if how == "one_user" or argv == ["jobs"]:
+            users.drop()
+    if argv == ["jobs"]:
+        run_jobs_once()
+    else:
+        serve(split=how == "split")
 
 
 if __name__ == "__main__":
-    hide_environment()
-    if sys.argv[1:] == ["secrets"]:
-        make_postgres_password()
-    elif sys.argv[1:] == ["jobs"]:
-        run_jobs_once()
-    else:
-        serve()
+    main(sys.argv[1:])
