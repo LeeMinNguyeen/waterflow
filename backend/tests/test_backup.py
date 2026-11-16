@@ -97,7 +97,7 @@ def backup(tmp_path):
     assert r.returncode == 0, r.stderr
     files = os.listdir(bucket)
     assert len(files) == 1 and files[0].startswith("waterflow-") and files[0].endswith(".dump"), files
-    assert (bucket / files[0]).stat().st_mode & 0o777 == 0o600            # holds password hashes
+    assert (bucket / files[0]).stat().st_mode & 0o777 == 0o640            # password hashes: the server's two users only
     return bucket / files[0], r.stdout
 
 
@@ -265,6 +265,7 @@ def live(source, tmp_path):
 def requested(tmp_path, dump_bytes, purged=None):
     backups = tmp_path / "backups"
     (backups / "restore").mkdir(parents=True)
+    (backups / "restore-state").mkdir()
     (backups / "restore" / "request.dump").write_bytes(dump_bytes)
     if purged is not None:
         (backups / "restore" / "purged_accounts.jsonl").write_text(purged)
@@ -285,7 +286,7 @@ def test_restore_requested_from_the_web(live, tmp_path):
     backups = requested(tmp_path, dump.read_bytes(), json.dumps({"user_id": gone, "purged_at": "2026-10-20T00:00:00Z"}) + "\n")
     assert web_restore.restore_if_requested(libpq_url(name), str(backups)) == "done"
     assert users(name) == ["backup_user"]
-    status = json.loads((backups / "restore" / "status").read_text())
+    status = json.loads((backups / "restore-state" / "status").read_text())
     assert status["status"] == "done" and status["at"]
     assert not (backups / "restore" / "request.dump").exists()
     assert len(list(backups.glob("waterflow-*.dump"))) == 1                 # what it replaced
@@ -307,6 +308,89 @@ def test_a_restore_adds_only_the_purged_accounts_the_server_lacks(live, tmp_path
     (backups / "restore" / "purged_accounts.jsonl").write_text("")
     assert web_restore.restore_if_requested(libpq_url(name), str(backups)) == "done"
     assert (backups / "purged_accounts.jsonl").read_text() == known + "\n" + new + "\n"
+
+
+def test_a_request_that_is_a_link_is_not_followed(live, tmp_path):
+    """The API leaves the request in a folder it can write: a link there in place of a backup is refused, and what it
+    points at is never read or touched."""
+    from app.jobs import restore as web_restore
+    name, dump = live
+    backups = requested(tmp_path, b"")
+    secret = tmp_path / "secret"
+    secret.write_text("not for the API")
+    (backups / "restore" / "request.dump").unlink()
+    (backups / "restore" / "request.dump").symlink_to(dump)
+    (backups / "restore" / "purged_accounts.jsonl").write_text("")
+    (backups / "restore" / "purged_accounts.jsonl").unlink()
+    (backups / "restore" / "purged_accounts.jsonl").symlink_to(secret)
+    assert web_restore.restore_if_requested(libpq_url(name), str(backups)) == "failed"
+    assert "not a plain file" in json.loads((backups / "restore-state" / "status").read_text())["detail"]
+    assert secret.read_text() == "not for the API"
+    assert not any(p.is_symlink() for p in (backups / "restore").iterdir())
+
+
+def test_a_request_that_is_a_folder_fails_and_the_server_still_starts(live, tmp_path):
+    from app.jobs import restore as web_restore
+    name, _ = live
+    backups = requested(tmp_path, b"")
+    (backups / "restore" / "request.dump").unlink()
+    (backups / "restore" / "request.dump" / "in").mkdir(parents=True)
+    (backups / "restore" / "request.dump" / "in" / "x").write_text("")
+    assert web_restore.restore_if_requested(libpq_url(name), str(backups)) == "failed"
+    assert web_restore.restore_if_requested(libpq_url(name), str(backups)) == "failed"     # again, and no crash
+
+
+def test_pruning_skips_what_isnt_a_backup_file_of_its_own(tmp_path):
+    from datetime import datetime, timezone
+    from app.jobs import backup
+    (tmp_path / "waterflow-20200101T000000Z.dump").mkdir()
+    (tmp_path / "waterflow-20200102T000000Z.dump").write_bytes(b"x")
+    assert backup.prune(str(tmp_path), datetime(2026, 11, 1, tzinfo=timezone.utc)) == ["waterflow-20200102T000000Z.dump"]
+
+
+def test_the_request_is_copied_not_moved_and_only_a_plain_file_is_taken(tmp_path, monkeypatch):
+    """The API can swap an entry between a check and a move: the launcher reads the entry once, through a handle it
+    checked, into a file of its own."""
+    from app.jobs import restore as web_restore
+    backups = tmp_path / "backups"
+    (backups / "restore").mkdir(parents=True)
+    where = web_restore.state(str(backups))
+    (backups / "restore" / "request.dump").write_bytes(b"PGDMP")
+    os.mkfifo(backups / "restore" / "purged_accounts.jsonl")
+    with pytest.raises(web_restore.RestoreError):
+        web_restore._take(str(backups), where)
+    assert not any(p.exists() or p.is_symlink() for p in (where / "request.dump", where / "purged_accounts.jsonl"))
+    assert not os.path.lexists(backups / "restore" / "purged_accounts.jsonl")                  # removed from the API's folder
+    (backups / "restore" / "request.dump").write_bytes(b"PGDMP")
+    (backups / "restore" / "purged_accounts.jsonl").mkdir()
+    (backups / "restore" / "purged_accounts.jsonl" / "x").write_text("")
+    with pytest.raises(web_restore.RestoreError):
+        web_restore._take(str(backups), where)
+    (backups / "restore" / "purged_accounts.jsonl" / "x").unlink()
+    (backups / "restore" / "purged_accounts.jsonl").rmdir()
+    (backups / "restore" / "request.dump").write_bytes(b"PGDMP")
+    (backups / "restore" / "purged_accounts.jsonl").write_text('{"user_id": "11111111-1111-1111-1111-111111111111"}\n')
+    web_restore._take(str(backups), where)
+    assert (where / "request.dump").read_bytes() == b"PGDMP" and not (backups / "restore" / "request.dump").exists()
+    assert os.stat(where / "request.dump").st_uid == os.geteuid()
+
+
+def test_pruning_skips_a_name_that_only_looks_like_a_backup(tmp_path):
+    from datetime import datetime, timezone
+    from app.jobs import backup
+    (tmp_path / "waterflow-20201399T000000Z.dump").write_bytes(b"x")
+    (tmp_path / "waterflow-20200102T000000Z.dump").write_bytes(b"x")
+    assert backup.prune(str(tmp_path), datetime(2026, 11, 1, tzinfo=timezone.utc)) == ["waterflow-20200102T000000Z.dump"]
+
+
+def test_only_lines_naming_an_account_reach_the_purged_list(live, tmp_path):
+    from app.jobs import restore as web_restore
+    name, dump = live
+    gone = "22222222-2222-2222-2222-222222222222"
+    backups = requested(tmp_path, dump.read_bytes(), 'not json\n{"user_id": "x"}\n[1]\n{"user_id": "' + gone + '", "purged_at": "2026-10-20T00:00:00Z"}\n')
+    assert web_restore.restore_if_requested(libpq_url(name), str(backups)) == "done"
+    assert (backups / "purged_accounts.jsonl").read_text().strip().splitlines() == [
+        '{"user_id": "' + gone + '", "purged_at": "2026-10-20T00:00:00Z"}']
 
 
 def test_a_restore_signs_everyone_out(live, tmp_path):
@@ -364,7 +448,7 @@ def test_a_failed_restore_puts_the_database_back(live, tmp_path, monkeypatch):
     assert web_restore.restore_if_requested(libpq_url(name), str(backups)) == "failed"
     assert users(name) == ["after_backup", "backup_user"]
     assert sql(name, "select revoked_at is null from invites where code_sha256 = sha256('live')") == [(True,)]   # still works
-    status = json.loads((backups / "restore" / "status").read_text())
+    status = json.loads((backups / "restore-state" / "status").read_text())
     assert status["status"] == "failed" and "something broke" in status["detail"]
     assert not (backups / "restore" / "request.dump").exists()
 
@@ -377,11 +461,11 @@ def test_a_restore_stopped_midway_puts_the_database_back(live, tmp_path):
     sql(name, "insert into users (id, username) values (gen_random_uuid(), 'after_backup')")
     backups = requested(tmp_path, dump.read_bytes())
     safety, _, _ = backup.run_backup(libpq_url(name), str(backups))
-    (backups / "restore" / "safety").write_text(Path(safety).name)
+    (backups / "restore-state" / "safety").write_text(Path(safety).name)
     web_restore._empty(libpq_url(name))                            # stopped here, before the upload was loaded
     assert web_restore.restore_if_requested(libpq_url(name), str(backups)) == "failed"
     assert users(name) == ["after_backup", "backup_user"]
-    status = json.loads((backups / "restore" / "status").read_text())
+    status = json.loads((backups / "restore-state" / "status").read_text())
     assert status["status"] == "failed" and "interrupted" in status["detail"] and Path(safety).name in status["detail"]
     assert not any((backups / "restore" / f).exists() for f in ("request.dump", "safety"))
 
@@ -394,10 +478,10 @@ def test_a_stopped_restore_whose_safety_backup_is_gone_still_signs_everyone_out(
     who = "(select id from users where username = 'backup_user')"
     sql(name, f"insert into sessions (token_sha256, user_id) values (sha256('s'), {who})")
     backups = requested(tmp_path, dump.read_bytes())
-    (backups / "restore" / "safety").write_text("waterflow-20260101T000000Z.dump")       # not there
+    (backups / "restore-state" / "safety").write_text("waterflow-20260101T000000Z.dump")       # not there
     assert web_restore.restore_if_requested(libpq_url(name), str(backups)) == "failed"
     assert sql(name, "select count(*) from sessions") == [(0,)]
-    assert "is missing" in json.loads((backups / "restore" / "status").read_text())["detail"]
+    assert "is missing" in json.loads((backups / "restore-state" / "status").read_text())["detail"]
 
 
 def test_a_failed_put_back_keeps_its_backup_until_a_restore_works(live, tmp_path, monkeypatch):
@@ -407,13 +491,13 @@ def test_a_failed_put_back_keeps_its_backup_until_a_restore_works(live, tmp_path
     name, dump = live
     backups = requested(tmp_path, dump.read_bytes())
     safety, _, _ = backup.run_backup(libpq_url(name), str(backups))
-    (backups / "restore" / "safety").write_text(Path(safety).name)
+    (backups / "restore-state" / "safety").write_text(Path(safety).name)
     real = web_restore._load
     monkeypatch.setattr(web_restore, "_load", lambda url, path: (_ for _ in ()).throw(web_restore.RestoreError("")))
     assert web_restore.restore_if_requested(libpq_url(name), str(backups)) == "failed"
-    assert "RestoreError" in json.loads((backups / "restore" / "status").read_text())["detail"]
-    assert (backups / "restore" / "keep").read_text().split() == [Path(safety).name]
-    assert not (backups / "restore" / "safety").exists()
+    assert "RestoreError" in json.loads((backups / "restore-state" / "status").read_text())["detail"]
+    assert (backups / "restore-state" / "keep").read_text().split() == [Path(safety).name]
+    assert not (backups / "restore-state" / "safety").exists()
     from datetime import datetime, timedelta, timezone
     assert Path(safety).name not in backup.prune(str(backups), datetime.now(timezone.utc) + timedelta(days=30))
     monkeypatch.setattr(web_restore, "_load", real)
@@ -421,7 +505,7 @@ def test_a_failed_put_back_keeps_its_backup_until_a_restore_works(live, tmp_path
     real(libpq_url(name), safety)
     (backups / "restore" / "request.dump").write_bytes(dump.read_bytes())
     assert web_restore.restore_if_requested(libpq_url(name), str(backups)) == "done"
-    assert not (backups / "restore" / "keep").exists()
+    assert not (backups / "restore-state" / "keep").exists()
 
 
 def test_every_failed_put_back_keeps_its_backup(live, tmp_path, monkeypatch):
@@ -433,13 +517,13 @@ def test_every_failed_put_back_keeps_its_backup(live, tmp_path, monkeypatch):
     real = web_restore._load
     monkeypatch.setattr(web_restore, "_load", lambda url, path: (_ for _ in ()).throw(web_restore.RestoreError("")))
     assert web_restore.restore_if_requested(libpq_url(name), str(backups)) == "failed"
-    first = (backups / "restore" / "keep").read_text().split()
+    first = (backups / "restore-state" / "keep").read_text().split()
     assert len(first) == 1 and (backups / first[0]).exists()
     web_restore._empty(libpq_url(name))
     real(libpq_url(name), str(backups / first[0]))
     (backups / "restore" / "request.dump").write_bytes(dump.read_bytes())
     assert web_restore.restore_if_requested(libpq_url(name), str(backups)) == "failed"
-    kept = (backups / "restore" / "keep").read_text().split()
+    kept = (backups / "restore-state" / "keep").read_text().split()
     assert len(kept) == 2 and kept[0] == first[0]
     assert not set(kept) & set(backup.prune(str(backups), datetime.now(timezone.utc) + timedelta(days=30)))
 
@@ -450,20 +534,20 @@ def test_a_restore_names_its_safety_backup_until_it_ends(live, tmp_path, monkeyp
     backups = requested(tmp_path, dump.read_bytes())
     seen = []
     real = web_restore._load
-    monkeypatch.setattr(web_restore, "_load", lambda url, path: (seen.append((backups / "restore" / "safety").read_text()),
+    monkeypatch.setattr(web_restore, "_load", lambda url, path: (seen.append((backups / "restore-state" / "safety").read_text()),
                                                                  real(url, path))[1])
     assert web_restore.restore_if_requested(libpq_url(name), str(backups)) == "done"
     assert seen and seen[0].startswith("waterflow-") and (backups / seen[0]).exists()
-    assert not (backups / "restore" / "safety").exists()
+    assert not (backups / "restore-state" / "safety").exists()
 
 
 def test_pruning_keeps_the_backup_a_restore_names(tmp_path):
     from datetime import datetime, timezone
     from app.jobs import backup
-    (tmp_path / "restore").mkdir()
+    (tmp_path / "restore-state").mkdir()
     for n in ("waterflow-20260101T000000Z.dump", "waterflow-20260102T000000Z.dump"):
         (tmp_path / n).write_bytes(b"x")
-    (tmp_path / "restore" / "safety").write_text("waterflow-20260101T000000Z.dump")
+    (tmp_path / "restore-state" / "safety").write_text("waterflow-20260101T000000Z.dump")
     assert backup.prune(str(tmp_path), datetime(2026, 11, 1, tzinfo=timezone.utc)) == ["waterflow-20260102T000000Z.dump"]
     assert (tmp_path / "waterflow-20260101T000000Z.dump").exists()
 
@@ -471,11 +555,11 @@ def test_pruning_keeps_the_backup_a_restore_names(tmp_path):
 def test_pruning_keeps_every_backup_left_to_restore_by_hand(tmp_path):
     from datetime import datetime, timezone
     from app.jobs import backup
-    (tmp_path / "restore").mkdir()
+    (tmp_path / "restore-state").mkdir()
     names = [f"waterflow-2026010{d}T000000Z.dump" for d in (1, 2, 3)]
     for n in names:
         (tmp_path / n).write_bytes(b"x")
-    (tmp_path / "restore" / "keep").write_text(names[0] + "\n" + names[1] + "\n")
+    (tmp_path / "restore-state" / "keep").write_text(names[0] + "\n" + names[1] + "\n")
     assert backup.prune(str(tmp_path), datetime(2026, 11, 1, tzinfo=timezone.utc)) == [names[2]]
 
 def test_a_backup_naming_roles_this_server_lacks_restores(live, tmp_path):
@@ -493,7 +577,7 @@ def test_a_backup_naming_roles_this_server_lacks_restores(live, tmp_path):
     try:
         backups = requested(tmp_path, Path(dump).read_bytes())
         assert web_restore.restore_if_requested(libpq_url(name), str(backups)) == "done", \
-            json.loads((backups / "restore" / "status").read_text())
+            json.loads((backups / "restore-state" / "status").read_text())
         assert sql(name, f"select count(*) from pg_roles where rolname = '{role}'") == [(0,)]       # made for the load only
         assert users(name) == ["backup_user"]
     finally:
@@ -541,7 +625,7 @@ def test_a_backup_with_default_privileges_for_a_role_the_owner_cant_act_for_rest
     try:
         backups = requested(tmp_path, Path(dump).read_bytes())
         assert web_restore.restore_if_requested(libpq_url(name), str(backups)) == "done", \
-            json.loads((backups / "restore" / "status").read_text())
+            json.loads((backups / "restore-state" / "status").read_text())
         assert sql(name, f"select count(*) from pg_default_acl where defaclrole::regrole::text = '{role}'") == [(0,)]
     finally:
         if sql(name, f"select count(*) from pg_roles where rolname = '{role}'") == [(1,)]:

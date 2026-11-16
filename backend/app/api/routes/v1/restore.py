@@ -32,8 +32,13 @@ MAX_PURGED = 10 * 2**20
 
 
 def stop_server() -> None:
-    """The launcher stops its children and exits; Docker, or Cloud Run, starts the server again."""
-    os.kill(int(os.environ.get("LAUNCHER_PID") or os.getpid()), signal.SIGTERM)
+    """The launcher stops its children and exits; Docker, or Cloud Run, starts the server again. Through the pipe it
+    gave the API, which runs as another user and can't signal it; a signal where there's no pipe (a reloading API in
+    development)."""
+    try:
+        os.write(int(os.environ["STOP_FD"]), b"x")
+    except (KeyError, ValueError, OSError):
+        os.kill(int(os.environ.get("LAUNCHER_PID") or os.getpid()), signal.SIGTERM)
 
 
 def _backup_dir() -> str:
@@ -43,7 +48,7 @@ def _backup_dir() -> str:
 def _copy(upload: UploadFile, to: Path, limit: int) -> None:
     """Owner-only, like the nightly backups: a backup holds password hashes."""
     size = 0
-    fd = os.open(to, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    fd = os.open(to, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o640)
     with os.fdopen(fd, "wb") as out:
         while chunk := upload.file.read(2**20):
             size += len(chunk)
@@ -77,7 +82,7 @@ def _unpack(partial: Path, where: Path) -> bool | None:
                 raise HTTPException(422, "restore_invalid")
             seen.add(kind)
             left = int(size, 8)
-            fd = os.open(parts[kind], os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            fd = os.open(parts[kind], os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o640)
             with os.fdopen(fd, "wb") as out:
                 while left and (chunk := f.read(min(left, 2**20))):
                     out.write(chunk)
@@ -118,8 +123,6 @@ def _leave_request(dump: UploadFile, purged: UploadFile | None, background: Back
     if listed.exists():
         os.replace(listed, where / restore.PURGED)
     os.replace(partial, where / restore.REQUEST)
-    (where / restore.STATUS).write_text(json.dumps({"status": "requested", "at": datetime.now(timezone.utc).isoformat(),
-                                                    "detail": None}))
     background.add_task(stop_server)
     return Response(status_code=202)
 
@@ -242,5 +245,8 @@ def restore_status(db: Session = Depends(get_db)) -> RestoreStatus | None:
     """The last restore from the web app, or null."""
     if not db.execute(text("select am_admin()")).scalar():
         raise HTTPException(403, "admin_only")
-    status = restore.folder(_backup_dir()) / restore.STATUS
-    return RestoreStatus(**json.loads(status.read_text())) if status.exists() else None
+    waiting = restore.folder(_backup_dir()) / restore.REQUEST
+    if waiting.is_file():
+        return RestoreStatus(status="requested", at=datetime.fromtimestamp(waiting.stat().st_mtime, timezone.utc), detail=None)
+    status = Path(_backup_dir()) / "restore-state" / restore.STATUS
+    return RestoreStatus(**json.loads(status.read_text())) if status.is_file() else None
