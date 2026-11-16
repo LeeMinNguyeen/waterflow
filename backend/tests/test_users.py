@@ -71,6 +71,33 @@ def test_the_launcher_stops_its_children_when_asked_through_the_pipe():
     assert child.poll() is not None
 
 
+def test_the_api_stops_itself_when_the_launcher_lets_go(monkeypatch):
+    """The launcher can't signal the API either: it closes a pipe the API watches, and the API stops itself."""
+    import signal
+    import threading
+    from app.core import users
+    read, write = os.pipe()
+    stopped = threading.Event()
+    monkeypatch.setattr(users.os, "kill", lambda pid, sig: stopped.set() if (pid, sig) == (os.getpid(), signal.SIGTERM) else None)
+    users.watch_launcher(read)
+    assert not stopped.wait(0.2)
+    os.close(write)
+    assert stopped.wait(5)
+
+
+def test_the_launcher_lets_go_of_a_child_it_cant_signal(monkeypatch):
+    from app import launch
+    read, write = os.pipe()
+    alive_read, alive_write = os.pipe()
+    child = subprocess.Popen([sys.executable, "-c", "import os, sys; os.read(int(sys.argv[1]), 1)", str(alive_read)],
+                             pass_fds=(alive_read,))
+    os.close(alive_read)
+    monkeypatch.setattr(child, "terminate", lambda: (_ for _ in ()).throw(PermissionError(1, "Operation not permitted")))
+    os.write(write, b"x")
+    assert launch.supervise([child], read, alive_write) == 0
+    assert child.poll() == 0
+
+
 @pytest.mark.skipif(os.geteuid() != 0, reason="switching users needs root")
 def test_as_root_the_api_runs_as_its_own_user():
     from app.core import users

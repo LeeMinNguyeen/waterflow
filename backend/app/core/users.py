@@ -6,6 +6,8 @@ and downloads them) and the updates folder. The users and groups are made in the
 On Cloud Run the mounts decide who owns what (the bucket is mounted for uid 10001), and the service account can read
 the secrets anyway: everything runs as `waterflow`. Not started as root (development, the tests), nothing changes."""
 import os
+import signal
+import threading
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -82,3 +84,13 @@ def drop_keeping_root(ids: Ids = IDS) -> None:
 
 def drop(ids: Ids = IDS) -> None:
     os.setresuid(ids.launcher, ids.launcher, ids.launcher)
+
+
+def watch_launcher(fd: int) -> None:
+    """In the API: the launcher, running as another user, can't signal it. It closes this pipe instead (to stop the
+    server, or because it stopped), and the API stops itself the way the signal would."""
+    def wait() -> None:
+        while os.read(fd, 1):
+            pass
+        os.kill(os.getpid(), signal.SIGTERM)
+    threading.Thread(target=wait, daemon=True).start()

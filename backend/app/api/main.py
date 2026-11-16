@@ -2,6 +2,7 @@
 Run for development: uvicorn app.api.main:app --reload
 """
 import logging
+import os
 from urllib.parse import urlsplit
 
 from typing import Literal
@@ -16,7 +17,7 @@ from app.api import errors
 from app.api.deps import get_public_db
 from app.api.routes.v1 import (accounts, admin, books, budgets, categories, contacts, dashboard, installments, me, members,
                                reference, restore, sign_in, transactions)
-from app.core import updates
+from app.core import updates, users
 from app.core.settings import settings
 
 # Additive changes only within /v1: a client that needs something newer checks api_version.
@@ -36,6 +37,9 @@ class _WithoutQuery(logging.Filter):
 
 
 logging.getLogger("uvicorn.access").addFilter(_WithoutQuery())
+
+if os.environ.get("LAUNCHER_ALIVE_FD"):
+    users.watch_launcher(int(os.environ["LAUNCHER_ALIVE_FD"]))
 
 app = FastAPI(title="Waterflow API", docs_url=None, redoc_url=None, openapi_url="/v1/openapi.json")
 errors.install(app)

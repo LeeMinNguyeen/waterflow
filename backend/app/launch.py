@@ -11,6 +11,7 @@ The API gets only its own login, never the owner's password, so even a flaw in t
 security. The logins' passwords file can be mounted read-only (Cloud Run's Secret Manager): the server then sets
 those passwords instead of making new ones.
 """
+import contextlib
 import json
 import os
 import secrets
@@ -205,47 +206,58 @@ def serve(split: bool = False) -> None:
         sys.exit(0)
 
     stop_read, stop_write = os.pipe()
+    alive_read, alive_write = os.pipe()
     base = {**_without_owner(), "SERVER_STARTED_AT": str(started), "LAUNCHER_PID": str(os.getpid())}
     api_env = {**base, "DATABASE_URL": login_url(admin, "api_login", passwords["api_login"])}
     port = os.environ.get("PORT", "8080")
     reload = ["--reload"] if os.environ.get("DEV_RELOAD") else []        # development only (scripts/dev.sh)
-    if not reload:                       # a reloading API runs in a process of its own that doesn't get the pipe
-        api_env["STOP_FD"] = str(stop_write)
+    if not reload:                       # a reloading API runs in a process of its own that doesn't get the pipes
+        api_env |= {"STOP_FD": str(stop_write), "LAUNCHER_ALIVE_FD": str(alive_read)}
     children = [
         subprocess.Popen([sys.executable, "-m", "uvicorn", "app.api.main:app", "--host", "0.0.0.0", "--port", port,
-                          "--proxy-headers", "--forwarded-allow-ips", "*", *reload], env=api_env, pass_fds=(stop_write,),
+                          "--proxy-headers", "--forwarded-allow-ips", "*", *reload], env=api_env, pass_fds=(stop_write, alive_read),
                          preexec_fn=users.become(users.IDS.api, users.IDS.api_group, users.IDS.files) if split else None),
     ]
     if split:
         users.drop()
     os.close(stop_write)
+    os.close(alive_read)
     if jobs_here():
         children.append(subprocess.Popen([sys.executable, "-m", "app.jobs.scheduler"],
                                          env={**base, **jobs_env(admin, passwords, backup_dir)}))
     else:
         print("RUN_JOBS=off: the daily jobs run elsewhere (python -m app.launch jobs)", flush=True)
 
-    def stop(*_):
-        for c in children:
-            c.terminate()
+    stop = lambda *_: let_go(children, alive_write)                          # noqa: E731
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
     if stop_asked:                       # asked between the check above and these
         stop()
-    sys.exit(supervise(children, stop_read))
+    sys.exit(supervise(children, stop_read, alive_write))
 
 
-def supervise(children: list[subprocess.Popen], stop_read: int) -> int:
+def let_go(children: list[subprocess.Popen], alive_write: int | None) -> None:
+    """Stops the children: a signal to those running as this user, the closed pipe to the API when it runs as
+    another (app/api/main.py watch_launcher)."""
+    if alive_write is not None:
+        with contextlib.suppress(OSError):
+            os.close(alive_write)
+    for c in children:
+        if c.poll() is None:
+            with contextlib.suppress(PermissionError):
+                c.terminate()
+
+
+def supervise(children: list[subprocess.Popen], stop_read: int, alive_write: int | None = None) -> int:
     """Until a child stops, or the API asks through the pipe (a restore): then stops them all. Their first non-zero
     exit code, or 0."""
     while all(c.poll() is None for c in children):
         if select.select([stop_read], [], [], 1)[0] and os.read(stop_read, 1):
             break
+    let_go(children, alive_write)
     for c in children:
-        if c.poll() is None:
-            c.terminate()
-    for c in children:
-        c.wait(timeout=20)
+        with contextlib.suppress(subprocess.TimeoutExpired):
+            c.wait(timeout=20)
     return next((c.returncode for c in children if c.returncode), 0)
 
 
