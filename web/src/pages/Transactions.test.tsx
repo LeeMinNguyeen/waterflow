@@ -27,6 +27,8 @@ const items = [
   txn('2025-10-25', 'income', [['bank', 32_000_000]], 'Salary'),
 ]
 
+const filtersInAddress = () => Object.fromEntries(new URLSearchParams((screen.getByTestId('where').textContent ?? '').split('?')[1] ?? ''))
+
 function server() {
   return fakeApi({
     'GET /v1/currencies': currencies,
@@ -186,11 +188,11 @@ describe("amount and no-category filters, with the list's total (waterflow#103)"
     await userEvent.click(screen.getByRole('option', { name: 'USD' }))
     await userEvent.keyboard('{Escape}')
     await userEvent.type(screen.getByRole('textbox', { name: 'From' }), '2')
-    await waitFor(() => expect(screen.getByTestId('where')).toHaveTextContent('/books/b1/transactions?min=200&currency=USD'))
+    await waitFor(() => expect(filtersInAddress()).toEqual({ min: '200', currency: 'USD' }))
     await userEvent.click(screen.getByRole('combobox', { name: 'Currency' }))
     await userEvent.click(await screen.findByRole('option', { name: 'VND' }))
     await userEvent.keyboard('{Escape}')
-    await waitFor(() => expect(screen.getByTestId('where')).toHaveTextContent('/books/b1/transactions?min=2&currency=USD%2CVND'))
+    await waitFor(() => expect(filtersInAddress()).toEqual({ min: '2', currency: 'USD,VND' }))
     await waitFor(() => expect(api.calls.some((c) => c.path === '/v1/books/b1/transactions' && c.url.includes('currency=USD%2CVND'))).toBe(true))
     await userEvent.keyboard('{Escape}')
     expect(screen.getByRole('button', { name: 'Amount: From 2 · USD, VND' })).toBeInTheDocument()
@@ -227,7 +229,7 @@ describe("amount and no-category filters, with the list's total (waterflow#103)"
     await userEvent.click(await screen.findByRole('option', { name: 'USD' }))
     await userEvent.keyboard('{Escape}')
     await userEvent.type(screen.getByRole('textbox', { name: 'From' }), '2.5')
-    await waitFor(() => expect(screen.getByTestId('where')).toHaveTextContent('/books/b1/transactions?min=250&currency=USD'))
+    await waitFor(() => expect(filtersInAddress()).toEqual({ min: '250', currency: 'USD' }))
     await userEvent.click(screen.getByRole('combobox', { name: 'Currency' }))
     await userEvent.click(await screen.findByRole('option', { name: 'VND' }))
     await userEvent.keyboard('{Escape}')
