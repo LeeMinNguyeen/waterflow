@@ -329,6 +329,25 @@ def test_a_request_that_is_a_link_is_not_followed(live, tmp_path):
     assert not any(p.is_symlink() for p in (backups / "restore").iterdir())
 
 
+def test_a_request_that_is_a_folder_fails_and_the_server_still_starts(live, tmp_path):
+    from app.jobs import restore as web_restore
+    name, _ = live
+    backups = requested(tmp_path, b"")
+    (backups / "restore" / "request.dump").unlink()
+    (backups / "restore" / "request.dump" / "in").mkdir(parents=True)
+    (backups / "restore" / "request.dump" / "in" / "x").write_text("")
+    assert web_restore.restore_if_requested(libpq_url(name), str(backups)) == "failed"
+    assert web_restore.restore_if_requested(libpq_url(name), str(backups)) == "failed"     # again, and no crash
+
+
+def test_pruning_skips_what_isnt_a_backup_file_of_its_own(tmp_path):
+    from datetime import datetime, timezone
+    from app.jobs import backup
+    (tmp_path / "waterflow-20200101T000000Z.dump").mkdir()
+    (tmp_path / "waterflow-20200102T000000Z.dump").write_bytes(b"x")
+    assert backup.prune(str(tmp_path), datetime(2026, 11, 1, tzinfo=timezone.utc)) == ["waterflow-20200102T000000Z.dump"]
+
+
 def test_a_restore_signs_everyone_out(live, tmp_path):
     """Sessions, remembered devices and reset links in the backup would work again, even ones ended after it; so would
     an invite used or revoked after it: every unused one is revoked. Sign-up open on the backup's day, and closed

@@ -67,17 +67,29 @@ def _plain_own(path: Path, owner: int | None = None) -> bool:
 
 
 def _take(backup_dir: str, where: Path) -> None:
-    """Moves the API's request into the launcher's folder, where the API can't change it, then checks what came."""
+    """Moves the API's request into the launcher's folder, where the API can't change it. Anything there but a plain
+    file (a link, a hard link, a folder) is refused, and removed if it can be."""
     inbox = folder(backup_dir)
     for name in (REQUEST, PURGED):
-        (where / name).unlink(missing_ok=True)
-        with contextlib.suppress(FileNotFoundError):
-            os.replace(inbox / name, where / name)
+        with contextlib.suppress(OSError):
+            (where / name).unlink(missing_ok=True)
+    refused = False
     for name in (REQUEST, PURGED):
-        if (where / name).is_symlink() or (os.path.lexists(where / name) and not _plain_own(where / name)):
-            for n in (REQUEST, PURGED):
-                (where / n).unlink(missing_ok=True)
-            raise RestoreError("the upload is not a plain file")
+        try:
+            st = os.lstat(inbox / name)
+        except FileNotFoundError:
+            continue
+        if stat.S_ISREG(st.st_mode) and st.st_nlink == 1:
+            os.replace(inbox / name, where / name)
+        else:
+            refused = True
+            with contextlib.suppress(OSError):
+                (inbox / name).rmdir() if stat.S_ISDIR(st.st_mode) else (inbox / name).unlink()
+    if refused or (os.path.lexists(where / REQUEST) and not _plain_own(where / REQUEST)):
+        for name in (REQUEST, PURGED):
+            with contextlib.suppress(OSError):
+                (where / name).unlink(missing_ok=True)
+        raise RestoreError("the upload is not a plain file")
 
 
 def server_versions() -> list[str]:
@@ -295,7 +307,7 @@ def restore_if_requested(url: str, backup_dir: str, purge_log: str | None = None
                 (inbox / name).unlink(missing_ok=True)
     try:
         _take(backup_dir, where)
-    except RestoreError as e:
+    except (RestoreError, OSError) as e:
         _record(where, "failed", str(e))
         print(f"restoring the uploaded backup failed: {e}", flush=True)
         return "failed"

@@ -47,6 +47,7 @@ import contextlib
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -127,9 +128,17 @@ def prune(backup_dir: str, now: datetime) -> list[str]:
     old = [n for n in sorted(os.listdir(backup_dir))
            if n not in kept and (m := DUMP_NAME.fullmatch(n))
            and now - datetime.strptime(m[1], "%Y%m%dT%H%M%SZ").replace(tzinfo=timezone.utc) > KEEP]
+    removed = []
     for n in old:
-        os.remove(os.path.join(backup_dir, n))
-    return old
+        path = os.path.join(backup_dir, n)
+        try:
+            st = os.lstat(path)
+            if stat.S_ISLNK(st.st_mode) or (stat.S_ISREG(st.st_mode) and st.st_uid == os.geteuid()):
+                os.remove(path)
+                removed.append(n)
+        except OSError:
+            continue
+    return removed
 
 
 def _reserve(backup_dir: str, now: datetime) -> tuple[str, int]:
