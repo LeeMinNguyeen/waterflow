@@ -1160,7 +1160,10 @@ def test_admin_restores_a_backup_from_the_web(client, admin, restore_dir, a_back
     assert r.status_code == 202, r.text
     assert (backups / "restore" / "request.dump").read_bytes() == good
     assert stops == [True]
-    (backups / "restore" / "status").write_text(json.dumps({"status": "done", "at": "2026-10-22T08:00:00+00:00", "detail": None}))
+    assert client.get("/v1/admin/restore", headers=bearer(token)).json()["status"] == "requested"
+    (backups / "restore" / "request.dump").unlink()
+    (backups / "restore-state").mkdir(exist_ok=True)
+    (backups / "restore-state" / "status").write_text(json.dumps({"status": "done", "at": "2026-10-22T08:00:00+00:00", "detail": None}))
     assert client.get("/v1/admin/restore", headers=bearer(token)).json()["status"] == "done"
     assert client.get("/v1/admin/restore", headers=bearer(someone)).json() == {"detail": "admin_only"}
 
@@ -1319,7 +1322,7 @@ def test_a_refused_upload_leaves_an_accepted_request_whole(client, admin, restor
     (backups / "restore").mkdir(exist_ok=True)
     (backups / "restore" / "upload.purged.partial").write_text("left by an upload the server stopped in the middle of")
     assert upload(client, "/v1/admin/restore", token, a_backup.read_bytes(), password=PASSWORD, confirm="true").status_code == 202
-    assert sorted(f.name for f in (backups / "restore").iterdir()) == ["request.dump", "status"]
+    assert sorted(f.name for f in (backups / "restore").iterdir()) == ["request.dump"]
     assert upload(client, "/v1/admin/restore", token, _tar(dump, listed), password=PASSWORD, confirm="true").status_code == 202
     waiting = {f.name: f.read_bytes() for f in (backups / "restore").iterdir() if f.name != "status"}
     assert waiting.keys() == {"request.dump", "purged_accounts.jsonl"}

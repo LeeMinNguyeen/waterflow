@@ -18,30 +18,76 @@ def test_how_the_container_runs_depends_on_where():
     assert plan(euid=0, env={"CLOUD_RUN_JOB": "waterflow-jobs"}) == "one_user"
 
 
-def test_the_folders_are_set_up_for_the_two_users(tmp_path):
-    """Run as a normal user with its own ids standing in for the server's: the modes are what's checked."""
-    from app.core import users
-    uid, gid = os.getuid(), os.getgid()
-    ids = users.Ids(launcher=uid, launcher_group=gid, api=uid, api_group=gid, files=gid, database_group=gid)
+def _folders(tmp_path):
     secrets, backups, updates = tmp_path / "secrets", tmp_path / "backups", tmp_path / "updates"
     for d in (secrets, backups / "restore", updates):
         d.mkdir(parents=True)
-    (secrets / "postgres_password").write_text("p")
-    (secrets / "db_logins.json").write_text("{}")
-    (secrets / "owner_password").write_text("o")
     for f in ("db_logins.json", "owner_password", "postgres_password"):
+        (secrets / f).write_text("secret")
         os.chmod(secrets / f, 0o644)
+    return secrets, backups, updates
+
+
+def _own_ids():
+    from app.core import users
+    uid, gid = os.getuid(), os.getgid()
+    return users.Ids(launcher=uid, launcher_group=gid, api=uid, api_group=gid, files=gid, database_group=gid)
+
+
+def mode(p):
+    return stat.S_IMODE(os.lstat(p).st_mode)
+
+
+def test_the_folders_are_set_up_for_the_two_users(tmp_path):
+    """Run as a normal user with its own ids standing in for the server's: the modes are what's checked."""
+    from app.core import users
+    secrets, backups, updates = _folders(tmp_path)
     old = backups / "waterflow-20261101T000000Z.dump"
     old.write_bytes(b"x")
     os.chmod(old, 0o600)
-    users.prepare(secrets, backups, updates, ids)
+    users.prepare_as_root(secrets, backups, updates, _own_ids())
+    users.prepare_as_launcher(backups, backups / "purged_accounts.jsonl", _own_ids())
 
-    mode = lambda p: stat.S_IMODE(p.stat().st_mode)                             # noqa: E731
     assert mode(secrets) == 0o711
     assert (mode(secrets / "db_logins.json"), mode(secrets / "owner_password")) == (0o600, 0o600)
     assert mode(secrets / "postgres_password") == 0o640                         # the database container's group reads it
-    assert mode(backups) == mode(backups / "restore") == mode(updates) == 0o2770
+    assert mode(backups) == mode(backups / "restore") == 0o3770                 # shared, and no one removes another's files
+    assert mode(backups / "restore-state") == 0o2750                            # the launcher's alone; the API reads it
+    assert mode(updates) == 0o2770
     assert mode(old) == 0o640
+    assert (backups / "purged_accounts.jsonl").is_file()                        # made by the launcher, before the API could
+
+
+def test_nothing_the_api_plants_in_the_shared_folders_is_followed(tmp_path):
+    """The API can write the backups and updates folders: a link or a hard link it leaves there must not make root or
+    the launcher change the file it points at."""
+    from app.core import users
+    secrets, backups, updates = _folders(tmp_path)
+    os.chmod(secrets / "owner_password", 0o600)
+    (backups / "a").symlink_to(secrets / "owner_password")
+    (backups / "restore" / "b").symlink_to(secrets / "db_logins.json")
+    (updates / "c").symlink_to(secrets / "postgres_password")
+    (backups / "d").mkdir()
+    (backups / "d" / "e").symlink_to(secrets)
+    os.chmod(secrets / "db_logins.json", 0o600)
+    os.chmod(secrets / "postgres_password", 0o600)
+    before = {f: mode(secrets / f) for f in ("owner_password", "db_logins.json", "postgres_password")}
+    users.prepare_as_launcher(backups, backups / "purged_accounts.jsonl", _own_ids())
+    users.prepare_as_root(tmp_path / "nowhere", backups, updates, _own_ids())
+    assert {f: mode(secrets / f) for f in before} == before
+
+
+def test_the_launcher_appends_only_to_its_own_file(tmp_path):
+    from app.core import users
+    target = tmp_path / "target"
+    target.write_text("")
+    (tmp_path / "log").symlink_to(target)
+    with pytest.raises(OSError):
+        users.append_own(tmp_path / "log", "line\n")
+    assert target.read_text() == ""
+    users.append_own(tmp_path / "new", "line\n")
+    users.append_own(tmp_path / "new", "more\n")
+    assert (tmp_path / "new").read_text() == "line\nmore\n"
 
 
 def test_a_backup_and_an_upload_are_readable_by_the_other_user(tmp_path, monkeypatch):
@@ -51,7 +97,7 @@ def test_a_backup_and_an_upload_are_readable_by_the_other_user(tmp_path, monkeyp
     assert stat.S_IMODE(os.stat(final + ".partial").st_mode) & 0o040
 
 
-def test_the_api_asks_the_launcher_to_stop_through_a_pipe(monkeypatch):
+def test_the_api_asks_the_launcher_to_stop_through_a_pipe(client, monkeypatch):
     """The API can't signal the launcher when it runs as another user: it writes to a pipe the launcher reads."""
     from app.api.routes.v1 import restore
     read, write = os.pipe()

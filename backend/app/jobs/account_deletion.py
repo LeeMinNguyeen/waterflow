@@ -8,10 +8,13 @@ import json
 import os
 import sys
 from datetime import datetime, timezone
+from pathlib import Path
 from uuid import UUID
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
+
+from app.core import users
 
 
 def request_deletion(db: Session) -> datetime:
@@ -30,11 +33,7 @@ def _log_path(purge_log: str | None) -> str:
 
 
 def _append(log: str, records: list[dict]) -> None:
-    with open(log, "a") as f:
-        for r in records:
-            f.write(json.dumps(r) + "\n")
-        f.flush()
-        os.fsync(f.fileno())
+    users.append_own(Path(log), "".join(json.dumps(r) + "\n" for r in records))
 
 
 def _read(log: str) -> list[dict]:

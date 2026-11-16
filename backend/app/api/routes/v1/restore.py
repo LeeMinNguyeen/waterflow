@@ -123,8 +123,6 @@ def _leave_request(dump: UploadFile, purged: UploadFile | None, background: Back
     if listed.exists():
         os.replace(listed, where / restore.PURGED)
     os.replace(partial, where / restore.REQUEST)
-    (where / restore.STATUS).write_text(json.dumps({"status": "requested", "at": datetime.now(timezone.utc).isoformat(),
-                                                    "detail": None}))
     background.add_task(stop_server)
     return Response(status_code=202)
 
@@ -247,5 +245,8 @@ def restore_status(db: Session = Depends(get_db)) -> RestoreStatus | None:
     """The last restore from the web app, or null."""
     if not db.execute(text("select am_admin()")).scalar():
         raise HTTPException(403, "admin_only")
-    status = restore.folder(_backup_dir()) / restore.STATUS
-    return RestoreStatus(**json.loads(status.read_text())) if status.exists() else None
+    waiting = restore.folder(_backup_dir()) / restore.REQUEST
+    if waiting.is_file():
+        return RestoreStatus(status="requested", at=datetime.fromtimestamp(waiting.stat().st_mtime, timezone.utc), detail=None)
+    status = Path(_backup_dir()) / "restore-state" / restore.STATUS
+    return RestoreStatus(**json.loads(status.read_text())) if status.is_file() else None

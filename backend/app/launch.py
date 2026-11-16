@@ -236,10 +236,14 @@ def serve(split: bool = False) -> None:
     sys.exit(supervise(children, stop_read, alive_write))
 
 
+_let_go: set[int] = set()
+
+
 def let_go(children: list[subprocess.Popen], alive_write: int | None) -> None:
     """Stops the children: a signal to those running as this user, the closed pipe to the API when it runs as
     another (app/api/main.py watch_launcher)."""
-    if alive_write is not None:
+    if alive_write is not None and alive_write not in _let_go:
+        _let_go.add(alive_write)
         with contextlib.suppress(OSError):
             os.close(alive_write)
     for c in children:
@@ -266,14 +270,18 @@ def main(argv: list[str]) -> None:
     how = users.plan(os.geteuid(), os.environ)
     if argv == ["secrets"]:
         make_postgres_password()
-        if how != "as_is":
-            users.prepare(SECRETS)
+        if how == "split":
+            users.prepare_as_root(SECRETS)
         return
+    backups = Path(os.environ.get("BACKUP_DIR", "/backups"))
+    if how == "split":
+        users.prepare_as_root(SECRETS, backups, Path(os.environ.get("UPDATES_DIR", "/updates")))
     if how != "as_is":
-        users.prepare(SECRETS, Path(os.environ.get("BACKUP_DIR", "/backups")), Path(os.environ.get("UPDATES_DIR", "/updates")))
         users.drop_keeping_root()
         if how == "one_user" or argv == ["jobs"]:
             users.drop()
+    if how == "split":
+        users.prepare_as_launcher(backups, Path(os.environ.get("PURGE_LOG") or backups / "purged_accounts.jsonl"))
     if argv == ["jobs"]:
         run_jobs_once()
     else:

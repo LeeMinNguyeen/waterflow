@@ -17,6 +17,7 @@ import contextlib
 import json
 import os
 import re
+import stat
 import subprocess
 import tempfile
 from datetime import datetime, timezone
@@ -25,6 +26,7 @@ from pathlib import Path
 import psycopg
 from psycopg import sql
 
+from app.core import users
 from app.jobs import account_deletion, backup, migrate
 
 REQUEST = "request.dump"
@@ -44,7 +46,38 @@ class TooNew(RestoreError):
 
 
 def folder(backup_dir: str) -> Path:
+    """Where the API leaves a request: the API can write it."""
     return Path(backup_dir) / "restore"
+
+
+def state(backup_dir: str) -> Path:
+    """The launcher's: the request once taken, the status and the markers. The API can only read it."""
+    where = Path(backup_dir) / "restore-state"
+    where.mkdir(exist_ok=True)
+    return where
+
+
+def _plain_own(path: Path, owner: int | None = None) -> bool:
+    """A regular file under this one name (not a link, not a hard link), and the given user's if one is given."""
+    try:
+        st = os.lstat(path)
+    except FileNotFoundError:
+        return False
+    return stat.S_ISREG(st.st_mode) and st.st_nlink == 1 and (owner is None or st.st_uid == owner)
+
+
+def _take(backup_dir: str, where: Path) -> None:
+    """Moves the API's request into the launcher's folder, where the API can't change it, then checks what came."""
+    inbox = folder(backup_dir)
+    for name in (REQUEST, PURGED):
+        (where / name).unlink(missing_ok=True)
+        with contextlib.suppress(FileNotFoundError):
+            os.replace(inbox / name, where / name)
+    for name in (REQUEST, PURGED):
+        if (where / name).is_symlink() or (os.path.lexists(where / name) and not _plain_own(where / name)):
+            for n in (REQUEST, PURGED):
+                (where / n).unlink(missing_ok=True)
+            raise RestoreError("the upload is not a plain file")
 
 
 def server_versions() -> list[str]:
@@ -185,8 +218,7 @@ def _apply(url: str, path: str, purged: Path | None, purge_log: str, sign_out: b
         have = set(Path(purge_log).read_text().split("\n")) if os.path.exists(purge_log) else set()
         lines = [x for x in dict.fromkeys(purged.read_text().split("\n")) if x.strip() and x not in have]
         if lines:
-            with open(purge_log, "a") as log:
-                log.write("\n".join(lines) + "\n")
+            users.append_own(Path(purge_log), "\n".join(lines) + "\n")
     _repurge(url, purge_log)
 
 
@@ -223,7 +255,7 @@ def _resume(url: str, backup_dir: str, where: Path, purge_log: str) -> str:
     try:
         name = (where / SAFETY).read_text().strip()
         m = backup.DUMP_NAME.fullmatch(name)
-        if not m or m[2] or not (Path(backup_dir) / name).is_file():
+        if not m or m[2] or not _plain_own(Path(backup_dir) / name, os.geteuid()):
             raise FileNotFoundError(name)
         _empty(url)
         _load(url, str(Path(backup_dir) / name))
@@ -247,10 +279,11 @@ def _resume(url: str, backup_dir: str, where: Path, purge_log: str) -> str:
 
 def restore_if_requested(url: str, backup_dir: str, purge_log: str | None = None) -> str | None:
     """'done' or 'failed' when a restore was waiting, None otherwise. Never raises: the server starts either way."""
-    where = folder(backup_dir)
-    request = where / REQUEST
-    if not request.exists() and not (where / SAFETY).exists():
+    inbox = folder(backup_dir)
+    if not os.path.lexists(inbox / REQUEST) and not (Path(backup_dir) / "restore-state" / SAFETY).exists():
         return None
+    where = state(backup_dir)
+    request = where / REQUEST
     purge_log = purge_log or os.environ.get("PURGE_LOG") or os.path.join(backup_dir, "purged_accounts.jsonl")
     if (where / SAFETY).exists():
         try:
@@ -258,6 +291,14 @@ def restore_if_requested(url: str, backup_dir: str, purge_log: str | None = None
         finally:
             for name in (REQUEST, PURGED, SAFETY):
                 (where / name).unlink(missing_ok=True)
+            for name in (REQUEST, PURGED):
+                (inbox / name).unlink(missing_ok=True)
+    try:
+        _take(backup_dir, where)
+    except RestoreError as e:
+        _record(where, "failed", str(e))
+        print(f"restoring the uploaded backup failed: {e}", flush=True)
+        return "failed"
     _record(where, "running")
     before = None
     try:
